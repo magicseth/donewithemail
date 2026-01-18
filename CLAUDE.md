@@ -153,6 +153,13 @@ Important for query performance:
 - **Gesture handlers**: Use `runOnJS(console.log)(data)` (they run on UI thread)
 - **Triage logging**: Server logs `[Triage] Action: done | Subject: "..."` on each triage
 
+## React Native Gesture Handler Gotchas
+
+### Gesture.Manual() Limitations
+- **DO NOT use `onTouchesUp` or `onTouchesCancelled`** - these cause native crashes on iOS
+- Only use `onTouchesDown` and `onTouchesMove` with Gesture.Manual()
+- For detecting touch end, use a different approach (e.g., separate Gesture.Pan() or native touch responder)
+
 ## Environment Variables
 
 Required in Convex dashboard or `.env.local`:

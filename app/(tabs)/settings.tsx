@@ -12,19 +12,65 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/authContext";
-import { useQuery } from "convex/react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
 export default function SettingsScreen() {
   const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
   const [autoProcess, setAutoProcess] = useState(true);
   const [urgencyThreshold, setUrgencyThreshold] = useState(80);
+  const [isResummarizing, setIsResummarizing] = useState(false);
+
+  const resetAndResummarize = useAction(api.summarizeActions.resetAndResummarizeAll);
 
   // Check if Gmail is actually connected (has tokens stored)
   const isGmailConnected = useQuery(
     api.gmailOAuth.hasGmailConnected,
     user?.email ? { email: user.email } : "skip"
   );
+
+  const handleResummarize = async () => {
+    if (!user?.email) return;
+
+    const doResummarize = async () => {
+      setIsResummarizing(true);
+      try {
+        const result = await resetAndResummarize({ userEmail: user.email! });
+        const message = `Deleted ${result.deleted} old summaries.\nQueued ${result.queued} emails for resummarization.`;
+        if (Platform.OS === "web") {
+          window.alert(message);
+        } else {
+          Alert.alert("Resummarization Started", message);
+        }
+      } catch (e) {
+        console.error("Resummarize error:", e);
+        const errorMsg = e instanceof Error ? e.message : "Unknown error";
+        if (Platform.OS === "web") {
+          window.alert(`Error: ${errorMsg}`);
+        } else {
+          Alert.alert("Error", errorMsg);
+        }
+      } finally {
+        setIsResummarizing(false);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm("This will delete all AI summaries and regenerate them. Continue?");
+      if (confirmed) {
+        await doResummarize();
+      }
+    } else {
+      Alert.alert(
+        "Resummarize All Emails",
+        "This will delete all AI summaries and regenerate them. This may take a while and use API credits.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Continue", onPress: doResummarize },
+        ]
+      );
+    }
+  };
 
   const handleSignOut = async () => {
     const doSignOut = async () => {
@@ -227,6 +273,30 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             ))}
           </View>
+        </View>
+      </View>
+
+      {/* Debug Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Debug</Text>
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.aboutRow}
+            onPress={handleResummarize}
+            disabled={isResummarizing}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Resummarize All Emails</Text>
+              <Text style={styles.settingDescription}>
+                Delete all AI summaries and regenerate them
+              </Text>
+            </View>
+            {isResummarizing ? (
+              <ActivityIndicator size="small" color="#6366F1" />
+            ) : (
+              <Text style={styles.aboutArrow}>→</Text>
+            )}
+          </TouchableOpacity>
         </View>
       </View>
 

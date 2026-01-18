@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useRef, useEffect } from "react";
+import React, { useCallback, useState, useRef, useEffect, Component, ErrorInfo, ReactNode } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
   Modal,
   TextInput,
   KeyboardAvoidingView,
+  ScrollView,
 } from "react-native";
 import { router, Stack, useFocusEffect } from "expo-router";
 import { useAction, useQuery, useMutation } from "convex/react";
@@ -43,6 +44,109 @@ import { Dimensions } from "react-native";
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 const CENTER_X = SCREEN_WIDTH / 2;
+
+// Error Boundary to catch and display crashes
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+  errorInfo: ErrorInfo | null;
+}
+
+class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("[ErrorBoundary] Caught error:", error);
+    console.error("[ErrorBoundary] Error info:", errorInfo);
+    this.setState({ errorInfo });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={errorBoundaryStyles.container}>
+          <Text style={errorBoundaryStyles.title}>Something went wrong</Text>
+          <Text style={errorBoundaryStyles.errorName}>{this.state.error?.name}</Text>
+          <Text style={errorBoundaryStyles.errorMessage}>{this.state.error?.message}</Text>
+          <Text style={errorBoundaryStyles.stackTitle}>Stack trace:</Text>
+          <ScrollView style={errorBoundaryStyles.stackScroll}>
+            <Text style={errorBoundaryStyles.stack}>{this.state.error?.stack}</Text>
+          </ScrollView>
+          <TouchableOpacity
+            style={errorBoundaryStyles.retryButton}
+            onPress={() => this.setState({ hasError: false, error: null, errorInfo: null })}
+          >
+            <Text style={errorBoundaryStyles.retryText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const errorBoundaryStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: "#FEE2E2",
+    justifyContent: "center",
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#DC2626",
+    marginBottom: 16,
+  },
+  errorName: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#991B1B",
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: "#7F1D1D",
+    marginBottom: 16,
+  },
+  stackTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#991B1B",
+    marginBottom: 8,
+  },
+  stackScroll: {
+    maxHeight: 300,
+    backgroundColor: "#FECACA",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  stack: {
+    fontSize: 10,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    color: "#7F1D1D",
+  },
+  retryButton: {
+    backgroundColor: "#DC2626",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignSelf: "center",
+  },
+  retryText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+});
 
 // Triage UI configuration - all positioning driven from these values
 const TRIAGE_CONFIG = {
@@ -108,8 +212,18 @@ if (DEBUG_TRIAGE) {
 // Negative = left of center, Positive = right of center
 const TARGETS: Target[] = [
   {
+    id: "unsubscribe",
+    position: -100,          // Left of center
+    activationRadius: 30,
+    proximityRadius: 50,
+    color: "#F59E0B",        // Amber/orange
+    bgColor: "#FFFBEB",
+    icon: "🚫",
+    label: "Unsub",
+  },
+  {
     id: "done",
-    position: -80,           // 80px left of center
+    position: 0,             // Center
     activationRadius: 30,    // Activates when ball within 30px
     proximityRadius: 50,     // Glow starts at 50px
     color: "#10B981",
@@ -251,9 +365,6 @@ function useCreateTriageState(): TriageState {
       const targetX = CENTER_X + target.position;
       const targetYCenter = TARGET_Y + 20; // Approximate center of target button
       const distance = getDistance2D(bx, by, targetX, targetYCenter);
-
-      // Track minimum distance for debugging
-      runOnJS(logMinDistance)(target.id, distance);
 
       if (distance <= target.activationRadius) {
         return target.id;
@@ -485,6 +596,7 @@ interface ReplyDraft {
 
 // Separate component for transcript display to avoid re-rendering entire list
 const TranscriptPreview = React.memo(function TranscriptPreview({ transcript }: { transcript: string }) {
+  console.log("[TranscriptPreview] rendering with:", transcript);
   return (
     <View style={transcriptStyles.container}>
       <Text style={transcriptStyles.text}>
@@ -947,6 +1059,11 @@ const EmailRow = React.memo(function EmailRow({
   const isSending = sendingReplyFor === item._id;
   const isRecordingThis = recordingFor === item._id;
 
+  // Debug logging for recording state
+  if (isRecordingThis) {
+    console.log(`[EmailRow] ${item._id} isRecordingThis=true, transcript="${transcript}"`);
+  }
+
   const handleSwipeLeft = useCallback(() => {
     onSwipeToTodo(item);
   }, [item, onSwipeToTodo]);
@@ -974,6 +1091,8 @@ const EmailRow = React.memo(function EmailRow({
             styles.emailItem,
             !item.isRead && styles.emailItemUnread,
             isTriaged && styles.emailItemTriaged,
+            isRecordingThis && styles.emailItemRecording,
+            isRecordingThis && { height: 220 }, // Expand height when recording to fit transcript
           ]}
           onPress={handlePress}
           activeOpacity={0.7}
@@ -1215,6 +1334,13 @@ export default function InboxScreen() {
 
   const { playStartSound, playStopSound } = useMicSounds();
 
+  // Unsubscribe action and subscriptions query - needed for handleTargetActivation
+  const batchUnsubscribeAction = useAction(api.subscriptions.batchUnsubscribe);
+  const subscriptions = useQuery(
+    api.subscriptionsHelpers.getSubscriptions,
+    userEmail ? { userEmail } : "skip"
+  );
+
   // Triage handler - called when ball touches target
   const handleTargetActivation = useCallback(async (index: number, targetId: string) => {
     const emails = emailsRef.current;
@@ -1232,15 +1358,63 @@ export default function InboxScreen() {
 
     // Handle based on target type
     if (targetId === "mic") {
-      // Mic target - open voice recording modal
+      // Mic target - start voice recording
+      console.log(`[Triage:Mic] Starting recording for email: ${email._id}`);
       if (Platform.OS !== "web") {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
 
       // Start recording for this email
       setRecordingFor(email._id);
+      console.log(`[Triage:Mic] recordingFor set to: ${email._id}`);
       playStartSound();
       startRecording();
+
+      // Don't reset ball - keep it at mic target while recording
+      triageState.isProcessing.value = false;
+      return;
+    }
+
+    // Handle unsubscribe
+    if (targetId === "unsubscribe") {
+      console.log(`[Triage:Unsub] Unsubscribe for email: ${email._id}, sender: ${email.fromContact?.email}`);
+      if (Platform.OS !== "web") {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+
+      // Find subscription for this sender
+      const senderEmail = email.fromContact?.email;
+      const subscription = senderEmail && subscriptions?.find(s => s.senderEmail === senderEmail);
+
+      if (subscription && userEmail) {
+        // Call unsubscribe action
+        batchUnsubscribeAction({
+          userEmail,
+          subscriptionIds: [subscription._id as any], // Cast needed for Id type
+        }).then(result => {
+          console.log(`[Triage:Unsub] Result:`, result);
+          if (result.completed.length > 0) {
+            showAlert("Unsubscribed", `Successfully unsubscribed from ${senderEmail}`);
+          } else if (result.manualRequired.length > 0) {
+            showAlert("Manual action required", `Please visit the unsubscribe link to complete: ${result.manualRequired[0].url}`);
+          } else {
+            showAlert("Unsubscribe failed", "Could not unsubscribe automatically");
+          }
+        }).catch(err => {
+          console.error(`[Triage:Unsub] Error:`, err);
+          showAlert("Error", "Failed to unsubscribe");
+        });
+      } else {
+        console.log(`[Triage:Unsub] No subscription found for ${senderEmail}`);
+        showAlert("No subscription", "This email doesn't have an unsubscribe option");
+      }
+
+      // Mark as done regardless
+      if (!triageInProgressRef.current.has(email._id) && !triagedEmails.has(email._id)) {
+        triageInProgressRef.current.add(email._id);
+        setTriagedEmails(prev => new Map(prev).set(email._id, "done"));
+        triageEmail({ emailId: email._id as Id<"emails">, action: "done" });
+      }
 
       // Reset ball to center
       triageState.startX.value = triageState.fingerX.value;
@@ -1299,7 +1473,7 @@ export default function InboxScreen() {
     } finally {
       triageInProgressRef.current.delete(email._id);
     }
-  }, [triageEmail, triagedEmails, playStartSound, startRecording, triageState]);
+  }, [triageEmail, triagedEmails, playStartSound, startRecording, triageState, subscriptions, batchUnsubscribeAction, userEmail]);
 
   // Log ball position periodically for debugging
   const lastLogTimeShared = useSharedValue(0);
@@ -1349,11 +1523,15 @@ export default function InboxScreen() {
 
   // Watch for ball returning to center - clear the reset lock
   useAnimatedReaction(
-    () => triageState.ballX.value,
-    (ballX) => {
-      // If we need a reset and ball is back near center, allow next activation
-      if (triageState.needsReset.value) {
-        const distFromCenter = Math.abs(ballX - CENTER_X);
+    () => ({
+      ballX: triageState.ballX.value,
+      activeTarget: triageState.activeTarget.value,
+    }),
+    (current) => {
+      // If we need a reset and ball is back near center AND not at any target, allow next activation
+      // The "not at any target" check is critical because the "done" target is at center (position 0)
+      if (triageState.needsReset.value && current.activeTarget === null) {
+        const distFromCenter = Math.abs(current.ballX - CENTER_X);
         if (distFromCenter < 30) {
           runOnJS(logReset)(distFromCenter);
           triageState.needsReset.value = false;
@@ -1460,6 +1638,60 @@ export default function InboxScreen() {
     }
   }, [triageState.scrollY]);
 
+  // Use ref to avoid stale closure in gesture handler
+  const recordingForRef = useRef<string | null>(null);
+  recordingForRef.current = recordingFor;
+
+  // Async handler for stopping recording
+  const handleTouchEndWhileRecordingAsync = useCallback(async () => {
+    console.log("[Triage:TouchEnd] async handler, recordingFor:", recordingForRef.current);
+    if (!recordingForRef.current) return;
+
+    // Find the email being recorded for
+    const email = emailsRef.current.find(e => e._id === recordingForRef.current);
+    if (!email) {
+      console.log("[Triage:TouchEnd] email not found, cancelling");
+      cancelRecording();
+      setRecordingFor(null);
+      return;
+    }
+
+    console.log("[Triage:TouchEnd] stopping recording for:", email.subject);
+    playStopSound();
+    const finalTranscript = await stopRecording();
+    setRecordingFor(null);
+
+    console.log("[Triage:TouchEnd] final transcript:", finalTranscript);
+    if (!finalTranscript.trim()) {
+      showAlert("No speech detected", "Please try recording again.");
+      return;
+    }
+
+    if (!email.fromContact?.email) {
+      showAlert("Error", "Cannot determine recipient email address.");
+      return;
+    }
+
+    const subject = email.subject.startsWith("Re:")
+      ? email.subject
+      : `Re: ${email.subject}`;
+
+    // Show review modal
+    setReplyDraft({ email, body: finalTranscript, subject });
+  }, [stopRecording, cancelRecording, playStopSound]);
+
+  // Sync wrapper for runOnJS (async functions can cause issues)
+  const handleTouchEndWhileRecording = useCallback(() => {
+    console.log("[Triage:TouchEnd] sync wrapper called, recordingFor:", recordingForRef.current);
+    handleTouchEndWhileRecordingAsync();
+  }, [handleTouchEndWhileRecordingAsync]);
+
+  // Handle native touch end event (for stopping recording)
+  const handleNativeTouchEnd = useCallback(() => {
+    console.log("[Triage:NativeTouchEnd] touch ended");
+    handleTouchEndWhileRecording();
+  }, [handleTouchEndWhileRecording]);
+
   // On web, use native DOM events for full-frequency pointer tracking
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -1484,19 +1716,28 @@ export default function InboxScreen() {
       }
     };
 
+    const handlePointerUp = () => {
+      // Stop recording if active when pointer lifts
+      handleTouchEndWhileRecording();
+    };
+
     window.addEventListener('pointerdown', handlePointerDown, { capture: true });
     window.addEventListener('pointermove', handlePointerMove, { capture: true });
+    window.addEventListener('pointerup', handlePointerUp, { capture: true });
 
     return () => {
       window.removeEventListener('pointerdown', handlePointerDown, { capture: true });
       window.removeEventListener('pointermove', handlePointerMove, { capture: true });
+      window.removeEventListener('pointerup', handlePointerUp, { capture: true });
     };
-  }, [triageState.fingerX, triageState.startX]);
+  }, [triageState.fingerX, triageState.startX, handleTouchEndWhileRecording]);
 
   // Native: use gesture handler for touch tracking
   const logTouchDown = useCallback((x: number, y: number) => {
     console.log(`[Triage:TouchDown] absoluteX=${x}, absoluteY=${y}`);
   }, []);
+
+  // Manual gesture for tracking touches (cannot use onTouchesUp/onTouchesCancelled - causes crash)
   const trackingGesture = Gesture.Manual()
     .onTouchesDown((e) => {
       'worklet';
@@ -1671,6 +1912,7 @@ export default function InboxScreen() {
   }
 
   return (
+    <ErrorBoundary>
     <TriageContext.Provider value={triageState}>
       <GestureHandlerRootView style={styles.container}>
         {/* Header with refresh button on web */}
@@ -1740,7 +1982,10 @@ export default function InboxScreen() {
         }}
       >
         <GestureDetector gesture={trackingGesture}>
-          <Animated.View style={{ flex: 1 }}>
+          <Animated.View
+            style={{ flex: 1 }}
+            onTouchEnd={handleNativeTouchEnd}
+          >
             <FlatList
             ref={flatListRef}
             data={emails}
@@ -1859,6 +2104,7 @@ export default function InboxScreen() {
       </Modal>
       </GestureHandlerRootView>
     </TriageContext.Provider>
+    </ErrorBoundary>
   );
 }
 
@@ -1947,6 +2193,12 @@ const styles = StyleSheet.create({
   },
   emailItemTriaged: {
     opacity: 0.5,
+  },
+  emailItemRecording: {
+    minHeight: TRIAGE_CONFIG.rowHeight,
+    backgroundColor: "#FEF3C7", // Light yellow to indicate recording
+    borderLeftWidth: 4,
+    borderLeftColor: "#EF4444", // Red border
   },
   triagedContent: {
     opacity: 0.6,

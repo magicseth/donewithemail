@@ -117,6 +117,7 @@ function useDeepgramNative(): UseVoiceResult {
           bitsPerSample: 16,
           audioSource: 6, // VOICE_RECOGNITION on Android
           bufferSize: 4096,
+          wavFile: "", // Not saving to file, streaming only
         });
 
         // Set up audio data handler - this fires with each audio chunk

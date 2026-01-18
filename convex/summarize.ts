@@ -135,6 +135,45 @@ export const getSummary = internalQuery({
   },
 });
 
+// Delete all summaries for a user's emails (for debug reset)
+export const deleteAllSummariesForUser = internalMutation({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    // Get all emails for the user
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    let deleted = 0;
+    for (const email of emails) {
+      const summary = await ctx.db
+        .query("emailSummaries")
+        .withIndex("by_email", (q) => q.eq("emailId", email._id))
+        .first();
+      if (summary) {
+        await ctx.db.delete(summary._id);
+        deleted++;
+      }
+    }
+
+    return deleted;
+  },
+});
+
+// Get all external IDs for a user's emails (for resummarization)
+export const getExternalIdsForUser = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    return emails.map((e) => e.externalId);
+  },
+});
+
 // Save email summary to separate table
 export const updateEmailSummary = internalMutation({
   args: {

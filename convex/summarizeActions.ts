@@ -75,25 +75,34 @@ ${email.bodyPreview || email.bodyFull}
 
     // Call Anthropic via AI SDK with enhanced prompt
     const { text } = await generateText({
-      model: anthropic("claude-sonnet-4-5"),
-      prompt: `Analyze this email and return a JSON response with these fields.
-IMPORTANT: Write the summary addressing the user directly with "you" (e.g., "You need to reply" not "The user needs to reply").
+      model: anthropic("claude-opus-4-5-20251101"),
+      prompt: `Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
 
-1. summary: 1-2 sentence summary focused on what you need to know, written in second person ("you") shown in a scrolling list. use markdown and emojis
+CONTEXT: The sender name and subject line are ALREADY displayed above the summary in the UI. DO NOT repeat them.
+
+SUMMARY GUIDELINES:
+- Be concise but include ALL key details needed to make a decision without opening the email
+- DO NOT start with the sender name or repeat the subject - those are already visible
+- Include specific dates, amounts, deadlines, or asks
+- If it's a newsletter/marketing, say what it's promoting and if there's a deal
+- If it's a request, state exactly what's being asked and by when
+- If it's informational, state the key facts
+- Use "you" to address the user directly
+- Can use markdown formatting and emojis sparingly
+
+FIELDS:
+1. summary: Decision-ready synopsis with key details (what, when, how much, deadline). DO NOT repeat sender or subject.
+   BAD: "John from Acme wants to meet with you"
+   GOOD: "📅 Wants to meet Thursday 2pm to discuss Q2 budget (~$50k)"
+   BAD: "A newsletter about sales"
+   GOOD: "🛒 20% off sale ends Sunday - camping gear + free shipping over $50"
 2. urgencyScore: 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
-3. urgencyReason: Brief explanation of the urgency score
-4. actionRequired: One of "reply" | "action" | "fyi" | "none"
-   - "reply": You should reply to this email
-   - "action": You should do something (not reply), like review a document
-   - "fyi": Just informational, no action needed
-   - "none": No action needed (spam, automated, etc.)
-5. actionDescription: If action required, what specifically (e.g., "Schedule meeting", "Review attached document")
-6. quickReplies: If reply needed, up to 3 quick reply options as array of {label, body}:
-   - label: Short button text (max 20 chars) like "👍🏻 Sounds good!", "🔍 Let me check", "❌ Can't make it"
-   - body: Full professional reply text to send
-7. calendarEvent: If email mentions a meeting/event, extract {title, startTime, endTime, location, description}
-   - startTime/endTime should include AM/PM (e.g., "next Tuesday 2pm" not "next Tuesday 2:00")
-8. suggestedReply: If a longer custom reply seems appropriate, draft it here (optional)
+3. urgencyReason: Brief explanation
+4. actionRequired: "reply" | "action" | "fyi" | "none"
+5. actionDescription: Specific action needed if any
+6. quickReplies: If reply needed, up to 3 options as [{label, body}] - label max 20 chars, body is full reply
+7. calendarEvent: If meeting/event mentioned, extract {title, startTime, endTime, location, description}
+8. suggestedReply: Optional longer draft reply
 
 Email:
 ${emailContent}
@@ -252,25 +261,34 @@ ${bodyText}`.trim();
 
           // Call Anthropic via AI SDK with enhanced prompt
           const { text } = await generateText({
-            model: anthropic("claude-sonnet-4-20250514"),
-            prompt: `Analyze this email and return a JSON response.
-IMPORTANT: Write the summary addressing the user directly with "you" (e.g., "You need to reply" not "${userName} needs to reply").
+            model: anthropic("claude-opus-4-5-20251101"),
+            prompt: `Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
 
-1. summary: 1-2 sentence summary focused on what you need to know or do, written in second person ("you")
+CONTEXT: The sender name and subject line are ALREADY displayed above the summary in the UI. DO NOT repeat them.
+
+SUMMARY GUIDELINES:
+- Be concise but include ALL key details needed to make a decision without opening the email
+- DO NOT start with the sender name or repeat the subject - those are already visible
+- Include specific dates, amounts, deadlines, or asks
+- If it's a newsletter/marketing, say what it's promoting and if there's a deal
+- If it's a request, state exactly what's being asked and by when
+- If it's informational, state the key facts
+- Use "you" to address the user directly
+- Can use markdown formatting and emojis sparingly
+
+FIELDS:
+1. summary: Decision-ready synopsis with key details (what, when, how much, deadline). DO NOT repeat sender or subject.
+   BAD: "John from Acme wants to meet with you"
+   GOOD: "📅 Wants to meet Thursday 2pm to discuss Q2 budget (~$50k)"
+   BAD: "A newsletter about sales"
+   GOOD: "🛒 20% off sale ends Sunday - camping gear + free shipping over $50"
 2. urgencyScore: 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
-3. urgencyReason: Brief explanation of the urgency score
-4. actionRequired: One of "reply" | "action" | "fyi" | "none"
-   - "reply": You should reply to this email
-   - "action": You should do something (not reply)
-   - "fyi": Just informational
-   - "none": No action needed
-5. actionDescription: If action required, what specifically
-6. quickReplies: If reply needed, up to 3 quick reply options as array of {label, body}:
-   - label: Short button text (max 20 chars) like "Sounds good!", "Let me check"
-   - body: Full professional reply text from your perspective
-7. calendarEvent: If email mentions a meeting/event, extract {title, startTime, endTime, location, description}
-   - startTime/endTime should include AM/PM (e.g., "Tuesday 2pm" not "Tuesday 2:00")
-8. suggestedReply: If a longer custom reply seems appropriate, draft it (optional)
+3. urgencyReason: Brief explanation
+4. actionRequired: "reply" | "action" | "fyi" | "none"
+5. actionDescription: Specific action needed if any
+6. quickReplies: If reply needed, up to 3 options as [{label, body}] - label max 20 chars, body is full reply
+7. calendarEvent: If meeting/event mentioned, extract {title, startTime, endTime, location, description}
+8. suggestedReply: Optional longer draft reply
 
 Email:
 ${emailContent}
@@ -339,5 +357,46 @@ Respond with only valid JSON, no markdown or explanation.`,
     );
 
     return results;
+  },
+});
+
+// Debug action to reset and resummarize all emails for a user
+export const resetAndResummarizeAll = action({
+  args: { userEmail: v.string() },
+  handler: async (ctx, args): Promise<{ deleted: number; queued: number }> => {
+    // Get user
+    const user = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+      email: args.userEmail,
+    });
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Delete all summaries for this user's emails
+    const deleted = await ctx.runMutation(internal.summarize.deleteAllSummariesForUser, {
+      userId: user._id,
+    });
+
+    // Get all external IDs for the user's emails
+    const externalIds: string[] = await ctx.runQuery(internal.summarize.getExternalIdsForUser, {
+      userId: user._id,
+    });
+
+    // Trigger summarization in batches
+    const BATCH_SIZE = 10;
+    let queued = 0;
+
+    for (let i = 0; i < externalIds.length; i += BATCH_SIZE) {
+      const batch = externalIds.slice(i, i + BATCH_SIZE);
+      // Run summarization (don't await to avoid timeout)
+      ctx.runAction(internal.summarizeActions.summarizeByExternalIds, {
+        externalIds: batch,
+        userEmail: args.userEmail,
+      });
+      queued += batch.length;
+    }
+
+    return { deleted, queued };
   },
 });

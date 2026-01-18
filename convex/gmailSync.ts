@@ -638,9 +638,16 @@ export const fetchEmails = action({
           // Use empty string replacement to handle folds that occur mid-word/mid-email
           const unfold = (s: string) => s.replace(/\r?\n\s+/g, "").trim();
 
-          const from = unfold(getHeader("From"));
+          const rawFrom = getHeader("From");
+          const from = unfold(rawFrom);
           const subject = unfold(getHeader("Subject")) || "(No subject)";
           const date = getHeader("Date");
+
+          // Debug: log raw and processed From header
+          console.log(`[HeaderParse] msgId=${msg.id}`);
+          console.log(`[HeaderParse] rawFrom: "${rawFrom}"`);
+          console.log(`[HeaderParse] rawFrom bytes: [${[...rawFrom].map(c => c.charCodeAt(0)).join(', ')}]`);
+          console.log(`[HeaderParse] unfolded: "${from}"`);
 
           // Parse sender name and email - handle various formats
           let senderName = "";
@@ -651,11 +658,14 @@ export const fetchEmails = action({
             const fromMatch = from.match(
               /(?:"?([^"<]*)"?\s*)?<?([^\s<>]+@[^\s<>]+)>?/
             );
+            console.log(`[HeaderParse] regex match: ${JSON.stringify(fromMatch)}`);
             if (fromMatch) {
               senderName = fromMatch[1]?.trim() || "";
               senderEmail = fromMatch[2] || from;
+              console.log(`[HeaderParse] parsed name="${senderName}", email="${senderEmail}"`);
             } else {
               senderEmail = from;
+              console.log(`[HeaderParse] no match, using full from as email: "${senderEmail}"`);
             }
             // If name is empty but we have email, use email as name
             if (!senderName) {
