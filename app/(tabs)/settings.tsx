@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/authContext";
-import { useQuery, useAction } from "convex/react";
+import { useQuery, useAction, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
 export default function SettingsScreen() {
@@ -20,14 +20,100 @@ export default function SettingsScreen() {
   const [autoProcess, setAutoProcess] = useState(true);
   const [urgencyThreshold, setUrgencyThreshold] = useState(80);
   const [isResummarizing, setIsResummarizing] = useState(false);
+  const [isSendingTestNotification, setIsSendingTestNotification] = useState(false);
 
   const resetAndResummarize = useAction(api.summarizeActions.resetAndResummarizeAll);
+  const sendTestNotification = useMutation(api.notifications.sendTestNotificationWithAvatar);
+  const sendTestCommunicationNotification = useMutation(api.notifications.sendTestCommunicationNotification);
+  const resetAllToUntriaged = useMutation(api.emails.resetAllToUntriaged);
+  const [isResettingTriage, setIsResettingTriage] = useState(false);
+  const [isSendingCommNotification, setIsSendingCommNotification] = useState(false);
 
   // Check if Gmail is actually connected (has tokens stored)
   const isGmailConnected = useQuery(
     api.gmailOAuth.hasGmailConnected,
     user?.email ? { email: user.email } : "skip"
   );
+
+  const handleResetTriage = async () => {
+    if (!user?.email) return;
+
+    setIsResettingTriage(true);
+    try {
+      const result = await resetAllToUntriaged({ userEmail: user.email });
+      const message = `Reset ${result.reset} emails to untriaged`;
+      if (Platform.OS === "web") {
+        window.alert(message);
+      } else {
+        Alert.alert("Triage Reset", message);
+      }
+    } catch (e) {
+      console.error("Reset triage error:", e);
+      const errorMsg = e instanceof Error ? e.message : "Unknown error";
+      if (Platform.OS === "web") {
+        window.alert(`Error: ${errorMsg}`);
+      } else {
+        Alert.alert("Error", errorMsg);
+      }
+    } finally {
+      setIsResettingTriage(false);
+    }
+  };
+
+  const handleTestNotification = async (testContactEmail?: string) => {
+    if (!user?.email) return;
+
+    setIsSendingTestNotification(true);
+    try {
+      const result = await sendTestNotification({
+        userEmail: user.email,
+        testContactEmail,
+      });
+      const message = `Test notification sent!\nContact: ${result.contactName}\nAvatar URL: ${result.avatarUrl.substring(0, 80)}...`;
+      if (Platform.OS === "web") {
+        window.alert(message);
+      } else {
+        Alert.alert("Test Notification Sent", message);
+      }
+    } catch (e) {
+      console.error("Test notification error:", e);
+      const errorMsg = e instanceof Error ? e.message : "Unknown error";
+      if (Platform.OS === "web") {
+        window.alert(`Error: ${errorMsg}`);
+      } else {
+        Alert.alert("Error", errorMsg);
+      }
+    } finally {
+      setIsSendingTestNotification(false);
+    }
+  };
+
+  const handleTestCommunicationNotification = async () => {
+    if (!user?.email) return;
+
+    setIsSendingCommNotification(true);
+    try {
+      const result = await sendTestCommunicationNotification({
+        userEmail: user.email,
+      });
+      const message = `Communication notification sent!\nStyle: ${result.style}\nContact: ${result.contactName}`;
+      if (Platform.OS === "web") {
+        window.alert(message);
+      } else {
+        Alert.alert("Communication Notification Sent", message);
+      }
+    } catch (e) {
+      console.error("Communication notification error:", e);
+      const errorMsg = e instanceof Error ? e.message : "Unknown error";
+      if (Platform.OS === "web") {
+        window.alert(`Error: ${errorMsg}`);
+      } else {
+        Alert.alert("Error", errorMsg);
+      }
+    } finally {
+      setIsSendingCommNotification(false);
+    }
+  };
 
   const handleResummarize = async () => {
     if (!user?.email) return;
@@ -282,6 +368,26 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.aboutRow}
+            onPress={handleResetTriage}
+            disabled={isResettingTriage}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Reset All Emails to Untriaged</Text>
+              <Text style={styles.settingDescription}>
+                Mark all emails as untriaged so they appear in inbox
+              </Text>
+            </View>
+            {isResettingTriage ? (
+              <ActivityIndicator size="small" color="#6366F1" />
+            ) : (
+              <Text style={styles.aboutArrow}>→</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity
+            style={styles.aboutRow}
             onPress={handleResummarize}
             disabled={isResummarizing}
           >
@@ -292,6 +398,66 @@ export default function SettingsScreen() {
               </Text>
             </View>
             {isResummarizing ? (
+              <ActivityIndicator size="small" color="#6366F1" />
+            ) : (
+              <Text style={styles.aboutArrow}>→</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity
+            style={styles.aboutRow}
+            onPress={() => handleTestNotification()}
+            disabled={isSendingTestNotification}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Test Notification (Generic)</Text>
+              <Text style={styles.settingDescription}>
+                Send a test notification with a generated avatar
+              </Text>
+            </View>
+            {isSendingTestNotification ? (
+              <ActivityIndicator size="small" color="#6366F1" />
+            ) : (
+              <Text style={styles.aboutArrow}>→</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity
+            style={styles.aboutRow}
+            onPress={() => handleTestNotification("seth@magicseth.com")}
+            disabled={isSendingTestNotification}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Test Notification (seth@magicseth.com)</Text>
+              <Text style={styles.settingDescription}>
+                Send a test notification using a real contact's avatar
+              </Text>
+            </View>
+            {isSendingTestNotification ? (
+              <ActivityIndicator size="small" color="#6366F1" />
+            ) : (
+              <Text style={styles.aboutArrow}>→</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity
+            style={styles.aboutRow}
+            onPress={handleTestCommunicationNotification}
+            disabled={isSendingCommNotification}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Test Communication Notification</Text>
+              <Text style={styles.settingDescription}>
+                Test circular avatar on left (iOS 15+ feature)
+              </Text>
+            </View>
+            {isSendingCommNotification ? (
               <ActivityIndicator size="small" color="#6366F1" />
             ) : (
               <Text style={styles.aboutArrow}>→</Text>

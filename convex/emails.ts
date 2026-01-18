@@ -781,3 +781,44 @@ export const searchEmails = query({
   },
 });
 
+/**
+ * DEBUG: Reset all emails to untriaged state
+ */
+export const resetAllToUntriaged = mutation({
+  args: {
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Find user by email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Get all triaged emails for this user
+    const triagedEmails = await ctx.db
+      .query("emails")
+      .withIndex("by_user_untriaged", (q) =>
+        q.eq("userId", user._id).eq("isTriaged", true)
+      )
+      .collect();
+
+    // Reset each email
+    let count = 0;
+    for (const email of triagedEmails) {
+      await ctx.db.patch(email._id, {
+        isTriaged: false,
+        triageAction: undefined,
+        triagedAt: undefined,
+      });
+      count++;
+    }
+
+    return { reset: count };
+  },
+});
+

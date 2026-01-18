@@ -2,6 +2,21 @@ import { v } from "convex/values";
 import { internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
+// Generate fallback avatar URL from name/email using UI Avatars service
+function getFallbackAvatarUrl(name: string | undefined, email: string): string {
+  const displayName = name || email.split("@")[0];
+  const encoded = encodeURIComponent(displayName);
+  const colors = ["6366F1", "8B5CF6", "EC4899", "F59E0B", "10B981", "3B82F6", "EF4444"];
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) {
+    hash = ((hash << 5) - hash) + email.charCodeAt(i);
+    hash = hash & hash;
+  }
+  const colorIndex = Math.abs(hash) % colors.length;
+  const bgColor = colors[colorIndex];
+  return `https://ui-avatars.com/api/?name=${encoded}&background=${bgColor}&color=fff&size=200&bold=true`;
+}
+
 // Get details of the most urgent email from a list of external IDs
 export const getMostUrgentEmailDetails = internalQuery({
   args: {
@@ -39,13 +54,33 @@ export const getMostUrgentEmailDetails = internalQuery({
       // Get sender info
       const contact = await ctx.db.get(email.from);
 
+      // Get fresh avatar URL - Convex storage URLs expire, so regenerate from storageId
+      let avatarUrl: string | undefined;
+      if (contact?.avatarStorageId) {
+        // Get fresh URL from storage (these are signed URLs that expire)
+        avatarUrl = await ctx.storage.getUrl(contact.avatarStorageId) ?? undefined;
+        console.log(`[EmailWorkflowHelpers] Got fresh storage URL for ${contact.email}: ${avatarUrl ? "success" : "failed"}`);
+      }
+      // Fallback to cached URL if no storage ID
+      if (!avatarUrl && contact?.avatarUrl) {
+        avatarUrl = contact.avatarUrl;
+        console.log(`[EmailWorkflowHelpers] Using cached avatarUrl for ${contact.email}: ${avatarUrl}`);
+      }
+      // Final fallback to generated avatar
+      if (!avatarUrl && contact?.email) {
+        avatarUrl = getFallbackAvatarUrl(contact.name, contact.email);
+        console.log(`[EmailWorkflowHelpers] Generated fallback avatar for ${contact.email}: ${avatarUrl}`);
+      }
+
+      console.log(`[EmailWorkflowHelpers] Contact for email "${email.subject}": name=${contact?.name}, email=${contact?.email}, storageId=${contact?.avatarStorageId || "none"}, finalAvatarUrl=${avatarUrl || "none"}`);
+
       // Track the most urgent
       if (!mostUrgent || summary.urgencyScore > mostUrgent.urgencyScore) {
         mostUrgent = {
           emailId: email._id,
           subject: email.subject,
           senderName: contact?.name || contact?.email,
-          senderAvatarUrl: contact?.avatarUrl,
+          senderAvatarUrl: avatarUrl,
           urgencyScore: summary.urgencyScore,
         };
       }

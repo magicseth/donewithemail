@@ -103,6 +103,9 @@ export const sendHighPriorityNotification = internalMutation({
     urgencyScore: v.number(),
   },
   handler: async (ctx, args) => {
+    // Debug: Log avatar URL being sent
+    console.log(`[Notification] Sending high priority notification, avatar URL: ${args.mostUrgentSenderAvatar || "none"}`);
+
     // Build notification based on urgency and count
     let title: string;
     let body: string | undefined;
@@ -117,7 +120,7 @@ export const sendHighPriorityNotification = internalMutation({
         : undefined;
     }
 
-    await pushNotifications.sendPushNotification(ctx, {
+    const notificationPayload = {
       userId: args.userId,
       notification: {
         title,
@@ -130,8 +133,166 @@ export const sendHighPriorityNotification = internalMutation({
           highPriorityCount: args.highPriorityCount,
           emailId: args.mostUrgentEmailId,
           senderAvatar: args.mostUrgentSenderAvatar,
+          senderName: args.mostUrgentSender,
         },
       },
-    });
+    };
+
+    console.log(`[Notification] Full payload:`, JSON.stringify(notificationPayload, null, 2));
+
+    await pushNotifications.sendPushNotification(ctx, notificationPayload);
+  },
+});
+
+// DEBUG: Send a test notification with avatar to verify the pipeline
+export const sendTestNotificationWithAvatar = mutation({
+  args: {
+    userEmail: v.string(),
+    testContactEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Find user by email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    let avatarUrl: string;
+    let contactName = "Test User";
+
+    // If a test contact email is provided, look up their avatar
+    if (args.testContactEmail) {
+      const contact = await ctx.db
+        .query("contacts")
+        .withIndex("by_user_email", (q) =>
+          q.eq("userId", user._id).eq("email", args.testContactEmail!)
+        )
+        .first();
+
+      if (!contact) {
+        throw new Error(`Contact not found: ${args.testContactEmail}`);
+      }
+
+      contactName = contact.name || contact.email;
+
+      // Get fresh URL from storage if available
+      if (contact.avatarStorageId) {
+        const freshUrl = await ctx.storage.getUrl(contact.avatarStorageId);
+        if (freshUrl) {
+          avatarUrl = freshUrl;
+          console.log(`[Notification] Using fresh storage URL for ${contact.email}: ${avatarUrl}`);
+        } else {
+          throw new Error(`Failed to get storage URL for contact: ${args.testContactEmail}`);
+        }
+      } else if (contact.avatarUrl) {
+        avatarUrl = contact.avatarUrl;
+        console.log(`[Notification] Using cached avatarUrl for ${contact.email}: ${avatarUrl}`);
+      } else {
+        throw new Error(`Contact has no avatar: ${args.testContactEmail}`);
+      }
+    } else {
+      // Use a well-known public avatar URL for testing
+      avatarUrl = "https://ui-avatars.com/api/?name=Test+User&background=6366F1&color=fff&size=200&bold=true";
+    }
+
+    const notificationPayload = {
+      userId: user._id,
+      notification: {
+        title: `Test: ${contactName}`,
+        body: "This is a test notification with an avatar",
+        mutableContent: true,
+        data: {
+          type: "test",
+          senderAvatar: avatarUrl,
+          senderName: contactName,
+        },
+      },
+    };
+
+    console.log(`[Notification] Sending test notification with avatar:`, JSON.stringify(notificationPayload, null, 2));
+
+    await pushNotifications.sendPushNotification(ctx, notificationPayload);
+
+    return { success: true, avatarUrl, contactName };
+  },
+});
+
+// DEBUG: Send a test notification using Communication style (circular avatar on left)
+export const sendTestCommunicationNotification = mutation({
+  args: {
+    userEmail: v.string(),
+    testContactEmail: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Find user by email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    let avatarUrl: string;
+    let contactName = "Test User";
+
+    // If a test contact email is provided, look up their avatar
+    if (args.testContactEmail) {
+      const contact = await ctx.db
+        .query("contacts")
+        .withIndex("by_user_email", (q) =>
+          q.eq("userId", user._id).eq("email", args.testContactEmail!)
+        )
+        .first();
+
+      if (!contact) {
+        throw new Error(`Contact not found: ${args.testContactEmail}`);
+      }
+
+      contactName = contact.name || contact.email;
+
+      // Get fresh URL from storage if available
+      if (contact.avatarStorageId) {
+        const freshUrl = await ctx.storage.getUrl(contact.avatarStorageId);
+        if (freshUrl) {
+          avatarUrl = freshUrl;
+        } else {
+          throw new Error(`Failed to get storage URL for contact: ${args.testContactEmail}`);
+        }
+      } else if (contact.avatarUrl) {
+        avatarUrl = contact.avatarUrl;
+      } else {
+        throw new Error(`Contact has no avatar: ${args.testContactEmail}`);
+      }
+    } else {
+      // Use a well-known public avatar URL for testing
+      avatarUrl = "https://ui-avatars.com/api/?name=Test+User&background=6366F1&color=fff&size=200&bold=true";
+    }
+
+    const notificationPayload = {
+      userId: user._id,
+      notification: {
+        title: `Comm: ${contactName}`,
+        body: "Testing Communication Notification (circular avatar)",
+        mutableContent: true,
+        data: {
+          type: "test_communication",
+          senderAvatar: avatarUrl,
+          senderName: contactName,
+          avatarStyle: "communication",  // This triggers the communication path
+        },
+      },
+    };
+
+    console.log(`[Notification] Sending COMMUNICATION test:`, JSON.stringify(notificationPayload, null, 2));
+
+    await pushNotifications.sendPushNotification(ctx, notificationPayload);
+
+    return { success: true, avatarUrl, contactName, style: "communication" };
   },
 });

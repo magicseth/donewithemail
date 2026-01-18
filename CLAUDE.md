@@ -78,6 +78,25 @@ Gmail API → emailSync.ts → emails table → Real-time Convex queries → UI
 - `triageAction: "reply_needed"` → Appears in TODOs
 - `triageAction: "delegated"` → Delegated
 
+### Triage Ball System
+
+The inbox uses a ball-and-target triage UI. See detailed documentation at the top of `app/(tabs)/index.tsx`.
+
+**Quick summary:**
+- Each email row has a ball at the top
+- Only the "active" row's ball moves with finger drag
+- Targets (Done, Reply, Mic, Unsub) are fixed at top of screen
+- Dragging ball to a target triggers that action
+- `lastTriggeredTarget` prevents cascade triggers when ball resets to center
+
+**Key state:**
+- `activeIndex` - which row is being triaged
+- `ballX` - computed from finger position
+- `lastTriggeredTarget` - prevents re-triggering same target
+- `isProcessing` - lock during handler execution
+
+**Adding a new target:** Add entry to `TARGETS` array, add handler case if needed.
+
 ## Key Patterns
 
 ### Convex Workflows vs Actions

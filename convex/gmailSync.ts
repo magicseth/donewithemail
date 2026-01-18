@@ -112,6 +112,22 @@ export const getCachedEmails = internalQuery({
 });
 
 // Internal mutation to upsert contact and return ID
+// Generate fallback avatar URL from name/email using UI Avatars service
+function getFallbackAvatarUrl(name: string | undefined, email: string): string {
+  const displayName = name || email.split("@")[0];
+  const encoded = encodeURIComponent(displayName);
+  // Generate a consistent background color based on email
+  const colors = ["6366F1", "8B5CF6", "EC4899", "F59E0B", "10B981", "3B82F6", "EF4444"];
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) {
+    hash = ((hash << 5) - hash) + email.charCodeAt(i);
+    hash = hash & hash;
+  }
+  const colorIndex = Math.abs(hash) % colors.length;
+  const bgColor = colors[colorIndex];
+  return `https://ui-avatars.com/api/?name=${encoded}&background=${bgColor}&color=fff&size=200&bold=true`;
+}
+
 export const upsertContact = internalMutation({
   args: {
     userId: v.id("users"),
@@ -127,10 +143,14 @@ export const upsertContact = internalMutation({
       )
       .first();
 
-    // Get the URL for the stored avatar
+    // Get the URL for the stored avatar, or generate a fallback
     let avatarUrl: string | undefined;
     if (args.avatarStorageId) {
       avatarUrl = await ctx.storage.getUrl(args.avatarStorageId) ?? undefined;
+    }
+    // Always ensure we have an avatar URL (fallback to generated initials)
+    if (!avatarUrl) {
+      avatarUrl = getFallbackAvatarUrl(args.name, args.email);
     }
 
     if (existing) {
@@ -142,13 +162,16 @@ export const upsertContact = internalMutation({
       if (args.name && args.name !== existing.name) {
         updates.name = args.name;
       }
-      // Only update avatar if we have a new one and don't have a cached one
+      // Update avatar if we have a new storage one, OR if existing doesn't have any avatar
       if (args.avatarStorageId && !existing.avatarStorageId) {
         updates.avatarStorageId = args.avatarStorageId;
         updates.avatarUrl = avatarUrl;
+      } else if (!existing.avatarUrl) {
+        // Backfill fallback avatar if missing
+        updates.avatarUrl = avatarUrl;
       }
       await ctx.db.patch(existing._id, updates);
-      return { contactId: existing._id, hasAvatar: !!existing.avatarStorageId };
+      return { contactId: existing._id, hasAvatar: !!existing.avatarStorageId || !!existing.avatarUrl };
     }
 
     const contactId = await ctx.db.insert("contacts", {
@@ -160,7 +183,7 @@ export const upsertContact = internalMutation({
       emailCount: 1,
       lastEmailAt: Date.now(),
     });
-    return { contactId, hasAvatar: false };
+    return { contactId, hasAvatar: !!avatarUrl };
   },
 });
 

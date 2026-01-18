@@ -148,6 +148,103 @@ const errorBoundaryStyles = StyleSheet.create({
   },
 });
 
+// ============================================================================
+// TRIAGE SYSTEM DOCUMENTATION
+// ============================================================================
+//
+// OVERVIEW
+// --------
+// The triage system allows users to quickly process emails by dragging a ball
+// toward target buttons. Each email row has its own ball at the top. Only the
+// "active" row's ball moves with the user's finger; other rows show static gray balls.
+//
+// VISUAL LAYOUT
+// -------------
+//
+//   ┌─────────────────────────────────────────────────────────────────┐
+//   │  [Unsub]      [Done]       [Reply]      [Mic]    ← Fixed targets│
+//   │   -100          0           +80         +160     ← X positions  │
+//   ├─────────────────────────────────────────────────────────────────┤
+//   │  ●──────────────────────────────────────────────  ← Active row  │
+//   │  (ball moves left/right with finger drag)          ball moves   │
+//   │                                                                 │
+//   │  From: Alice                                                    │
+//   │  Subject: Meeting tomorrow                                      │
+//   │  Preview text...                                                │
+//   ├─────────────────────────────────────────────────────────────────┤
+//   │  ○                                               ← Next row     │
+//   │  (static gray ball, centered)                      ball static  │
+//   │                                                                 │
+//   │  From: Bob                                                      │
+//   │  ...                                                            │
+//   └─────────────────────────────────────────────────────────────────┘
+//
+// COMPONENTS
+// ----------
+// 1. TriageOverlay - Renders fixed target buttons at top of screen (Done, Reply, etc.)
+// 2. RowBall - Rendered inside each email row, shows ball state for that row
+// 3. AnimatedRowWrapper - Wraps each row, handles background highlighting
+// 4. TriageContext - React context providing shared triage state to all components
+//
+// STATE (TriageState)
+// -------------------
+// Primary state (set by gesture handlers):
+//   - scrollY: Current scroll position of the list
+//   - fingerX: Current X position of user's finger
+//   - startX: X position where current drag started
+//   - activeIndex: Which row (0-indexed) is currently being triaged
+//   - isProcessing: Lock to prevent multiple simultaneous triggers
+//   - lastTriggeredTarget: Which target was last triggered (prevents re-trigger)
+//
+// Derived/computed state:
+//   - topRowIndex: Same as activeIndex (which row is "active")
+//   - ballX: Computed ball X position = CENTER_X + (fingerX - startX) * multiplier
+//   - ballY: Computed ball Y position based on activeIndex and scroll
+//   - proximities: Map of target ID -> proximity value (0-1) for visual feedback
+//   - activeTarget: Which target the ball is currently touching (or null)
+//   - closestTarget: Nearest target with proximity > 0 (for ball color)
+//
+// TRIGGER FLOW
+// ------------
+// 1. User drags finger horizontally
+// 2. fingerX updates, causing ballX to update (for active row only)
+// 3. activeTarget computed based on ball position vs target positions
+// 4. When activeTarget !== null AND activeTarget !== lastTriggeredTarget:
+//    a. Set isProcessing = true (prevent cascade)
+//    b. Set lastTriggeredTarget = activeTarget (prevent re-trigger)
+//    c. Call handleTargetActivation(rowIndex, targetId)
+// 5. Handler processes the action (done, reply, mic, unsubscribe)
+// 6. Handler resets ball to center (startX = fingerX)
+// 7. Handler sets lastTriggeredTarget = "done" (ball lands at center = done target)
+// 8. Handler sets isProcessing = false
+// 9. User must move ball away from "done" target before triggering again
+//
+// TARGET ACTIONS
+// --------------
+// - "done": Mark email as triaged (done), move to next row
+// - "reply": Mark email as reply_needed, move to next row
+// - "mic": Start voice recording for this email (ball stays at mic)
+// - "unsubscribe": Attempt to unsubscribe, mark as done, move to next row
+//
+// PREVENTING CASCADE TRIGGERS
+// ---------------------------
+// Problem: After triggering "reply", ball resets to center where "done" is.
+// Without protection, "done" would immediately trigger.
+//
+// Solution: lastTriggeredTarget tracks what was just triggered.
+// - After any action, we set lastTriggeredTarget = "done" (ball's new position)
+// - Trigger only fires when activeTarget !== lastTriggeredTarget
+// - lastTriggeredTarget clears when ball leaves all targets (activeTarget = null)
+// - This allows user to move ball away and come back to trigger again
+//
+// ADDING A NEW TARGET
+// -------------------
+// 1. Add entry to TARGETS array with: id, position, radii, colors, icon, label
+// 2. Add handler case in handleTargetActivation() if needed
+// 3. That's it! The system automatically handles rendering and detection.
+//
+// ============================================================================
+
 // Triage UI configuration - all positioning driven from these values
 const TRIAGE_CONFIG = {
   // Estimated height of each email row
@@ -267,6 +364,8 @@ interface TriageState {
   isProcessing: SharedValue<boolean>;
   // Require ball to return to center before next activation
   needsReset: SharedValue<boolean>;
+  // Track what target was last triggered (to prevent re-triggering same target)
+  lastTriggeredTarget: SharedValue<string | null>;
   // Computed: which row index is at the triage line (0-indexed)
   topRowIndex: { readonly value: number };
   // Computed: ball's X position
@@ -306,6 +405,9 @@ function useCreateTriageState(): TriageState {
 
   // Require ball to return to center before next activation
   const needsReset = useSharedValue(false);
+
+  // Track what target was last triggered (to prevent re-triggering same target)
+  const lastTriggeredTarget = useSharedValue<string | null>(null);
 
   // topRowIndex is now just the activeIndex (not derived from scroll)
   const topRowIndex = useDerivedValue(() => activeIndex.value);
@@ -399,6 +501,7 @@ function useCreateTriageState(): TriageState {
     activeIndex,
     isProcessing,
     needsReset,
+    lastTriggeredTarget,
     topRowIndex,
     ballX,
     ballY,
@@ -727,10 +830,8 @@ const TargetView = React.memo(function TargetView({ target }: TargetViewProps) {
 });
 
 const TriageOverlay = React.memo(function TriageOverlay() {
-  const triage = useTriageState();
   const { rowHeight, headerOffset, listTopPadding, ballSize } = TRIAGE_CONFIG;
   const overlayRef = React.useRef<any>(null);
-  const ballRef = React.useRef<any>(null);
 
   // Log config on mount
   React.useEffect(() => {
@@ -746,67 +847,12 @@ const TriageOverlay = React.memo(function TriageOverlay() {
     }
   }, []);
 
-  // Log ball absolute position
-  const handleBallLayout = React.useCallback((event: any) => {
-    const { x, y, width, height } = event.nativeEvent.layout;
-    console.log(`[Triage:BallLayout] x=${x.toFixed(0)}, y=${y.toFixed(0)}, width=${width.toFixed(0)}, height=${height.toFixed(0)}`);
-
-    if (ballRef.current) {
-      ballRef.current.measureInWindow((absX: number, absY: number, absW: number, absH: number) => {
-        console.log(`[Triage:BallAbsolute] screenX=${absX?.toFixed(0)}, screenY=${absY?.toFixed(0)}, width=${absW?.toFixed(0)}`);
-      });
-    }
-  }, []);
-
-  // Ball position and scale
-  const ballStyle = useAnimatedStyle(() => {
-    const halfBall = ballSize / 2;
-
-    // Calculate ball Y to track the top of the active row
-    const activeIdx = triage.activeIndex.value;
-    const rowContentY = listTopPadding + (activeIdx * rowHeight);
-    const ballY = headerOffset + rowContentY - triage.scrollY.value;
-
-    // Check if any target is near (proximity > 0.5)
-    const closest = triage.closestTarget.value;
-    const isNear = closest !== null && closest.proximity > 0.5;
-
-    return {
-      transform: [
-        { translateX: triage.ballX.value - halfBall },
-        { translateY: ballY - halfBall },
-        { scale: isNear ? 1.2 : 1 },
-      ],
-    };
-  });
-
-  // Ball color based on closest target
-  const ballColorStyle = useAnimatedStyle(() => {
-    const closest = triage.closestTarget.value;
-
-    if (closest && closest.proximity > 0.5) {
-      // Find the target and use its color
-      const target = TARGETS.find(t => t.id === closest.id);
-      if (target) {
-        return { backgroundColor: target.color };
-      }
-    }
-    return { backgroundColor: "#9CA3AF" }; // Neutral grey
-  });
-
   return (
     <View ref={overlayRef} style={triageStyles.overlay} pointerEvents="none" onLayout={handleOverlayLayout} collapsable={false}>
-      {/* Render all targets dynamically */}
+      {/* Render all targets dynamically - ball is now rendered in each row */}
       {TARGETS.map(target => (
         <TargetView key={target.id} target={target} />
       ))}
-
-      {/* Ball - wrap in View for measurement */}
-      <View ref={ballRef} style={triageStyles.ballWrapper} onLayout={handleBallLayout} collapsable={false}>
-        <Animated.View style={[triageStyles.ball, ballStyle]}>
-          <Animated.View style={[triageStyles.ballInner, ballColorStyle]} />
-        </Animated.View>
-      </View>
     </View>
   );
 });
@@ -815,9 +861,6 @@ const triageStyles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1000,
-  },
-  ballWrapper: {
-    ...StyleSheet.absoluteFillObject,
   },
   targetContainer: {
     position: "absolute",
@@ -846,10 +889,77 @@ const triageStyles = StyleSheet.create({
     fontWeight: "700",
     color: "#fff",
   },
-  ball: {
+});
+
+// ============================================================================
+// ANIMATED ROW WRAPPER - Handles triage highlighting with no re-renders
+// ============================================================================
+
+// RowBall - Rendered inside each row, only moves when this row is active
+const RowBall = React.memo(function RowBall({ index }: { index: number }) {
+  const triage = useTriageState();
+  const { ballSize } = TRIAGE_CONFIG;
+  const halfBall = ballSize / 2;
+
+  // Ball position - only moves if this row is the active row
+  const ballPositionStyle = useAnimatedStyle(() => {
+    const isActive = triage.activeIndex.value === index;
+    const ballX = isActive ? triage.ballX.value : CENTER_X;
+
+    return {
+      transform: [
+        { translateX: ballX - halfBall },
+      ],
+    };
+  });
+
+  // Ball color - changes based on proximity to targets (only when active)
+  const ballColorStyle = useAnimatedStyle(() => {
+    const isActive = triage.activeIndex.value === index;
+
+    if (!isActive) {
+      return { backgroundColor: "#D1D5DB" }; // Grey for inactive rows
+    }
+
+    const closest = triage.closestTarget.value;
+    if (closest && closest.proximity > 0.5) {
+      const target = TARGETS.find(t => t.id === closest.id);
+      if (target) {
+        return { backgroundColor: target.color };
+      }
+    }
+    return { backgroundColor: "#9CA3AF" }; // Neutral grey when active but not near target
+  });
+
+  // Scale up when near a target (only for active row)
+  const ballScaleStyle = useAnimatedStyle(() => {
+    const isActive = triage.activeIndex.value === index;
+    if (!isActive) {
+      return { transform: [{ scale: 0.8 }] }; // Smaller for inactive rows
+    }
+
+    const closest = triage.closestTarget.value;
+    const isNear = closest !== null && closest.proximity > 0.5;
+    return { transform: [{ scale: isNear ? 1.2 : 1 }] };
+  });
+
+  return (
+    <Animated.View style={[rowBallStyles.ballContainer, ballPositionStyle]}>
+      <Animated.View style={[rowBallStyles.ball, ballScaleStyle]}>
+        <Animated.View style={[rowBallStyles.ballInner, ballColorStyle]} />
+      </Animated.View>
+    </Animated.View>
+  );
+});
+
+const rowBallStyles = StyleSheet.create({
+  ballContainer: {
     position: "absolute",
+    top: 4,
     left: 0,
-    top: 0,
+    zIndex: 100,
+  },
+  ball: {
     width: TRIAGE_CONFIG.ballSize,
     height: TRIAGE_CONFIG.ballSize,
     borderRadius: TRIAGE_CONFIG.ballSize / 2,
@@ -857,10 +967,10 @@ const triageStyles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 6,
   },
   ballInner: {
     width: TRIAGE_CONFIG.ballSize - 8,
@@ -868,10 +978,6 @@ const triageStyles = StyleSheet.create({
     borderRadius: (TRIAGE_CONFIG.ballSize - 8) / 2,
   },
 });
-
-// ============================================================================
-// ANIMATED ROW WRAPPER - Handles triage highlighting with no re-renders
-// ============================================================================
 
 interface AnimatedRowWrapperProps {
   index: number;
@@ -912,7 +1018,8 @@ const AnimatedRowWrapper = React.memo(function AnimatedRowWrapper({ index, child
   });
 
   return (
-    <Animated.View style={rowStyle}>
+    <Animated.View style={[rowStyle, { position: "relative" }]}>
+      <RowBall index={index} />
       {children}
     </Animated.View>
   );
@@ -1414,16 +1521,21 @@ export default function InboxScreen() {
         triageInProgressRef.current.add(email._id);
         setTriagedEmails(prev => new Map(prev).set(email._id, "done"));
         triageEmail({ emailId: email._id as Id<"emails">, action: "done" });
+        // Move to next row since we triaged this one
+        triageState.activeIndex.value = triageState.activeIndex.value + 1;
       }
 
-      // Reset ball to center
+      // Reset ball to center - set lastTriggeredTarget to "done" since ball lands at center
+      // where the "done" target is, preventing immediate re-trigger
       triageState.startX.value = triageState.fingerX.value;
+      triageState.lastTriggeredTarget.value = "done";
       triageState.isProcessing.value = false;
       return;
     }
 
     // Check if already triaged
     if (triageInProgressRef.current.has(email._id) || triagedEmails.has(email._id)) {
+      triageState.lastTriggeredTarget.value = "done"; // Ball at center = done target
       triageState.isProcessing.value = false;
       return;
     }
@@ -1453,7 +1565,9 @@ export default function InboxScreen() {
     // This makes delta = 0, so ballX = CENTER_X
     triageState.startX.value = triageState.fingerX.value;
 
-    // Clear processing lock (needsReset stays true until ball returns to center)
+    // Set lastTriggeredTarget to "done" since ball lands at center where "done" target is
+    // This prevents immediately triggering "done" after any other action
+    triageState.lastTriggeredTarget.value = "done";
     triageState.isProcessing.value = false;
 
     try {
@@ -1500,10 +1614,6 @@ export default function InboxScreen() {
   );
 
   // Logging helpers for worklets
-  const logReset = useCallback((dist: number) => {
-    console.log(`[Triage:Reset] Ball returned to center, distFromCenter=${dist.toFixed(0)}`);
-    resetMinDistances(); // Reset tracking for next gesture
-  }, []);
   const logActiveTarget = useCallback((from: string | null, to: string | null, isProcessing: boolean, needsReset: boolean) => {
     console.log(`[Triage:ActiveTarget] changed from ${from ?? 'null'} to ${to}, isProcessing=${isProcessing}, needsReset=${needsReset}`);
   }, []);
@@ -1521,31 +1631,13 @@ export default function InboxScreen() {
     console.log(`[Triage:Trigger] Target: expectedCenterX=${targetX}, distance=${Math.abs(ballX - targetX).toFixed(0)}`);
   }, []);
 
-  // Watch for ball returning to center - clear the reset lock
-  useAnimatedReaction(
-    () => ({
-      ballX: triageState.ballX.value,
-      activeTarget: triageState.activeTarget.value,
-    }),
-    (current) => {
-      // If we need a reset and ball is back near center AND not at any target, allow next activation
-      // The "not at any target" check is critical because the "done" target is at center (position 0)
-      if (triageState.needsReset.value && current.activeTarget === null) {
-        const distFromCenter = Math.abs(current.ballX - CENTER_X);
-        if (distFromCenter < 30) {
-          runOnJS(logReset)(distFromCenter);
-          triageState.needsReset.value = false;
-        }
-      }
-    }
-  );
-
   // Watch for ball activation and trigger triage
   useAnimatedReaction(
     () => ({
       activeTarget: triageState.activeTarget.value,
       isProcessing: triageState.isProcessing.value,
       needsReset: triageState.needsReset.value,
+      lastTriggeredTarget: triageState.lastTriggeredTarget.value,
       topRowIndex: triageState.topRowIndex.value,
       ballX: triageState.ballX.value,
       scrollY: triageState.scrollY.value,
@@ -1556,21 +1648,24 @@ export default function InboxScreen() {
         runOnJS(logActiveTarget)(previous?.activeTarget ?? null, current.activeTarget, current.isProcessing, current.needsReset);
       }
 
+      // Clear lastTriggeredTarget when ball leaves a target (allows re-triggering after moving away)
+      if (current.activeTarget === null && current.lastTriggeredTarget !== null) {
+        triageState.lastTriggeredTarget.value = null;
+      }
+
       // Trigger when:
       // - Ball is at a target (activeTarget !== null)
       // - Not already processing
-      // - Ball has returned to center since last triage (needsReset is false)
-      // - This is a new activation (different target or wasn't at a target before)
+      // - Not the same target we just triggered (prevents double-trigger)
       if (
         current.activeTarget !== null &&
         !current.isProcessing &&
-        !current.needsReset &&
-        (!previous || previous.activeTarget !== current.activeTarget)
+        current.activeTarget !== current.lastTriggeredTarget
       ) {
         runOnJS(logTrigger)(current.activeTarget, current.topRowIndex, current.ballX, current.scrollY);
         // Set locks immediately in worklet to prevent cascade
         triageState.isProcessing.value = true;
-        triageState.needsReset.value = true;
+        triageState.lastTriggeredTarget.value = current.activeTarget;
         runOnJS(handleTargetActivation)(current.topRowIndex, current.activeTarget);
       }
     }
