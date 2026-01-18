@@ -56,10 +56,88 @@ const TRIAGE_CONFIG = {
   ballSize: 32,
   // How much the ball moves relative to finger movement
   ballTravelMultiplier: 1.5,
-  // Hit zone boundaries (distance from center where activation triggers)
-  hitZoneStart: 80,  // Ball enters "near" zone
-  hitZoneActivate: 120, // Ball activates target
 };
+
+// ============================================================================
+// TARGET SYSTEM - Flexible multi-target configuration
+// ============================================================================
+
+interface Target {
+  id: string;                    // Unique identifier (e.g., "done", "reply", "mic")
+  position: number;              // X position relative to CENTER_X (negative = left)
+  activationRadius: number;      // Distance from position where activation occurs
+  proximityRadius: number;       // Distance where visual feedback starts
+  color: string;                 // Target color when active
+  bgColor: string;               // Background tint for row highlight
+  icon: string;                  // Display icon
+  label: string;                 // Display label
+}
+
+// Debug logging helper
+const DEBUG_TRIAGE = true;
+const logTriage = (tag: string, data: any) => {
+  if (DEBUG_TRIAGE) {
+    console.log(`[Triage:${tag}]`, JSON.stringify(data, null, 2));
+  }
+};
+
+// Module-level logging function for worklets
+const logActiveTargetCalc = (ball: number, targetId: string, targetX: number, distance: number, radius: number) => {
+  console.log(`[Triage:ActiveCalc] ball=${ball.toFixed(0)}, checking ${targetId}: targetX=${targetX}, distance=${distance.toFixed(0)}, radius=${radius}, hit=${distance <= radius}`);
+};
+
+// Track minimum distances during a drag session
+let minDistances: Record<string, number> = { done: 999, reply: 999, mic: 999 };
+const logMinDistance = (targetId: string, distance: number) => {
+  if (distance < minDistances[targetId]) {
+    minDistances[targetId] = distance;
+    console.log(`[Triage:MinDist] NEW MIN for ${targetId}: ${distance.toFixed(0)}px (radius=30)`);
+  }
+};
+const resetMinDistances = () => {
+  console.log(`[Triage:MinDist] RESET - Previous mins: done=${minDistances.done.toFixed(0)}, reply=${minDistances.reply.toFixed(0)}, mic=${minDistances.mic.toFixed(0)}`);
+  minDistances = { done: 999, reply: 999, mic: 999 };
+};
+
+// Log screen dimensions and center
+if (DEBUG_TRIAGE) {
+  console.log(`[Triage:Init] SCREEN_WIDTH=${SCREEN_WIDTH}, CENTER_X=${CENTER_X}`);
+}
+
+// Targets positioned relative to CENTER_X
+// Negative = left of center, Positive = right of center
+const TARGETS: Target[] = [
+  {
+    id: "done",
+    position: -80,           // 80px left of center
+    activationRadius: 30,    // Activates when ball within 30px
+    proximityRadius: 50,     // Glow starts at 50px
+    color: "#10B981",
+    bgColor: "#ECFDF5",
+    icon: "✓",
+    label: "Done",
+  },
+  {
+    id: "reply",
+    position: 80,            // 80px right of center
+    activationRadius: 30,
+    proximityRadius: 50,
+    color: "#6366F1",
+    bgColor: "#EEF2FF",
+    icon: "↩",
+    label: "Reply",
+  },
+  {
+    id: "mic",
+    position: 160,           // 160px right of center
+    activationRadius: 30,
+    proximityRadius: 50,
+    color: "#EF4444",
+    bgColor: "#FEF2F2",
+    icon: "🎤",
+    label: "Mic",
+  },
+];
 
 // ============================================================================
 // TRIAGE CONTEXT - Single source of truth for all triage animation state
@@ -79,14 +157,14 @@ interface TriageState {
   topRowIndex: { readonly value: number };
   // Computed: ball's X position
   ballX: { readonly value: number };
-  // Computed: proximity to left target (0-1)
-  leftProximity: { readonly value: number };
-  // Computed: proximity to right target (0-1)
-  rightProximity: { readonly value: number };
-  // Computed: is ball activated (at either target)
-  isActivated: { readonly value: boolean };
-  // Computed: current direction (0=done, 1=reply)
-  direction: { readonly value: number };
+  // Computed: ball's Y position
+  ballY: { readonly value: number };
+  // Computed: proximity (0-1) for each target
+  proximities: { readonly value: Record<string, number> };
+  // Computed: which target the ball is currently touching (null if none)
+  activeTarget: { readonly value: string | null };
+  // Computed: closest target with proximity info (for ball color)
+  closestTarget: { readonly value: { id: string; proximity: number } | null };
 }
 
 const TriageContext = React.createContext<TriageState | null>(null);
@@ -99,7 +177,7 @@ function useTriageState(): TriageState {
 
 // Hook to create all triage state - used once in InboxScreen
 function useCreateTriageState(): TriageState {
-  const { ballTravelMultiplier, hitZoneStart, hitZoneActivate } = TRIAGE_CONFIG;
+  const { ballTravelMultiplier } = TRIAGE_CONFIG;
 
   // Primary state (set by event handlers)
   const scrollY = useSharedValue(0);
@@ -120,32 +198,87 @@ function useCreateTriageState(): TriageState {
 
   const ballX = useDerivedValue(() => {
     const delta = fingerX.value - startX.value;
-    return Math.max(20, Math.min(SCREEN_WIDTH - 20, CENTER_X + delta * ballTravelMultiplier));
+    const result = Math.max(20, Math.min(SCREEN_WIDTH - 20, CENTER_X + delta * ballTravelMultiplier));
+    return result;
   });
 
-  // Zone-based proximity: how far from center (0 = center, 1 = at activation zone)
-  const leftProximity = useDerivedValue(() => {
-    const distFromCenter = CENTER_X - ballX.value; // positive when ball is left of center
-    if (distFromCenter <= 0) return 0; // ball is right of center
-    return Math.min(1, distFromCenter / hitZoneStart);
+  // Ball Y position (matches the ball rendering formula)
+  const { rowHeight, headerOffset, listTopPadding, ballSize } = TRIAGE_CONFIG;
+  const TARGET_Y = 30; // Fixed Y position of targets at top
+
+  const ballY = useDerivedValue(() => {
+    const halfBall = ballSize / 2;
+    const activeIdx = activeIndex.value;
+    const rowContentY = listTopPadding + (activeIdx * rowHeight);
+    return headerOffset + rowContentY - scrollY.value;
   });
 
-  const rightProximity = useDerivedValue(() => {
-    const distFromCenter = ballX.value - CENTER_X; // positive when ball is right of center
-    if (distFromCenter <= 0) return 0; // ball is left of center
-    return Math.min(1, distFromCenter / hitZoneStart);
+  // Helper to calculate 2D distance between ball and target
+  const getDistance2D = (bx: number, by: number, tx: number, ty: number) => {
+    'worklet';
+    const dx = bx - tx;
+    const dy = by - ty;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  // Proximity map: returns proximity (0-1) for each target using 2D distance
+  const proximities = useDerivedValue(() => {
+    const bx = ballX.value;
+    const by = ballY.value;
+    const result: Record<string, number> = {};
+
+    for (const target of TARGETS) {
+      const targetX = CENTER_X + target.position;
+      const targetYCenter = TARGET_Y + 20; // Approximate center of target button
+      const distance = getDistance2D(bx, by, targetX, targetYCenter);
+
+      if (distance > target.proximityRadius) {
+        result[target.id] = 0;
+      } else {
+        // Scale from 0 (at edge) to 1 (at center)
+        result[target.id] = 1 - (distance / target.proximityRadius);
+      }
+    }
+    return result;
   });
 
-  // Activation: ball has moved far enough from center
-  const isActivated = useDerivedValue(() => {
-    const distFromCenter = Math.abs(ballX.value - CENTER_X);
-    return distFromCenter >= hitZoneActivate;
+  // Active target: which target is the ball currently touching (if any) - uses 2D distance
+  const activeTarget = useDerivedValue(() => {
+    const bx = ballX.value;
+    const by = ballY.value;
+
+    for (const target of TARGETS) {
+      const targetX = CENTER_X + target.position;
+      const targetYCenter = TARGET_Y + 20; // Approximate center of target button
+      const distance = getDistance2D(bx, by, targetX, targetYCenter);
+
+      // Track minimum distance for debugging
+      runOnJS(logMinDistance)(target.id, distance);
+
+      if (distance <= target.activationRadius) {
+        return target.id;
+      }
+    }
+    return null; // Not at any target
   });
 
-  // Direction based on which side of center the ball is
-  const direction = useDerivedValue(() => {
-    // 0 = done (left), 1 = reply (right)
-    return ballX.value > CENTER_X ? 1 : 0;
+  // Closest target: for ball color feedback - uses 2D distance
+  const closestTarget = useDerivedValue(() => {
+    const bx = ballX.value;
+    const by = ballY.value;
+    let closest: { id: string; proximity: number } | null = null;
+
+    for (const target of TARGETS) {
+      const targetX = CENTER_X + target.position;
+      const targetYCenter = TARGET_Y + 20; // Approximate center of target button
+      const distance = getDistance2D(bx, by, targetX, targetYCenter);
+      const proximity = 1 - Math.min(1, distance / target.proximityRadius);
+
+      if (proximity > 0 && (!closest || proximity > closest.proximity)) {
+        closest = { id: target.id, proximity };
+      }
+    }
+    return closest;
   });
 
   return {
@@ -157,10 +290,10 @@ function useCreateTriageState(): TriageState {
     needsReset,
     topRowIndex,
     ballX,
-    leftProximity,
-    rightProximity,
-    isActivated,
-    direction,
+    ballY,
+    proximities,
+    activeTarget,
+    closestTarget,
   };
 }
 import { api } from "../../convex/_generated/api";
@@ -382,13 +515,136 @@ const SWIPE_THRESHOLD = 100;
 // TRIAGE OVERLAY - Ball and targets, uses context for all state
 // ============================================================================
 
+// Individual target component - memoized for performance
+interface TargetViewProps {
+  target: Target;
+}
+
+const TargetView = React.memo(function TargetView({ target }: TargetViewProps) {
+  const triage = useTriageState();
+  const targetX = CENTER_X + target.position;
+
+  // Use shared value for centering offset - updates without re-render
+  const centerOffset = useSharedValue(0);
+
+  // Log target position on mount
+  React.useEffect(() => {
+    console.log(`[Triage:TargetPos] ${target.id}: position=${target.position}, targetX=${targetX}, CENTER_X=${CENTER_X}`);
+  }, [target.id, target.position, targetX]);
+
+  // Ref for measuring absolute position
+  const containerRef = React.useRef<any>(null);
+
+  const handleLayout = React.useCallback((event: any) => {
+    const { width } = event.nativeEvent.layout;
+    // Update the centering offset to shift left by half the width
+    centerOffset.value = -width / 2;
+    console.log(`[Triage:TargetLayout] ${target.id}: width=${width}, centerOffset=${-width / 2}`);
+
+    // Verify absolute position after transform applies
+    setTimeout(() => {
+      containerRef.current?.measureInWindow?.((absX: number, absY: number, absW: number, absH: number) => {
+        if (absX != null) {
+          const visualCenterX = absX + absW / 2;
+          console.log(`[Triage:TargetVerify] ${target.id}: visualCenterX=${visualCenterX.toFixed(0)}, expectedCenterX=${targetX}, diff=${(visualCenterX - targetX).toFixed(0)}`);
+        }
+      });
+    }, 100);
+  }, [target.id, centerOffset, targetX]);
+
+  // Container X position - centered at targetX via transform
+  const containerStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateX: centerOffset.value }],
+    };
+  });
+
+  // Target scale based on proximity
+  const targetStyle = useAnimatedStyle(() => {
+    const proximity = triage.proximities.value[target.id] || 0;
+    const scale = 1 + proximity * 0.4;
+    return {
+      transform: [{ scale: withSpring(scale) }],
+    };
+  });
+
+  // Target background color based on activation state
+  const targetBgStyle = useAnimatedStyle(() => {
+    const proximity = triage.proximities.value[target.id] || 0;
+    const isActive = triage.activeTarget.value === target.id;
+
+    if (isActive) {
+      return { backgroundColor: target.color };
+    }
+
+    // Compute opacity (30% base + up to 70% based on proximity)
+    const opacity = Math.round(30 + proximity * 70) / 100;
+
+    // Parse hex color and apply opacity
+    const r = parseInt(target.color.slice(1, 3), 16);
+    const g = parseInt(target.color.slice(3, 5), 16);
+    const b = parseInt(target.color.slice(5, 7), 16);
+
+    return {
+      backgroundColor: `rgba(${r}, ${g}, ${b}, ${opacity})`,
+    };
+  });
+
+  // Fixed Y position at top
+  const targetY = 30;
+
+  return (
+    <Animated.View
+      ref={containerRef}
+      style={[
+        triageStyles.targetContainer,
+        { top: targetY, left: targetX },
+        containerStyle,
+      ]}
+      onLayout={handleLayout}
+      collapsable={false}
+    >
+      <Animated.View style={[targetStyle]}>
+        <Animated.View style={[triageStyles.targetBg, targetBgStyle]}>
+          <Text style={triageStyles.targetIcon}>{target.icon}</Text>
+          <Text style={triageStyles.targetText}>{target.label}</Text>
+        </Animated.View>
+      </Animated.View>
+    </Animated.View>
+  );
+});
+
 const TriageOverlay = React.memo(function TriageOverlay() {
   const triage = useTriageState();
-  const { rowHeight, headerOffset, listTopPadding, ballSize, hitZoneActivate } = TRIAGE_CONFIG;
+  const { rowHeight, headerOffset, listTopPadding, ballSize } = TRIAGE_CONFIG;
+  const overlayRef = React.useRef<any>(null);
+  const ballRef = React.useRef<any>(null);
 
-  // Target positions based on hit zones
-  const TARGET_LEFT_X = CENTER_X - hitZoneActivate;
-  const TARGET_RIGHT_X = CENTER_X + hitZoneActivate;
+  // Log config on mount
+  React.useEffect(() => {
+    console.log(`[Triage:Config] rowHeight=${rowHeight}, headerOffset=${headerOffset}, listTopPadding=${listTopPadding}, ballSize=${ballSize}`);
+  }, [rowHeight, headerOffset, listTopPadding, ballSize]);
+
+  // Log overlay absolute position
+  const handleOverlayLayout = React.useCallback(() => {
+    if (overlayRef.current) {
+      overlayRef.current.measureInWindow((x: number, y: number, w: number, h: number) => {
+        console.log(`[Triage:OverlayAbsolute] screenX=${x?.toFixed(0)}, screenY=${y?.toFixed(0)}, width=${w?.toFixed(0)}, height=${h?.toFixed(0)}`);
+      });
+    }
+  }, []);
+
+  // Log ball absolute position
+  const handleBallLayout = React.useCallback((event: any) => {
+    const { x, y, width, height } = event.nativeEvent.layout;
+    console.log(`[Triage:BallLayout] x=${x.toFixed(0)}, y=${y.toFixed(0)}, width=${width.toFixed(0)}, height=${height.toFixed(0)}`);
+
+    if (ballRef.current) {
+      ballRef.current.measureInWindow((absX: number, absY: number, absW: number, absH: number) => {
+        console.log(`[Triage:BallAbsolute] screenX=${absX?.toFixed(0)}, screenY=${absY?.toFixed(0)}, width=${absW?.toFixed(0)}`);
+      });
+    }
+  }, []);
 
   // Ball position and scale
   const ballStyle = useAnimatedStyle(() => {
@@ -399,7 +655,9 @@ const TriageOverlay = React.memo(function TriageOverlay() {
     const rowContentY = listTopPadding + (activeIdx * rowHeight);
     const ballY = headerOffset + rowContentY - triage.scrollY.value;
 
-    const isNear = triage.leftProximity.value > 0.5 || triage.rightProximity.value > 0.5;
+    // Check if any target is near (proximity > 0.5)
+    const closest = triage.closestTarget.value;
+    const isNear = closest !== null && closest.proximity > 0.5;
 
     return {
       transform: [
@@ -410,71 +668,33 @@ const TriageOverlay = React.memo(function TriageOverlay() {
     };
   });
 
-  // Ball color based on proximity
+  // Ball color based on closest target
   const ballColorStyle = useAnimatedStyle(() => {
-    if (triage.leftProximity.value > 0.5) {
-      return { backgroundColor: "#10B981" }; // Green for Done
-    } else if (triage.rightProximity.value > 0.5) {
-      return { backgroundColor: "#6366F1" }; // Purple for Reply
+    const closest = triage.closestTarget.value;
+
+    if (closest && closest.proximity > 0.5) {
+      // Find the target and use its color
+      const target = TARGETS.find(t => t.id === closest.id);
+      if (target) {
+        return { backgroundColor: target.color };
+      }
     }
-    return { backgroundColor: "#9CA3AF" }; // Grey neutral
+    return { backgroundColor: "#9CA3AF" }; // Neutral grey
   });
-
-  // Left target (Done)
-  const leftTargetStyle = useAnimatedStyle(() => {
-    const scale = 1 + triage.leftProximity.value * 0.4;
-    return { transform: [{ scale: withSpring(scale) }] };
-  });
-
-  const leftTargetBgStyle = useAnimatedStyle(() => {
-    const isActive = triage.isActivated.value && triage.direction.value === 0;
-    return {
-      backgroundColor: isActive
-        ? "#10B981"
-        : `rgba(16, 185, 129, ${0.3 + triage.leftProximity.value * 0.7})`,
-    };
-  });
-
-  // Right target (Reply)
-  const rightTargetStyle = useAnimatedStyle(() => {
-    const scale = 1 + triage.rightProximity.value * 0.4;
-    return { transform: [{ scale: withSpring(scale) }] };
-  });
-
-  const rightTargetBgStyle = useAnimatedStyle(() => {
-    const isActive = triage.isActivated.value && triage.direction.value === 1;
-    return {
-      backgroundColor: isActive
-        ? "#6366F1"
-        : `rgba(99, 102, 241, ${0.3 + triage.rightProximity.value * 0.7})`,
-    };
-  });
-
-  // Target Y position (fixed, near top)
-  const targetY = 30;
 
   return (
-    <View style={triageStyles.overlay} pointerEvents="none">
-      {/* Left target - Done */}
-      <Animated.View style={[triageStyles.targetContainer, { top: targetY, left: TARGET_LEFT_X - 45 }, leftTargetStyle]}>
-        <Animated.View style={[triageStyles.targetBg, leftTargetBgStyle]}>
-          <Text style={triageStyles.targetIcon}>✓</Text>
-          <Text style={triageStyles.targetText}>Done</Text>
-        </Animated.View>
-      </Animated.View>
+    <View ref={overlayRef} style={triageStyles.overlay} pointerEvents="none" onLayout={handleOverlayLayout} collapsable={false}>
+      {/* Render all targets dynamically */}
+      {TARGETS.map(target => (
+        <TargetView key={target.id} target={target} />
+      ))}
 
-      {/* Right target - Reply */}
-      <Animated.View style={[triageStyles.targetContainer, { top: targetY, left: TARGET_RIGHT_X - 35 }, rightTargetStyle]}>
-        <Animated.View style={[triageStyles.targetBg, rightTargetBgStyle]}>
-          <Text style={triageStyles.targetIcon}>↩</Text>
-          <Text style={triageStyles.targetText}>Reply</Text>
+      {/* Ball - wrap in View for measurement */}
+      <View ref={ballRef} style={triageStyles.ballWrapper} onLayout={handleBallLayout} collapsable={false}>
+        <Animated.View style={[triageStyles.ball, ballStyle]}>
+          <Animated.View style={[triageStyles.ballInner, ballColorStyle]} />
         </Animated.View>
-      </Animated.View>
-
-      {/* Ball */}
-      <Animated.View style={[triageStyles.ball, ballStyle]}>
-        <Animated.View style={[triageStyles.ballInner, ballColorStyle]} />
-      </Animated.View>
+      </View>
     </View>
   );
 });
@@ -484,9 +704,13 @@ const triageStyles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 1000,
   },
+  ballWrapper: {
+    ...StyleSheet.absoluteFillObject,
+  },
   targetContainer: {
     position: "absolute",
-    alignItems: "center",
+    // Container left edge is at targetX (detection point)
+    // Child uses translateX(-width/2) to center visually at that point
   },
   targetBg: {
     flexDirection: "row",
@@ -551,21 +775,21 @@ const AnimatedRowWrapper = React.memo(function AnimatedRowWrapper({ index, child
     const isNextRow = triage.topRowIndex.value === index - 1;
 
     if (isTopRow) {
-      // At triage line - check if activated
-      const isActivated = triage.isActivated.value;
-      const direction = triage.direction.value; // 0 = done, 1 = reply
+      const activeTargetId = triage.activeTarget.value;
 
-      if (isActivated) {
-        // Activated - show action color
-        if (direction === 0) {
-          return { backgroundColor: "#ECFDF5", borderLeftWidth: 4, borderLeftColor: "#10B981" };
-        } else {
-          return { backgroundColor: "#EEF2FF", borderLeftWidth: 4, borderLeftColor: "#6366F1" };
+      if (activeTargetId !== null) {
+        // Ball is at a target - find the target and use its colors
+        const target = TARGETS.find(t => t.id === activeTargetId);
+        if (target) {
+          return {
+            backgroundColor: target.bgColor,
+            borderLeftWidth: 4,
+            borderLeftColor: target.color,
+          };
         }
-      } else {
-        // Pending - grey
-        return { backgroundColor: "#F3F4F6", borderLeftWidth: 4, borderLeftColor: "#9CA3AF" };
       }
+      // Not at any target - show pending grey
+      return { backgroundColor: "#F3F4F6", borderLeftWidth: 4, borderLeftColor: "#9CA3AF" };
     } else if (isNextRow) {
       // Next row - subtle grey
       return { backgroundColor: "#F9FAFB", borderLeftWidth: 4, borderLeftColor: "#E5E7EB" };
@@ -944,106 +1168,6 @@ export default function InboxScreen() {
   const emailsRef = useRef<InboxEmail[]>([]);
   const triageInProgressRef = useRef<Set<string>>(new Set());
 
-  // Triage handler - called when ball touches target
-  const handleTriageAtIndex = useCallback(async (index: number, direction: number) => {
-    const emails = emailsRef.current;
-    if (index < 0 || index >= emails.length) return;
-
-    const email = emails[index];
-    if (!email || triageInProgressRef.current.has(email._id) || triagedEmails.has(email._id)) {
-      return;
-    }
-
-    const action: "done" | "reply_needed" = direction === 0 ? "done" : "reply_needed";
-    console.log(`[Triage] Ball hit target - ${action}: "${email.subject}"`);
-
-    // Mark as in progress
-    triageInProgressRef.current.add(email._id);
-
-    // Haptic feedback
-    if (Platform.OS !== "web") {
-      if (action === "done") {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      } else {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      }
-    }
-
-    // Optimistic update
-    setTriagedEmails(prev => new Map(prev).set(email._id, action));
-
-    // Move to next row
-    triageState.activeIndex.value = triageState.activeIndex.value + 1;
-
-    // Reset ball to center by setting startX to current fingerX
-    // This makes delta = 0, so ballX = CENTER_X
-    triageState.startX.value = triageState.fingerX.value;
-
-    // Clear processing lock (needsReset stays true until ball returns to center)
-    triageState.isProcessing.value = false;
-
-    try {
-      await triageEmail({
-        emailId: email._id as Id<"emails">,
-        action,
-      });
-      console.log(`[Triage] Success: "${email.subject}" -> ${action}`);
-    } catch (error) {
-      console.error(`[Triage] Failed: "${email.subject}"`, error);
-      // Revert on error
-      setTriagedEmails(prev => {
-        const next = new Map(prev);
-        next.delete(email._id);
-        return next;
-      });
-    } finally {
-      triageInProgressRef.current.delete(email._id);
-    }
-  }, [triageEmail, triagedEmails]);
-
-  // Watch for ball returning to center - clear the reset lock
-  useAnimatedReaction(
-    () => triageState.ballX.value,
-    (ballX) => {
-      // If we need a reset and ball is back near center, allow next activation
-      if (triageState.needsReset.value) {
-        const distFromCenter = Math.abs(ballX - CENTER_X);
-        if (distFromCenter < 30) {
-          triageState.needsReset.value = false;
-        }
-      }
-    }
-  );
-
-  // Watch for ball activation and trigger triage
-  useAnimatedReaction(
-    () => ({
-      isActivated: triageState.isActivated.value,
-      isProcessing: triageState.isProcessing.value,
-      needsReset: triageState.needsReset.value,
-      topRowIndex: triageState.topRowIndex.value,
-      direction: triageState.direction.value,
-    }),
-    (current, previous) => {
-      // Trigger when:
-      // - Ball is in activation zone
-      // - Not already processing
-      // - Ball has returned to center since last triage (needsReset is false)
-      // - This is a new activation (wasn't activated before)
-      if (
-        current.isActivated &&
-        !current.isProcessing &&
-        !current.needsReset &&
-        (!previous || !previous.isActivated)
-      ) {
-        // Set locks immediately in worklet to prevent cascade
-        triageState.isProcessing.value = true;
-        triageState.needsReset.value = true;
-        runOnJS(handleTriageAtIndex)(current.topRowIndex, current.direction);
-      }
-    }
-  );
-
   // Track if this is the initial mount to avoid resetting on first focus
   const isInitialMount = useRef(true);
 
@@ -1090,6 +1214,189 @@ export default function InboxScreen() {
   } = useVoiceRecording();
 
   const { playStartSound, playStopSound } = useMicSounds();
+
+  // Triage handler - called when ball touches target
+  const handleTargetActivation = useCallback(async (index: number, targetId: string) => {
+    const emails = emailsRef.current;
+    if (index < 0 || index >= emails.length) return;
+
+    const email = emails[index];
+    const target = TARGETS.find(t => t.id === targetId);
+
+    if (!email || !target) {
+      triageState.isProcessing.value = false;
+      return;
+    }
+
+    console.log(`[Triage] Ball hit target - ${targetId}: "${email.subject}"`);
+
+    // Handle based on target type
+    if (targetId === "mic") {
+      // Mic target - open voice recording modal
+      if (Platform.OS !== "web") {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+
+      // Start recording for this email
+      setRecordingFor(email._id);
+      playStartSound();
+      startRecording();
+
+      // Reset ball to center
+      triageState.startX.value = triageState.fingerX.value;
+      triageState.isProcessing.value = false;
+      return;
+    }
+
+    // Check if already triaged
+    if (triageInProgressRef.current.has(email._id) || triagedEmails.has(email._id)) {
+      triageState.isProcessing.value = false;
+      return;
+    }
+
+    // Map target to triage action
+    const action: "done" | "reply_needed" = targetId === "done" ? "done" : "reply_needed";
+
+    // Mark as in progress
+    triageInProgressRef.current.add(email._id);
+
+    // Haptic feedback
+    if (Platform.OS !== "web") {
+      if (targetId === "done") {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    }
+
+    // Optimistic update
+    setTriagedEmails(prev => new Map(prev).set(email._id, action));
+
+    // Move to next row
+    triageState.activeIndex.value = triageState.activeIndex.value + 1;
+
+    // Reset ball to center by setting startX to current fingerX
+    // This makes delta = 0, so ballX = CENTER_X
+    triageState.startX.value = triageState.fingerX.value;
+
+    // Clear processing lock (needsReset stays true until ball returns to center)
+    triageState.isProcessing.value = false;
+
+    try {
+      await triageEmail({
+        emailId: email._id as Id<"emails">,
+        action,
+      });
+      console.log(`[Triage] Success: "${email.subject}" -> ${action}`);
+    } catch (error) {
+      console.error(`[Triage] Failed: "${email.subject}"`, error);
+      // Revert on error
+      setTriagedEmails(prev => {
+        const next = new Map(prev);
+        next.delete(email._id);
+        return next;
+      });
+    } finally {
+      triageInProgressRef.current.delete(email._id);
+    }
+  }, [triageEmail, triagedEmails, playStartSound, startRecording, triageState]);
+
+  // Log ball position periodically for debugging
+  const lastLogTimeShared = useSharedValue(0);
+  const logPosition = useCallback((ballX: number, fingerX: number, startX: number, scrollY: number, activeTarget: string | null, closestTargetId: string | null) => {
+    console.log(`[Triage:Position] ballX=${ballX.toFixed(0)}, fingerX=${fingerX.toFixed(0)}, startX=${startX.toFixed(0)}, scrollY=${scrollY.toFixed(0)}, activeTarget=${activeTarget}, closestTarget=${closestTargetId || 'none'}`);
+  }, []);
+  useAnimatedReaction(
+    () => ({
+      ballX: triageState.ballX.value,
+      fingerX: triageState.fingerX.value,
+      startX: triageState.startX.value,
+      scrollY: triageState.scrollY.value,
+      activeTarget: triageState.activeTarget.value,
+      closestTarget: triageState.closestTarget.value,
+    }),
+    (current) => {
+      const now = Date.now();
+      // Log every 500ms to avoid spam
+      if (now - lastLogTimeShared.value > 500) {
+        lastLogTimeShared.value = now;
+        runOnJS(logPosition)(current.ballX, current.fingerX, current.startX, current.scrollY, current.activeTarget, current.closestTarget?.id ?? null);
+      }
+    }
+  );
+
+  // Logging helpers for worklets
+  const logReset = useCallback((dist: number) => {
+    console.log(`[Triage:Reset] Ball returned to center, distFromCenter=${dist.toFixed(0)}`);
+    resetMinDistances(); // Reset tracking for next gesture
+  }, []);
+  const logActiveTarget = useCallback((from: string | null, to: string | null, isProcessing: boolean, needsReset: boolean) => {
+    console.log(`[Triage:ActiveTarget] changed from ${from ?? 'null'} to ${to}, isProcessing=${isProcessing}, needsReset=${needsReset}`);
+  }, []);
+  const logTrigger = useCallback((target: string, row: number, ballX: number, scrollY: number) => {
+    const targetConfig = TARGETS.find(t => t.id === target);
+    const targetX = targetConfig ? CENTER_X + targetConfig.position : 0;
+    const { rowHeight, headerOffset, listTopPadding, ballSize } = TRIAGE_CONFIG;
+    const halfBall = ballSize / 2;
+    // Ball visual position = transform applied to (0,0)
+    const ballVisualX = ballX - halfBall; // left edge of ball
+    const ballCenterX = ballX; // center of ball
+    const ballVisualY = headerOffset + listTopPadding + (row * rowHeight) - scrollY - halfBall;
+    console.log(`[Triage:Trigger] target=${target}, row=${row}`);
+    console.log(`[Triage:Trigger] Ball: centerX=${ballCenterX.toFixed(0)}, visualLeftEdge=${ballVisualX.toFixed(0)}, visualY=${ballVisualY.toFixed(0)}`);
+    console.log(`[Triage:Trigger] Target: expectedCenterX=${targetX}, distance=${Math.abs(ballX - targetX).toFixed(0)}`);
+  }, []);
+
+  // Watch for ball returning to center - clear the reset lock
+  useAnimatedReaction(
+    () => triageState.ballX.value,
+    (ballX) => {
+      // If we need a reset and ball is back near center, allow next activation
+      if (triageState.needsReset.value) {
+        const distFromCenter = Math.abs(ballX - CENTER_X);
+        if (distFromCenter < 30) {
+          runOnJS(logReset)(distFromCenter);
+          triageState.needsReset.value = false;
+        }
+      }
+    }
+  );
+
+  // Watch for ball activation and trigger triage
+  useAnimatedReaction(
+    () => ({
+      activeTarget: triageState.activeTarget.value,
+      isProcessing: triageState.isProcessing.value,
+      needsReset: triageState.needsReset.value,
+      topRowIndex: triageState.topRowIndex.value,
+      ballX: triageState.ballX.value,
+      scrollY: triageState.scrollY.value,
+    }),
+    (current, previous) => {
+      // Log state changes
+      if (current.activeTarget !== (previous?.activeTarget ?? null)) {
+        runOnJS(logActiveTarget)(previous?.activeTarget ?? null, current.activeTarget, current.isProcessing, current.needsReset);
+      }
+
+      // Trigger when:
+      // - Ball is at a target (activeTarget !== null)
+      // - Not already processing
+      // - Ball has returned to center since last triage (needsReset is false)
+      // - This is a new activation (different target or wasn't at a target before)
+      if (
+        current.activeTarget !== null &&
+        !current.isProcessing &&
+        !current.needsReset &&
+        (!previous || previous.activeTarget !== current.activeTarget)
+      ) {
+        runOnJS(logTrigger)(current.activeTarget, current.topRowIndex, current.ballX, current.scrollY);
+        // Set locks immediately in worklet to prevent cascade
+        triageState.isProcessing.value = true;
+        triageState.needsReset.value = true;
+        runOnJS(handleTargetActivation)(current.topRowIndex, current.activeTarget);
+      }
+    }
+  );
 
   const sendEmailAction = useAction(api.gmailSend.sendReply);
   const addToCalendarAction = useAction(api.calendar.addToCalendar);
@@ -1145,14 +1452,22 @@ export default function InboxScreen() {
 
   // Track scroll position for ball Y calculation
   const handleScroll = useCallback((event: any) => {
-    triageState.scrollY.value = event.nativeEvent.contentOffset.y;
+    const y = event.nativeEvent.contentOffset.y;
+    triageState.scrollY.value = y;
+    // Log scroll occasionally
+    if (Math.floor(y / 50) !== Math.floor(triageState.scrollY.value / 50)) {
+      console.log(`[Triage:Scroll] y=${y.toFixed(0)}`);
+    }
   }, [triageState.scrollY]);
 
   // On web, use native DOM events for full-frequency pointer tracking
   useEffect(() => {
     if (Platform.OS !== 'web') return;
 
+    let lastLogTime = 0;
+
     const handlePointerDown = (e: PointerEvent) => {
+      console.log(`[Triage:PointerDown] clientX=${e.clientX}, clientY=${e.clientY}`);
       triageState.startX.value = e.clientX;
       triageState.fingerX.value = e.clientX;
     };
@@ -1161,6 +1476,12 @@ export default function InboxScreen() {
       // Only track if pointer is down (buttons > 0 means pressed)
       if (e.buttons === 0) return;
       triageState.fingerX.value = e.clientX;
+      // Log occasionally
+      const now = Date.now();
+      if (now - lastLogTime > 200) {
+        lastLogTime = now;
+        console.log(`[Triage:PointerMove] clientX=${e.clientX}`);
+      }
     };
 
     window.addEventListener('pointerdown', handlePointerDown, { capture: true });
@@ -1173,12 +1494,16 @@ export default function InboxScreen() {
   }, [triageState.fingerX, triageState.startX]);
 
   // Native: use gesture handler for touch tracking
+  const logTouchDown = useCallback((x: number, y: number) => {
+    console.log(`[Triage:TouchDown] absoluteX=${x}, absoluteY=${y}`);
+  }, []);
   const trackingGesture = Gesture.Manual()
     .onTouchesDown((e) => {
       'worklet';
       if (Platform.OS === 'web') return; // Handled by DOM events
       if (e.allTouches.length > 0) {
         const touch = e.allTouches[0];
+        runOnJS(logTouchDown)(touch.absoluteX, touch.absoluteY);
         triageState.startX.value = touch.absoluteX;
         triageState.fingerX.value = touch.absoluteX;
       }
@@ -1374,7 +1699,7 @@ export default function InboxScreen() {
 
       {/* Swipe hint at top */}
       <View style={styles.swipeHintContainer}>
-        <Text style={styles.swipeHintText}>Drag ball to target • Swipe left for TODO</Text>
+        <Text style={styles.swipeHintText}>Drag ball → Done, Reply, or Mic • Swipe left for TODO</Text>
       </View>
 
       {/* Search bar */}

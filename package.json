@@ -21,6 +21,7 @@
     "@convex-dev/workos": "^0.0.1",
     "@convex-dev/workos-authkit": "^0.1.5",
     "@convex-dev/workpool": "^0.3.1",
+    "@deepgram/sdk": "^4.11.3",
     "@expo/cli": "^54.0.21",
     "@expo/metro-runtime": "~6.1.2",
     "@react-native-community/masked-view": "^0.1.11",
