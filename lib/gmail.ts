@@ -8,6 +8,13 @@ export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
 ];
 
+export const CALENDAR_SCOPES = [
+  "https://www.googleapis.com/auth/calendar",
+  "https://www.googleapis.com/auth/calendar.events",
+];
+
+export const ALL_GOOGLE_SCOPES = [...GMAIL_SCOPES, ...CALENDAR_SCOPES];
+
 export function parseEmailAddress(raw: string): { name?: string; email: string } {
   const match = raw.match(/^(?:"?([^"]*)"?\s)?<?([^\s<>]+@[^\s<>]+)>?$/);
   if (match) {

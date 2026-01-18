@@ -10,12 +10,10 @@ import { components } from "../_generated/api";
  * - Key action items (if any)
  * - Urgency score (0-100) with reasoning
  * - Suggested reply (if action needed)
- *
- * Uses AI SDK v6 conventions:
- * - `instructions` instead of `system`
  */
 export const summarizerAgent = new Agent(components.agent, {
-  model: anthropic("claude-opus-4-5-20251101"),
+  name: "summarizer",
+  languageModel: anthropic("claude-sonnet-4-20250514"),
   instructions: `You are an email summarization assistant. Your job is to analyze emails and provide:
 
 1. **Summary**: A concise 1-2 sentence summary of the email's main point.

@@ -8,12 +8,10 @@ import { components } from "../_generated/api";
  * Drafts brief, professional responses on behalf of the user.
  *
  * Style: Warm but efficient
- *
- * Uses AI SDK v6 conventions:
- * - `instructions` instead of `system`
  */
 export const autoResponderAgent = new Agent(components.agent, {
-  model: anthropic("claude-opus-4-5-20251101"),
+  name: "autoResponder",
+  languageModel: anthropic("claude-sonnet-4-20250514"),
   instructions: `You are an email response assistant helping the user manage their inbox efficiently.
 
 Your job is to draft brief, professional email responses that:

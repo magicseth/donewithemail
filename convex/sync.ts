@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { action, internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 
 /**
  * Process incoming email from Gmail webhook or polling
@@ -29,19 +30,26 @@ export const processIncomingEmail = action({
       receivedAt: v.number(),
     }),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{
+    emailId: Id<"emails">;
+    isNew: boolean;
+    fromContactId: Id<"contacts">;
+  }> => {
     const { userId, rawEmail } = args;
 
     // Upsert the sender contact
-    const fromResult = await ctx.runMutation(internal.sync.upsertContactInternal, {
-      userId,
-      email: rawEmail.from.email,
-      name: rawEmail.from.name,
-    });
+    const fromResult: { contactId: Id<"contacts">; isNew: boolean } = await ctx.runMutation(
+      internal.sync.upsertContactInternal,
+      {
+        userId,
+        email: rawEmail.from.email,
+        name: rawEmail.from.name,
+      }
+    );
 
     // Upsert all recipient contacts
-    const toContactIds = await Promise.all(
-      rawEmail.to.map((recipient) =>
+    const toContactIds: { contactId: Id<"contacts">; isNew: boolean }[] = await Promise.all(
+      rawEmail.to.map((recipient): Promise<{ contactId: Id<"contacts">; isNew: boolean }> =>
         ctx.runMutation(internal.sync.upsertContactInternal, {
           userId,
           email: recipient.email,
@@ -51,10 +59,10 @@ export const processIncomingEmail = action({
     );
 
     // Upsert CC contacts if present
-    let ccContactIds: string[] = [];
+    let ccContactIds: { contactId: Id<"contacts">; isNew: boolean }[] = [];
     if (rawEmail.cc) {
       ccContactIds = await Promise.all(
-        rawEmail.cc.map((recipient) =>
+        rawEmail.cc.map((recipient): Promise<{ contactId: Id<"contacts">; isNew: boolean }> =>
           ctx.runMutation(internal.sync.upsertContactInternal, {
             userId,
             email: recipient.email,
@@ -65,18 +73,21 @@ export const processIncomingEmail = action({
     }
 
     // Store the email
-    const emailResult = await ctx.runMutation(internal.sync.storeEmailInternal, {
-      externalId: rawEmail.id,
-      provider: "gmail",
-      userId,
-      from: fromResult.contactId,
-      to: toContactIds.map((r) => r.contactId),
-      cc: ccContactIds.length > 0 ? ccContactIds.map((r) => r.contactId) : undefined,
-      subject: rawEmail.subject,
-      bodyPreview: rawEmail.bodyPreview,
-      bodyFull: rawEmail.bodyFull,
-      receivedAt: rawEmail.receivedAt,
-    });
+    const emailResult: { emailId: Id<"emails">; isNew: boolean } = await ctx.runMutation(
+      internal.sync.storeEmailInternal,
+      {
+        externalId: rawEmail.id,
+        provider: "gmail",
+        userId,
+        from: fromResult.contactId,
+        to: toContactIds.map((r) => r.contactId),
+        cc: ccContactIds.length > 0 ? ccContactIds.map((r) => r.contactId) : undefined,
+        subject: rawEmail.subject,
+        bodyPreview: rawEmail.bodyPreview,
+        bodyFull: rawEmail.bodyFull,
+        receivedAt: rawEmail.receivedAt,
+      }
+    );
 
     return {
       emailId: emailResult.emailId,
@@ -95,7 +106,7 @@ export const upsertContactInternal = internalMutation({
     email: v.string(),
     name: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ contactId: Id<"contacts">; isNew: boolean }> => {
     const existing = await ctx.db
       .query("contacts")
       .withIndex("by_user_email", (q) =>
@@ -144,7 +155,7 @@ export const storeEmailInternal = internalMutation({
     bodyFull: v.string(),
     receivedAt: v.number(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ emailId: Id<"emails">; isNew: boolean }> => {
     const existing = await ctx.db
       .query("emails")
       .withIndex("by_external_id", (q) =>
