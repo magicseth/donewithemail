@@ -61,6 +61,35 @@ export const sendNewEmailNotification = internalMutation({
   },
 });
 
+// Send notification for missed TODOs found
+export const sendMissedTodosNotification = internalMutation({
+  args: {
+    userId: v.id("users"),
+    foundCount: v.number(),
+  },
+  handler: async (ctx, args) => {
+    // Don't send notification if no missed todos found
+    if (args.foundCount === 0) {
+      return;
+    }
+
+    const title = "Missed TODOs Found";
+    const body = `Found ${args.foundCount} email${args.foundCount > 1 ? "s" : ""} that may need a response`;
+
+    await pushNotifications.sendPushNotification(ctx, {
+      userId: args.userId,
+      notification: {
+        title,
+        body,
+        data: {
+          type: "missed_todos",
+          count: args.foundCount,
+        },
+      },
+    });
+  },
+});
+
 // Send notification only for high priority emails (after AI processing)
 export const sendHighPriorityNotification = internalMutation({
   args: {
@@ -69,6 +98,7 @@ export const sendHighPriorityNotification = internalMutation({
     totalCount: v.number(),
     mostUrgentSubject: v.optional(v.string()),
     mostUrgentSender: v.optional(v.string()),
+    mostUrgentSenderAvatar: v.optional(v.string()),
     mostUrgentEmailId: v.optional(v.id("emails")),
     urgencyScore: v.number(),
   },
@@ -92,11 +122,14 @@ export const sendHighPriorityNotification = internalMutation({
       notification: {
         title,
         body,
+        // Enable mutableContent so iOS Notification Service Extension can add the avatar
+        mutableContent: args.mostUrgentSenderAvatar ? true : undefined,
         data: {
           type: "high_priority_email",
           urgencyScore: args.urgencyScore,
           highPriorityCount: args.highPriorityCount,
           emailId: args.mostUrgentEmailId,
+          senderAvatar: args.mostUrgentSenderAvatar,
         },
       },
     });

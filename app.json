@@ -7,7 +7,7 @@
     "icon": "./assets/ios-light.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "scheme": "tokmail",
+    "scheme": "sayless",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tokmail.app",
+      "bundleIdentifier": "com.sayless.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "sayless needs microphone access to record voice replies to emails"
@@ -27,7 +27,7 @@
         "backgroundColor": "#6366F1"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.tokmail.app",
+      "package": "com.sayless.app",
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]

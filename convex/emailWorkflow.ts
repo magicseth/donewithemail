@@ -83,6 +83,7 @@ export const processNewEmails = workflow.define({
         totalCount: fetchResult.stored.length,
         mostUrgentSubject: emailDetails?.subject,
         mostUrgentSender: emailDetails?.senderName,
+        mostUrgentSenderAvatar: emailDetails?.senderAvatarUrl,
         mostUrgentEmailId: emailDetails?.emailId,
         urgencyScore: emailDetails?.urgencyScore || highestUrgency,
       });

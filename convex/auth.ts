@@ -22,7 +22,10 @@ export const getAuthUrl = query({
       redirect_uri: args.redirectUri,
       response_type: "code",
       provider: "GoogleOAuth",
-      provider_scopes: GMAIL_SCOPES, // Request Gmail access + offline_access for refresh token
+      provider_scopes: GMAIL_SCOPES,
+      // Request offline access to get a refresh token from Google
+      access_type: "offline",
+      prompt: "consent", // Force consent screen to ensure refresh token is returned
     });
 
     return `https://api.workos.com/user_management/authorize?${params.toString()}`;

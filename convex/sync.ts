@@ -3,6 +3,26 @@ import { action, internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
+// Generate avatar URL from name/email
+// Uses UI Avatars service which generates nice initials-based profile photos
+function getAvatarUrl(name: string | undefined, email: string): string {
+  // Use name if available, otherwise use first part of email
+  const displayName = name || email.split("@")[0];
+  // URL encode the name for the API
+  const encoded = encodeURIComponent(displayName);
+  // Generate a consistent background color based on email
+  const colors = ["6366F1", "8B5CF6", "EC4899", "F59E0B", "10B981", "3B82F6", "EF4444"];
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) {
+    hash = ((hash << 5) - hash) + email.charCodeAt(i);
+    hash = hash & hash;
+  }
+  const colorIndex = Math.abs(hash) % colors.length;
+  const bgColor = colors[colorIndex];
+  
+  return `https://ui-avatars.com/api/?name=${encoded}&background=${bgColor}&color=fff&size=200&bold=true`;
+}
+
 /**
  * Process incoming email from Gmail webhook or polling
  */
@@ -117,19 +137,36 @@ export const upsertContactInternal = internalMutation({
     const now = Date.now();
 
     if (existing) {
-      await ctx.db.patch(existing._id, {
-        name: args.name ?? existing.name,
+      // Update name and avatar if we have a better name now
+      const updates: Record<string, unknown> = {
         emailCount: existing.emailCount + 1,
         lastEmailAt: now,
-      });
+      };
+      
+      if (args.name && args.name !== existing.name) {
+        updates.name = args.name;
+        // Regenerate avatar with new name
+        updates.avatarUrl = getAvatarUrl(args.name, args.email);
+      }
+      
+      // If no avatar exists, generate one
+      if (!existing.avatarUrl) {
+        updates.avatarUrl = getAvatarUrl(args.name || existing.name, args.email);
+      }
+      
+      await ctx.db.patch(existing._id, updates);
 
       return { contactId: existing._id, isNew: false };
     }
+
+    // Generate avatar URL for new contact
+    const avatarUrl = getAvatarUrl(args.name, args.email);
 
     const contactId = await ctx.db.insert("contacts", {
       userId: args.userId,
       email: args.email,
       name: args.name,
+      avatarUrl,
       emailCount: 1,
       lastEmailAt: now,
       relationship: "unknown",
@@ -245,5 +282,27 @@ export const markFailed = mutation({
       error: args.error,
       processedAt: Date.now(),
     });
+  },
+});
+
+/**
+ * Backfill avatar URLs for existing contacts that don't have one
+ */
+export const backfillAvatarUrls = mutation({
+  args: {},
+  handler: async (ctx) => {
+    // Get all contacts without avatarUrl
+    const contacts = await ctx.db.query("contacts").collect();
+    
+    let updated = 0;
+    for (const contact of contacts) {
+      if (!contact.avatarUrl) {
+        const avatarUrl = getAvatarUrl(contact.name, contact.email);
+        await ctx.db.patch(contact._id, { avatarUrl });
+        updated++;
+      }
+    }
+    
+    return { updated, total: contacts.length };
   },
 });

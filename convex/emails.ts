@@ -100,11 +100,6 @@ export const getUntriagedByEmail = query({
           q.eq("userId", user._id).gt("triagedAt", args.sessionStart)
         )
         .collect();
-
-      console.log(`[getUntriagedByEmail] sessionStart=${args.sessionStart}, recentlyTriaged=${recentlyTriagedEmails.length}`);
-      if (recentlyTriagedEmails.length > 0) {
-        console.log(`[getUntriagedByEmail] recentlyTriaged triagedAt values:`, recentlyTriagedEmails.map(e => e.triagedAt));
-      }
     }
 
     // Merge and dedupe (in case of race conditions)
@@ -453,6 +448,12 @@ export const triageEmail = mutation({
     ),
   },
   handler: async (ctx, args) => {
+    // Fetch email to log subject
+    const email = await ctx.db.get(args.emailId);
+    if (email) {
+      console.log(`[Triage] Action: ${args.action} | Subject: "${email.subject}" | ID: ${args.emailId}`);
+    }
+
     await ctx.db.patch(args.emailId, {
       isTriaged: true,
       triageAction: args.action,

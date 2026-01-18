@@ -67,11 +67,26 @@ export const getAllUsersDebug = internalQuery({
     return users.map((u) => ({
       _id: u._id,
       email: u.email,
-      workosRefreshToken: u.workosRefreshToken,
+      gmailRefreshToken: u.gmailRefreshToken,
       gmailAccessToken: u.gmailAccessToken,
       gmailTokenExpiresAt: u.gmailTokenExpiresAt,
       connectedProviders: u.connectedProviders,
     }));
+  },
+});
+
+// Update Gmail tokens after Google refresh (doesn't touch WorkOS refresh token)
+export const updateUserGmailTokens = internalMutation({
+  args: {
+    userId: v.id("users"),
+    gmailAccessToken: v.string(),
+    gmailTokenExpiresAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, {
+      gmailAccessToken: args.gmailAccessToken,
+      gmailTokenExpiresAt: args.gmailTokenExpiresAt,
+    });
   },
 });
 

@@ -27,6 +27,9 @@ export default defineSchema({
       v.literal("delegated")
     )),
     triagedAt: v.optional(v.number()),
+
+    // Direction: incoming (received) or outgoing (sent)
+    direction: v.optional(v.union(v.literal("incoming"), v.literal("outgoing"))),
   })
     .index("by_user", ["userId"])
     .index("by_user_untriaged", ["userId", "isTriaged", "receivedAt"])

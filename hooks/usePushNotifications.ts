@@ -42,12 +42,15 @@ export function usePushNotifications() {
       if (response) {
         const data = response.notification.request.content.data;
         console.log("App launched from notification:", data);
-        if (data?.emailId) {
-          // Small delay to ensure navigation is ready
-          setTimeout(() => {
+        // Small delay to ensure navigation is ready
+        setTimeout(() => {
+          if (data?.type === "missed_todos") {
+            // Navigate to TODO tab (index)
+            router.navigate("/(tabs)");
+          } else if (data?.emailId) {
             router.push(`/email/${data.emailId}`);
-          }, 100);
-        }
+          }
+        }, 100);
       }
     });
 
@@ -64,8 +67,12 @@ export function usePushNotifications() {
         const data = response.notification.request.content.data;
         console.log("Notification tapped:", data);
 
-        // Navigate to the specific email if emailId is provided
-        if (data?.emailId) {
+        // Handle different notification types
+        if (data?.type === "missed_todos") {
+          // Navigate to TODO tab (index)
+          router.navigate("/(tabs)");
+        } else if (data?.emailId) {
+          // Navigate to the specific email
           router.push(`/email/${data.emailId}`);
         }
       }

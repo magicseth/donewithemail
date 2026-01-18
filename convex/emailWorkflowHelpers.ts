@@ -13,6 +13,7 @@ export const getMostUrgentEmailDetails = internalQuery({
       emailId: Id<"emails">;
       subject: string;
       senderName?: string;
+      senderAvatarUrl?: string;
       urgencyScore: number;
     } | null = null;
 
@@ -44,6 +45,7 @@ export const getMostUrgentEmailDetails = internalQuery({
           emailId: email._id,
           subject: email.subject,
           senderName: contact?.name || contact?.email,
+          senderAvatarUrl: contact?.avatarUrl,
           urgencyScore: summary.urgencyScore,
         };
       }

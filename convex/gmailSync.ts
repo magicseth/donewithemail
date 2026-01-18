@@ -178,6 +178,7 @@ export const storeEmailInternal = internalMutation({
     bodyFull: v.string(),
     receivedAt: v.number(),
     isRead: v.boolean(),
+    direction: v.optional(v.union(v.literal("incoming"), v.literal("outgoing"))),
   },
   handler: async (ctx, args) => {
     // Check if email already exists
@@ -189,12 +190,17 @@ export const storeEmailInternal = internalMutation({
       .first();
 
     if (existing) {
+      // Update direction if it was previously missing
+      if (args.direction && !existing.direction) {
+        await ctx.db.patch(existing._id, { direction: args.direction });
+      }
       return { emailId: existing._id, isNew: false };
     }
 
     const emailId = await ctx.db.insert("emails", {
       ...args,
       isTriaged: false,
+      direction: args.direction || "incoming",
     });
 
     return { emailId, isNew: true };
@@ -499,25 +505,49 @@ export const fetchEmails = action({
     }
 
     // Fetch message list (default to 15 for faster initial load)
-    // Only fetch INBOX emails - exclude DRAFT, SENT, SPAM, TRASH
+    // Fetch both INBOX and SENT emails
     const maxResults = args.maxResults || 15;
-    let url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}&labelIds=INBOX`;
+
+    // Fetch INBOX emails
+    let inboxUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}&labelIds=INBOX`;
     if (args.pageToken) {
-      url += `&pageToken=${args.pageToken}`;
+      inboxUrl += `&pageToken=${args.pageToken}`;
     }
 
-    const listResponse = await fetch(url, {
+    const inboxResponse = await fetch(inboxUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    if (!listResponse.ok) {
-      const error = await listResponse.text();
-      throw new Error(`Gmail API error: ${listResponse.status} - ${error}`);
+    if (!inboxResponse.ok) {
+      const error = await inboxResponse.text();
+      throw new Error(`Gmail API error: ${inboxResponse.status} - ${error}`);
     }
 
-    const listData: { messages?: { id: string }[]; nextPageToken?: string } = await listResponse.json();
-    const messageIds: { id: string }[] = listData.messages || [];
-    const nextPageToken = listData.nextPageToken;
+    const inboxData: { messages?: { id: string }[]; nextPageToken?: string } = await inboxResponse.json();
+    const inboxMessageIds: { id: string; direction: "incoming" }[] = (inboxData.messages || []).map(m => ({ ...m, direction: "incoming" as const }));
+    const nextPageToken = inboxData.nextPageToken;
+
+    // Also fetch SENT emails (half as many to not overwhelm)
+    const sentUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${Math.ceil(maxResults / 2)}&labelIds=SENT`;
+    const sentResponse = await fetch(sentUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    let sentMessageIds: { id: string; direction: "outgoing" }[] = [];
+    if (sentResponse.ok) {
+      const sentData: { messages?: { id: string }[] } = await sentResponse.json();
+      sentMessageIds = (sentData.messages || []).map(m => ({ ...m, direction: "outgoing" as const }));
+    }
+
+    // Combine both lists, removing duplicates (some emails might be in both INBOX and SENT)
+    const seenIds = new Set<string>();
+    const messageIds: { id: string; direction: "incoming" | "outgoing" }[] = [];
+    for (const msg of [...inboxMessageIds, ...sentMessageIds]) {
+      if (!seenIds.has(msg.id)) {
+        seenIds.add(msg.id);
+        messageIds.push(msg);
+      }
+    }
 
     // Type for cached email data
     type CachedEmailData = {
@@ -561,6 +591,7 @@ export const fetchEmails = action({
       isRead: boolean;
       labels: string[];
       from: { name: string; email: string };
+      direction: "incoming" | "outgoing";
     }> = [];
 
     // Process in batches
@@ -568,7 +599,7 @@ export const fetchEmails = action({
       const batch = uncachedIds.slice(i, i + BATCH_SIZE);
 
       const batchResults = await Promise.all(
-        batch.map(async (msg: { id: string }) => {
+        batch.map(async (msg) => {
         try {
           const msgResponse = await fetch(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
@@ -639,6 +670,7 @@ export const fetchEmails = action({
               name: senderName,
               email: senderEmail,
             },
+            direction: msg.direction,
           };
         } catch (err) {
           console.error(`Error fetching message ${msg.id}:`, err);
@@ -667,6 +699,7 @@ export const fetchEmails = action({
       isRead: boolean;
       labels: string[];
       from: { name: string; email: string };
+      direction: "incoming" | "outgoing";
       summary?: string;
       urgencyScore?: number;
       urgencyReason?: string;
@@ -688,6 +721,7 @@ export const fetchEmails = action({
           isRead: cached.isRead,
           labels: [],
           from: { name: cached.fromName || cached.fromEmail, email: cached.fromEmail },
+          direction: m.direction, // Use direction from message list
           // Include cached AI data
           summary: cached.summary,
           urgencyScore: cached.urgencyScore,
@@ -772,6 +806,7 @@ export const fetchEmails = action({
           bodyFull,
           receivedAt: email.receivedAt,
           isRead: email.isRead,
+          direction: email.direction,
         });
       } catch (e) {
         console.error("Failed to store email:", email.id, e);

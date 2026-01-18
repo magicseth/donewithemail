@@ -683,11 +683,15 @@ export default function InboxScreen() {
 
   // Handle auto-triage when items scroll off the top
   const handleAutoTriage = useCallback(async (emailId: string) => {
-    console.log("[AutoTriage] Called for emailId:", emailId);
+    // Find the email to get its subject for logging
+    const email = emails.find(e => e._id === emailId);
+    const subject = email?.subject || "Unknown";
+
+    console.log(`[AutoTriage] Called for: "${subject}" (${emailId})`);
 
     // Skip if already triaged
     if (triagedIds.has(emailId) || scrolledPastTopRef.current.has(emailId)) {
-      console.log("[AutoTriage] Skipping - already triaged or scrolled past");
+      console.log(`[AutoTriage] Skipping - already triaged: "${subject}"`);
       return;
     }
 
@@ -700,15 +704,15 @@ export default function InboxScreen() {
     scrolledPastTopRef.current.add(emailId);
     setTriagedIds((prev) => new Set(prev).add(emailId));
 
-    console.log("[AutoTriage] Triaging email to 'done':", emailId);
+    console.log(`[AutoTriage] Triaging to 'done': "${subject}"`);
     try {
       await triageEmail({
         emailId: emailId as Id<"emails">,
         action: "done",
       });
-      console.log("[AutoTriage] Successfully triaged:", emailId);
+      console.log(`[AutoTriage] Success: "${subject}"`);
     } catch (error) {
-      console.error("[AutoTriage] Failed to auto-triage email:", error);
+      console.error(`[AutoTriage] Failed: "${subject}"`, error);
       // Revert on error
       scrolledPastTopRef.current.delete(emailId);
       setTriagedIds((prev) => {
@@ -717,12 +721,13 @@ export default function InboxScreen() {
         return next;
       });
     }
-  }, [triageEmail, triagedIds]);
+  }, [triageEmail, triagedIds, emails]);
 
   // Track viewable items for auto-triage
+  // Lower thresholds to catch fast scrolling
   const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 50,
-    minimumViewTime: 100, // Item must be visible for 100ms before counting
+    itemVisiblePercentThreshold: 10, // Just needs to peek into view
+    minimumViewTime: 0, // No minimum time - immediate detection
   }).current;
 
   // Use ref-based callback to avoid FlatList error about changing onViewableItemsChanged
