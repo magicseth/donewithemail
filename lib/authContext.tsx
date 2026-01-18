@@ -1,9 +1,20 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { Platform } from "react-native";
 import { useQuery, useAction } from "convex/react";
 import { api } from "../convex/_generated/api";
+import * as AuthSession from "expo-auth-session";
+import * as WebBrowser from "expo-web-browser";
 
-const REDIRECT_URI =
-  process.env.EXPO_PUBLIC_WORKOS_REDIRECT_URI || "http://localhost:8081/callback";
+// Complete any pending auth sessions on mount
+WebBrowser.maybeCompleteAuthSession();
+
+// Generate redirect URI using Expo's method
+const REDIRECT_URI = AuthSession.makeRedirectUri({
+  scheme: "tokmail",
+  path: "callback",
+});
+
+console.log("OAuth Redirect URI:", REDIRECT_URI);
 
 const AUTH_STORAGE_KEY = "tokmail_auth";
 
@@ -24,19 +35,44 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   user: User | null;
-  signIn: () => void;
+  signIn: () => Promise<void>;
   signOut: () => void;
   handleCallback: (code: string) => Promise<{ success: boolean; hasGmailAccess: boolean }>;
+  redirectUri: string;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+// Storage helpers that work on both web and native
+const storage = {
+  getItem: (key: string): string | null => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      return localStorage.getItem(key);
+    }
+    // For native, we'd use AsyncStorage, but for now return null
+    // TODO: Add AsyncStorage for native
+    return null;
+  },
+  setItem: (key: string, value: string) => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      localStorage.setItem(key, value);
+    }
+    // TODO: Add AsyncStorage for native
+  },
+  removeItem: (key: string) => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      localStorage.removeItem(key);
+    }
+    // TODO: Add AsyncStorage for native
+  },
+};
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
-  // Get auth URL from Convex
+  // Get auth URL from Convex - pass the Expo-generated redirect URI
   const authUrl = useQuery(api.auth.getAuthUrl, { redirectUri: REDIRECT_URI });
 
   // Authenticate action
@@ -44,59 +80,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Load stored auth on mount
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-        if (stored) {
-          const parsed: StoredAuth = JSON.parse(stored);
-          setUser(parsed.user);
-          setAccessToken(parsed.accessToken);
-        }
-      } catch (e) {
-        console.error("Failed to load stored auth:", e);
+    try {
+      const stored = storage.getItem(AUTH_STORAGE_KEY);
+      if (stored) {
+        const parsed: StoredAuth = JSON.parse(stored);
+        setUser(parsed.user);
+        setAccessToken(parsed.accessToken);
       }
+    } catch (e) {
+      console.error("Failed to load stored auth:", e);
     }
     setIsLoading(false);
   }, []);
 
   // Save auth to storage
   const saveAuth = useCallback((user: User, accessToken: string) => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(
-        AUTH_STORAGE_KEY,
-        JSON.stringify({ user, accessToken })
-      );
-    }
+    storage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ user, accessToken }));
     setUser(user);
     setAccessToken(accessToken);
   }, []);
 
   // Clear auth
   const clearAuth = useCallback(() => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(AUTH_STORAGE_KEY);
+    storage.removeItem(AUTH_STORAGE_KEY);
+    if (Platform.OS === "web" && typeof window !== "undefined") {
       sessionStorage.clear();
     }
     setUser(null);
     setAccessToken(null);
   }, []);
 
-  // Sign in - redirect to WorkOS
-  const signIn = useCallback(() => {
-    if (authUrl && typeof window !== "undefined") {
-      window.location.href = authUrl;
+  // Sign in using Expo WebBrowser
+  const signIn = useCallback(async () => {
+    if (!authUrl) {
+      console.error("Auth URL not available");
+      return;
+    }
+
+    try {
+      // Open auth session in browser
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, REDIRECT_URI);
+
+      if (result.type === "success" && result.url) {
+        // Extract authorization code from the returned URL
+        const url = new URL(result.url);
+        const code = url.searchParams.get("code");
+
+        if (code) {
+          // Exchange code for user profile
+          const authResult = await handleCallback(code);
+          if (authResult.success) {
+            console.log("Authentication successful");
+          }
+        }
+      } else if (result.type === "cancel") {
+        console.log("Auth cancelled by user");
+      }
+    } catch (e) {
+      console.error("Sign in failed:", e);
     }
   }, [authUrl]);
 
   // Sign out
   const signOut = useCallback(() => {
     clearAuth();
-    if (typeof window !== "undefined") {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
       window.location.href = "/";
     }
   }, [clearAuth]);
 
-  // Handle OAuth callback
+  // Handle OAuth callback (exchange code for user profile)
   const handleCallback = useCallback(
     async (code: string) => {
       setIsLoading(true);
@@ -128,6 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signIn,
         signOut,
         handleCallback,
+        redirectUri: REDIRECT_URI,
       }}
     >
       {children}
