@@ -1,26 +1,54 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
+  Pressable,
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   Alert,
+  ActivityIndicator,
+  SafeAreaView,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
+import { useAction, useQuery } from "convex/react";
+import { api } from "../convex/_generated/api";
+import { useAuth } from "../lib/authContext";
+import { Id } from "../convex/_generated/dataModel";
 
 export default function ComposeScreen() {
-  const { replyTo } = useLocalSearchParams<{ replyTo?: string }>();
+  const { replyTo, subject: initialSubject, emailId } = useLocalSearchParams<{
+    replyTo?: string;
+    subject?: string;
+    emailId?: string;
+  }>();
+  const { user } = useAuth();
 
-  const [to, setTo] = useState("");
-  const [subject, setSubject] = useState(replyTo ? "Re: " : "");
+  const [to, setTo] = useState(replyTo || "");
+  const [subject, setSubject] = useState(initialSubject || "");
   const [body, setBody] = useState("");
   const [isSending, setIsSending] = useState(false);
 
   const isReply = Boolean(replyTo);
+
+  // Get AI suggested reply if available
+  const originalEmail = useQuery(
+    api.emails.getEmail,
+    emailId ? { emailId: emailId as Id<"emails"> } : "skip"
+  );
+
+  // Pre-fill with AI suggested reply if available
+  useEffect(() => {
+    if (originalEmail?.suggestedReply && !body) {
+      setBody(originalEmail.suggestedReply);
+    }
+  }, [originalEmail?.suggestedReply]);
+
+  // Send email action
+  const sendEmailAction = useAction(api.gmailSend.sendEmail);
 
   const handleSend = useCallback(async () => {
     if (!to.trim()) {
@@ -33,88 +61,87 @@ export default function ComposeScreen() {
       return;
     }
 
+    if (!user?.email) {
+      Alert.alert("Error", "Not authenticated");
+      return;
+    }
+
     setIsSending(true);
 
     try {
-      // In production, call Gmail API to send
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await sendEmailAction({
+        userEmail: user.email,
+        to: to.trim(),
+        subject: subject.trim(),
+        body: body.trim(),
+        replyToMessageId: emailId,
+      });
 
       Alert.alert("Success", "Email sent!", [
         { text: "OK", onPress: () => router.back() },
       ]);
     } catch (error) {
-      Alert.alert("Error", "Failed to send email. Please try again.");
+      console.error("Send failed:", error);
+      Alert.alert(
+        "Error",
+        error instanceof Error ? error.message : "Failed to send email"
+      );
     } finally {
       setIsSending(false);
     }
-  }, [to, body]);
+  }, [to, subject, body, user?.email, emailId, sendEmailAction]);
 
   const handleDiscard = useCallback(() => {
-    if (to.trim() || subject.trim() || body.trim()) {
-      Alert.alert(
-        "Discard Draft",
-        "Are you sure you want to discard this email?",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Discard",
-            style: "destructive",
-            onPress: () => router.back(),
-          },
-        ]
-      );
-    } else {
-      router.back();
-    }
-  }, [to, subject, body]);
-
-  const handleAISuggest = useCallback(() => {
-    // In production, call AI to generate response
-    Alert.alert(
-      "AI Assistant",
-      "Would you like me to help draft a response?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Generate",
-          onPress: () => {
-            setBody(
-              "Thanks for your email. I've reviewed the information and here are my thoughts:\n\n[Your response here]\n\nLet me know if you have any questions."
-            );
-          },
-        },
-      ]
-    );
+    console.log("Cancel pressed - going back");
+    router.back();
   }, []);
 
+  const handleAISuggest = useCallback(() => {
+    if (originalEmail?.suggestedReply) {
+      setBody(originalEmail.suggestedReply);
+    } else {
+      Alert.alert(
+        "AI Assistant",
+        "No AI suggestion available for this email yet."
+      );
+    }
+  }, [originalEmail?.suggestedReply]);
+
   return (
-    <>
+    <SafeAreaView style={styles.safeArea}>
       <Stack.Screen
         options={{
-          headerTitle: isReply ? "Reply" : "New Email",
-          headerLeft: () => (
-            <TouchableOpacity onPress={handleDiscard} style={styles.headerButton}>
-              <Text style={styles.headerButtonCancel}>Cancel</Text>
-            </TouchableOpacity>
-          ),
-          headerRight: () => (
-            <TouchableOpacity
-              onPress={handleSend}
-              style={styles.headerButton}
-              disabled={isSending}
-            >
-              <Text
-                style={[
-                  styles.headerButtonSend,
-                  isSending && styles.headerButtonDisabled,
-                ]}
-              >
-                {isSending ? "Sending..." : "Send"}
-              </Text>
-            </TouchableOpacity>
-          ),
+          headerShown: false,
         }}
       />
+
+      {/* Custom header for better cross-platform support */}
+      <View style={styles.header}>
+        <Pressable
+          onPress={handleDiscard}
+          style={({ pressed }) => [
+            styles.headerButton,
+            pressed && styles.headerButtonPressed,
+          ]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Text style={styles.headerButtonCancel}>Cancel</Text>
+        </Pressable>
+        <Text style={styles.headerTitle}>{isReply ? "Reply" : "New Email"}</Text>
+        <TouchableOpacity
+          onPress={handleSend}
+          style={styles.headerButton}
+          disabled={isSending}
+          activeOpacity={0.6}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          {isSending ? (
+            <ActivityIndicator size="small" color="#6366F1" />
+          ) : (
+            <Text style={styles.headerButtonSend}>Send</Text>
+          )}
+        </TouchableOpacity>
+      </View>
 
       <KeyboardAvoidingView
         style={styles.container}
@@ -162,20 +189,42 @@ export default function ComposeScreen() {
         </ScrollView>
 
         {/* AI assist button */}
-        <View style={styles.toolbar}>
-          <TouchableOpacity style={styles.aiButton} onPress={handleAISuggest}>
-            <View style={styles.aiIcon}>
-              <Text style={styles.aiIconText}>AI</Text>
-            </View>
-            <Text style={styles.aiButtonText}>Suggest response</Text>
-          </TouchableOpacity>
-        </View>
+        {originalEmail?.suggestedReply && (
+          <View style={styles.toolbar}>
+            <TouchableOpacity style={styles.aiButton} onPress={handleAISuggest}>
+              <View style={styles.aiIcon}>
+                <Text style={styles.aiIconText}>AI</Text>
+              </View>
+              <Text style={styles.aiButtonText}>Use suggested reply</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </KeyboardAvoidingView>
-    </>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    zIndex: 10,
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#1a1a1a",
+  },
   container: {
     flex: 1,
     backgroundColor: "#fff",
@@ -185,19 +234,20 @@ const styles = StyleSheet.create({
   },
   headerButton: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
+    minWidth: 60,
+  },
+  headerButtonPressed: {
+    opacity: 0.5,
   },
   headerButtonCancel: {
     color: "#666",
-    fontSize: 16,
+    fontSize: 17,
   },
   headerButtonSend: {
     color: "#6366F1",
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "600",
-  },
-  headerButtonDisabled: {
-    color: "#999",
   },
   fieldRow: {
     flexDirection: "row",

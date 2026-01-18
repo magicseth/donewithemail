@@ -12,6 +12,7 @@ interface AISummaryProps {
   urgencyReason?: string;
   suggestedReply?: string;
   compact?: boolean;
+  onUseReply?: () => void;
 }
 
 export function AISummary({
@@ -20,6 +21,7 @@ export function AISummary({
   urgencyReason,
   suggestedReply,
   compact = false,
+  onUseReply,
 }: AISummaryProps) {
   const [expanded, setExpanded] = useState(!compact);
 
@@ -85,9 +87,11 @@ export function AISummary({
           <View style={styles.replyBox}>
             <Text style={styles.replyText}>{suggestedReply}</Text>
           </View>
-          <TouchableOpacity style={styles.useReplyButton}>
-            <Text style={styles.useReplyButtonText}>Use This Reply</Text>
-          </TouchableOpacity>
+          {onUseReply && (
+            <TouchableOpacity style={styles.useReplyButton} onPress={onUseReply}>
+              <Text style={styles.useReplyButtonText}>Use This Reply</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </View>

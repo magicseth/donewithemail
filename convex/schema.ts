@@ -26,19 +26,47 @@ export default defineSchema({
       v.literal("delegated")
     )),
     triagedAt: v.optional(v.number()),
-
-    // AI-generated fields
-    summary: v.optional(v.string()),
-    urgencyScore: v.optional(v.number()),
-    urgencyReason: v.optional(v.string()),
-    suggestedReply: v.optional(v.string()),
-    aiProcessedAt: v.optional(v.number()),
   })
     .index("by_user", ["userId"])
     .index("by_user_untriaged", ["userId", "isTriaged"])
     .index("by_user_received", ["userId", "receivedAt"])
     .index("by_external_id", ["externalId", "provider"])
     .index("by_from", ["from"]),
+
+  // AI-generated email summaries (separate table for cleaner data model)
+  emailSummaries: defineTable({
+    emailId: v.id("emails"),
+    summary: v.string(),
+    urgencyScore: v.number(),
+    urgencyReason: v.string(),
+    suggestedReply: v.optional(v.string()),
+
+    // Action required type
+    actionRequired: v.optional(v.union(
+      v.literal("reply"),      // User should reply
+      v.literal("action"),     // User should do something (not reply)
+      v.literal("fyi"),        // Just informational
+      v.literal("none")        // No action needed
+    )),
+    actionDescription: v.optional(v.string()), // e.g., "Schedule meeting", "Review document"
+
+    // Quick reply options (up to 3)
+    quickReplies: v.optional(v.array(v.object({
+      label: v.string(),       // Button text: "Sounds good!", "Let me check"
+      body: v.string(),        // Full reply text to send
+    }))),
+
+    // Calendar event suggestion
+    calendarEvent: v.optional(v.object({
+      title: v.string(),
+      startTime: v.optional(v.string()),  // ISO string or relative like "next Tuesday 2pm"
+      endTime: v.optional(v.string()),
+      description: v.optional(v.string()),
+    })),
+
+    createdAt: v.number(),
+  })
+    .index("by_email", ["emailId"]),
 
   contacts: defineTable({
     userId: v.id("users"),

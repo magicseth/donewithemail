@@ -8,7 +8,9 @@ import {
   Switch,
   Alert,
   ActivityIndicator,
+  Platform,
 } from "react-native";
+import { router } from "expo-router";
 import { useAuth } from "../../lib/authContext";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -25,37 +27,43 @@ export default function SettingsScreen() {
   );
 
   const handleSignOut = async () => {
-    if (typeof window !== "undefined") {
-      const confirmed = window.confirm("Are you sure you want to sign out?");
-      if (!confirmed) return;
-
+    const doSignOut = async () => {
       try {
         await signOut();
       } catch (e) {
         console.log("SignOut error:", e);
       }
 
-      localStorage.clear();
-      sessionStorage.clear();
-      document.cookie.split(";").forEach((c) => {
-        document.cookie = c
-          .replace(/^ +/, "")
-          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-      });
-      window.location.href = "/";
-      return;
-    }
+      // Clear web storage if on web
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        localStorage.clear();
+        sessionStorage.clear();
+        document.cookie.split(";").forEach((c) => {
+          document.cookie = c
+            .replace(/^ +/, "")
+            .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+      }
 
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          await signOut();
+      // Navigate to home/login
+      router.replace("/");
+    };
+
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const confirmed = window.confirm("Are you sure you want to sign out?");
+      if (confirmed) {
+        await doSignOut();
+      }
+    } else {
+      Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Sign Out",
+          style: "destructive",
+          onPress: doSignOut,
         },
-      },
-    ]);
+      ]);
+    }
   };
 
   if (!isAuthenticated) {

@@ -1,42 +1,62 @@
-import { useState, useCallback, useRef, useEffect } from "react";
-import { useAction } from "convex/react";
+import { useState, useCallback, useRef } from "react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../lib/authContext";
 
+export interface QuickReply {
+  label: string;
+  body: string;
+}
+
+export interface CalendarEvent {
+  title: string;
+  startTime?: string;
+  endTime?: string;
+  description?: string;
+}
+
 export interface GmailEmail {
-  id: string;
-  threadId: string;
+  _id: string;
+  externalId: string;
   subject: string;
-  snippet: string;
+  bodyPreview: string;
   receivedAt: number;
   isRead: boolean;
-  labels: string[];
-  from: {
-    name: string;
-    email: string;
-  };
-  // AI-generated fields
   summary?: string;
   urgencyScore?: number;
   urgencyReason?: string;
   suggestedReply?: string;
+  actionRequired?: "reply" | "action" | "fyi" | "none";
+  actionDescription?: string;
+  quickReplies?: QuickReply[];
+  calendarEvent?: CalendarEvent;
+  fromContact?: {
+    _id: string;
+    email: string;
+    name?: string;
+    avatarUrl?: string;
+    relationship?: "vip" | "regular" | "unknown";
+  };
 }
 
 export function useGmail() {
   const { user, isAuthenticated } = useAuth();
-  const [emails, setEmails] = useState<GmailEmail[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(true);
   const nextPageTokenRef = useRef<string | undefined>(undefined);
 
-  // Action to fetch emails from server
+  // Query for cached emails - this is INSTANT from Convex
+  const cachedEmails = useQuery(
+    api.emails.getInboxByEmail,
+    isAuthenticated && user?.email ? { email: user.email, limit: 50 } : "skip"
+  );
+
+  // Actions for syncing with Gmail (only on explicit refresh)
   const fetchEmailsAction = useAction(api.gmailSync.fetchEmails);
   const summarizeAction = useAction(api.summarizeActions.summarizeByExternalIds);
 
-  // Trigger summarization for emails
+  // Trigger summarization for emails that need it
   const summarizeEmails = useCallback(
     async (emailIds: string[]) => {
       if (!isAuthenticated || !user?.email || emailIds.length === 0) return;
@@ -44,36 +64,13 @@ export function useGmail() {
       console.log("Starting summarization for", emailIds.length, "emails");
       setIsSummarizing(true);
       try {
-        const results = await summarizeAction({
+        await summarizeAction({
           externalIds: emailIds,
           userEmail: user.email,
         });
-        console.log("Summarization results:", results);
-
-        // Update emails with summaries
-        setEmails((prev) =>
-          prev.map((email) => {
-            const result = results.find(
-              (r: any) => r.externalId === email.id && r.success
-            );
-            if (result?.result) {
-              return {
-                ...email,
-                summary: result.result.summary,
-                urgencyScore: result.result.urgencyScore,
-                urgencyReason: result.result.urgencyReason,
-                suggestedReply: result.result.suggestedReply,
-              };
-            }
-            return email;
-          })
-        );
+        // No need to update state - useQuery will auto-update when DB changes
       } catch (e) {
         console.error("Failed to summarize emails:", e);
-        // Log full error details
-        if (e instanceof Error) {
-          console.error("Error details:", e.message, e.stack);
-        }
       } finally {
         setIsSummarizing(false);
       }
@@ -81,56 +78,50 @@ export function useGmail() {
     [isAuthenticated, user?.email, summarizeAction]
   );
 
-  const fetchEmails = useCallback(
-    async (maxResults = 50) => {
+  // Sync with Gmail - only called on explicit refresh
+  const syncWithGmail = useCallback(
+    async (maxResults = 15) => {
       if (!isAuthenticated || !user?.email) {
         setError("Not authenticated");
-        return [];
+        return;
       }
 
-      setIsLoading(true);
+      setIsSyncing(true);
       setError(null);
 
       try {
-        // Fetch emails using stored tokens (first page)
         const result = await fetchEmailsAction({
           userEmail: user.email,
           maxResults,
         });
-        setEmails(result.emails);
         nextPageTokenRef.current = result.nextPageToken;
-        setHasMore(!!result.nextPageToken);
 
-        // Trigger summarization for new emails (in background)
-        const emailIds = result.emails.map((e: any) => e.id);
-        summarizeEmails(emailIds);
-
-        return result.emails;
+        // Summarize emails that don't have summaries yet
+        const emailsNeedingSummary = result.emails.filter((e: any) => !e.summary);
+        if (emailsNeedingSummary.length > 0) {
+          const emailIds = emailsNeedingSummary.map((e: any) => e.id);
+          console.log(`Summarizing ${emailIds.length} emails`);
+          summarizeEmails(emailIds);
+        }
       } catch (e) {
-        const errorMessage =
-          e instanceof Error ? e.message : "Failed to fetch emails";
+        const errorMessage = e instanceof Error ? e.message : "Failed to sync";
         setError(errorMessage);
-        console.error("Failed to fetch emails:", e);
-        return [];
+        console.error("Failed to sync with Gmail:", e);
       } finally {
-        setIsLoading(false);
+        setIsSyncing(false);
       }
     },
     [isAuthenticated, user?.email, fetchEmailsAction, summarizeEmails]
   );
 
+  // Load more from Gmail
   const loadMore = useCallback(
     async (maxResults = 50) => {
-      if (!isAuthenticated || !user?.email || !hasMore || isLoadingMore) {
-        return [];
+      if (!isAuthenticated || !user?.email || !nextPageTokenRef.current) {
+        return;
       }
 
-      if (!nextPageTokenRef.current) {
-        setHasMore(false);
-        return [];
-      }
-
-      setIsLoadingMore(true);
+      setIsSyncing(true);
 
       try {
         const result = await fetchEmailsAction({
@@ -138,46 +129,52 @@ export function useGmail() {
           maxResults,
           pageToken: nextPageTokenRef.current,
         });
-
-        // Append new emails to existing list
-        setEmails((prev) => [...prev, ...result.emails]);
         nextPageTokenRef.current = result.nextPageToken;
-        setHasMore(!!result.nextPageToken);
 
-        // Trigger summarization for new emails
-        const emailIds = result.emails.map((e: any) => e.id);
-        summarizeEmails(emailIds);
-
-        return result.emails;
+        // Summarize new emails
+        const emailsNeedingSummary = result.emails.filter((e: any) => !e.summary);
+        if (emailsNeedingSummary.length > 0) {
+          summarizeEmails(emailsNeedingSummary.map((e: any) => e.id));
+        }
       } catch (e) {
         console.error("Failed to load more emails:", e);
-        return [];
       } finally {
-        setIsLoadingMore(false);
+        setIsSyncing(false);
       }
     },
-    [isAuthenticated, user?.email, hasMore, isLoadingMore, fetchEmailsAction, summarizeEmails]
+    [isAuthenticated, user?.email, fetchEmailsAction, summarizeEmails]
   );
 
-  const refetch = useCallback(() => {
-    nextPageTokenRef.current = undefined;
-    setHasMore(true);
-    return fetchEmails();
-  }, [fetchEmails]);
+  // Transform cached emails to match expected format
+  const emails: GmailEmail[] = (cachedEmails || []).map((email: any) => ({
+    _id: email._id,
+    externalId: email.externalId,
+    subject: email.subject,
+    bodyPreview: email.bodyPreview,
+    receivedAt: email.receivedAt,
+    isRead: email.isRead,
+    summary: email.summary,
+    urgencyScore: email.urgencyScore,
+    urgencyReason: email.urgencyReason,
+    suggestedReply: email.suggestedReply,
+    actionRequired: email.actionRequired,
+    actionDescription: email.actionDescription,
+    quickReplies: email.quickReplies,
+    calendarEvent: email.calendarEvent,
+    fromContact: email.fromContact,
+  }));
 
   return {
     isAuthenticated,
     emails,
-    isLoading,
-    isLoadingMore,
+    isLoading: cachedEmails === undefined, // Loading from Convex cache
+    isSyncing, // Syncing with Gmail
     isSummarizing,
     error,
-    hasMore,
-    fetchEmails,
+    hasMore: !!nextPageTokenRef.current,
+    syncWithGmail, // Call this on pull-to-refresh
     loadMore,
-    refetch,
     summarizeEmails,
     userEmail: user?.email,
-    userId: user?.id,
   };
 }

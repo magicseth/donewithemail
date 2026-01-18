@@ -17,6 +17,100 @@ export const getUserByEmail = internalQuery({
   },
 });
 
+// Internal query to get cached summaries for a list of external IDs
+export const getCachedSummaries = internalQuery({
+  args: { externalIds: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const summaries: Record<string, {
+      summary?: string;
+      urgencyScore?: number;
+      urgencyReason?: string;
+      suggestedReply?: string;
+    }> = {};
+
+    for (const externalId of args.externalIds) {
+      const email = await ctx.db
+        .query("emails")
+        .withIndex("by_external_id", (q) =>
+          q.eq("externalId", externalId).eq("provider", "gmail")
+        )
+        .first();
+
+      if (email) {
+        // Look up summary from emailSummaries table
+        const summaryData = await ctx.db
+          .query("emailSummaries")
+          .withIndex("by_email", (q) => q.eq("emailId", email._id))
+          .first();
+
+        if (summaryData) {
+          summaries[externalId] = {
+            summary: summaryData.summary,
+            urgencyScore: summaryData.urgencyScore,
+            urgencyReason: summaryData.urgencyReason,
+            suggestedReply: summaryData.suggestedReply,
+          };
+        }
+      }
+    }
+
+    return summaries;
+  },
+});
+
+// Internal query to get cached emails by external IDs
+export const getCachedEmails = internalQuery({
+  args: { externalIds: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const cached: Record<string, {
+      subject: string;
+      snippet: string;
+      receivedAt: number;
+      isRead: boolean;
+      fromEmail: string;
+      fromName?: string;
+      summary?: string;
+      urgencyScore?: number;
+      urgencyReason?: string;
+      suggestedReply?: string;
+    }> = {};
+
+    for (const externalId of args.externalIds) {
+      const email = await ctx.db
+        .query("emails")
+        .withIndex("by_external_id", (q) =>
+          q.eq("externalId", externalId).eq("provider", "gmail")
+        )
+        .first();
+
+      if (email) {
+        // Get contact info
+        const contact = await ctx.db.get(email.from);
+        // Get summary from emailSummaries table
+        const summaryData = await ctx.db
+          .query("emailSummaries")
+          .withIndex("by_email", (q) => q.eq("emailId", email._id))
+          .first();
+
+        cached[externalId] = {
+          subject: email.subject,
+          snippet: email.bodyPreview,
+          receivedAt: email.receivedAt,
+          isRead: email.isRead,
+          fromEmail: contact?.email || "",
+          fromName: contact?.name,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: summaryData?.urgencyReason,
+          suggestedReply: summaryData?.suggestedReply,
+        };
+      }
+    }
+
+    return cached;
+  },
+});
+
 // Internal mutation to upsert contact and return ID
 export const upsertContact = internalMutation({
   args: {
@@ -212,9 +306,10 @@ export const fetchEmails = action({
       accessToken = refreshed.accessToken;
     }
 
-    // Fetch message list
-    const maxResults = args.maxResults || 50;
-    let url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}`;
+    // Fetch message list (default to 15 for faster initial load)
+    // Only fetch INBOX emails - exclude DRAFT, SENT, SPAM, TRASH
+    const maxResults = args.maxResults || 15;
+    let url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}&labelIds=INBOX`;
     if (args.pageToken) {
       url += `&pageToken=${args.pageToken}`;
     }
@@ -232,8 +327,32 @@ export const fetchEmails = action({
     const messageIds: { id: string }[] = listData.messages || [];
     const nextPageToken = listData.nextPageToken;
 
-    // Fetch full message details for all messages
-    const emails: Array<{
+    // Type for cached email data
+    type CachedEmailData = {
+      subject: string;
+      snippet: string;
+      receivedAt: number;
+      isRead: boolean;
+      fromEmail: string;
+      fromName?: string;
+      summary?: string;
+      urgencyScore?: number;
+      urgencyReason?: string;
+      suggestedReply?: string;
+    };
+
+    // Check which emails are already cached in the database
+    const allExternalIds = messageIds.map(m => m.id);
+    const cachedEmails: Record<string, CachedEmailData> = await ctx.runQuery(internal.gmailSync.getCachedEmails, {
+      externalIds: allExternalIds,
+    });
+
+    // Only fetch from Gmail the emails we don't have cached
+    const uncachedIds = messageIds.filter(m => !cachedEmails[m.id]);
+    console.log(`Fetching ${uncachedIds.length} emails from Gmail (${Object.keys(cachedEmails).length} cached)`);
+
+    // Fetch metadata only for uncached messages (much faster than format=full)
+    const fetchedEmails: Array<{
       id: string;
       threadId: string;
       subject: string;
@@ -245,9 +364,9 @@ export const fetchEmails = action({
       labels: string[];
       from: { name: string; email: string };
     }> = await Promise.all(
-      messageIds.map(async (msg: { id: string }) => {
+      uncachedIds.map(async (msg: { id: string }) => {
         const msgResponse = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
           { headers: { Authorization: `Bearer ${accessToken}` } }
         );
         const msgData = await msgResponse.json();
@@ -270,16 +389,14 @@ export const fetchEmails = action({
         const senderName = fromMatch?.[1]?.trim() || fromMatch?.[2] || from;
         const senderEmail = fromMatch?.[2] || from;
 
-        // Extract full body
-        const body = extractBody(msgData.payload || {});
-
+        // Use snippet as body preview (no full body fetch for inbox view)
         return {
           id: msg.id,
           threadId: msgData.threadId,
           subject,
           snippet: msgData.snippet || "",
-          bodyHtml: body.html,
-          bodyPlain: body.plain,
+          bodyHtml: "",
+          bodyPlain: msgData.snippet || "",
           receivedAt: date ? new Date(date).getTime() : Date.now(),
           isRead: !msgData.labelIds?.includes("UNREAD"),
           labels: msgData.labelIds || [],
@@ -290,6 +407,49 @@ export const fetchEmails = action({
         };
       })
     );
+
+    // Type for combined email data
+    type EmailData = {
+      id: string;
+      threadId: string;
+      subject: string;
+      snippet: string;
+      bodyHtml: string;
+      bodyPlain: string;
+      receivedAt: number;
+      isRead: boolean;
+      labels: string[];
+      from: { name: string; email: string };
+      summary?: string;
+      urgencyScore?: number;
+      urgencyReason?: string;
+      suggestedReply?: string;
+    };
+
+    // Combine cached and fetched emails in original order
+    const emails: EmailData[] = messageIds.map((m): EmailData | undefined => {
+      const cached = cachedEmails[m.id];
+      if (cached) {
+        return {
+          id: m.id,
+          threadId: "", // Not needed for display
+          subject: cached.subject,
+          snippet: cached.snippet,
+          bodyHtml: "",
+          bodyPlain: "",
+          receivedAt: cached.receivedAt,
+          isRead: cached.isRead,
+          labels: [],
+          from: { name: cached.fromName || cached.fromEmail, email: cached.fromEmail },
+          // Include cached AI data
+          summary: cached.summary,
+          urgencyScore: cached.urgencyScore,
+          urgencyReason: cached.urgencyReason,
+          suggestedReply: cached.suggestedReply,
+        };
+      }
+      return fetchedEmails.find(e => e.id === m.id);
+    }).filter((e): e is EmailData => e !== undefined);
 
     // Store emails in Convex database
     for (const email of emails) {
@@ -320,6 +480,31 @@ export const fetchEmails = action({
       }
     }
 
-    return { emails, nextPageToken };
+    // Fetch cached summaries for all emails
+    const externalIds: string[] = emails.map((e: EmailData) => e.id);
+    type CachedSummary = {
+      summary?: string;
+      urgencyScore?: number;
+      urgencyReason?: string;
+      suggestedReply?: string;
+    };
+    const cachedSummaries: Record<string, CachedSummary> = await ctx.runQuery(
+      internal.gmailSync.getCachedSummaries,
+      { externalIds }
+    );
+
+    // Merge cached summaries into email data
+    const emailsWithSummaries: EmailData[] = emails.map((email: EmailData): EmailData => {
+      const cached: CachedSummary | undefined = cachedSummaries[email.id];
+      return {
+        ...email,
+        summary: cached?.summary ?? email.summary,
+        urgencyScore: cached?.urgencyScore ?? email.urgencyScore,
+        urgencyReason: cached?.urgencyReason ?? email.urgencyReason,
+        suggestedReply: cached?.suggestedReply ?? email.suggestedReply,
+      };
+    });
+
+    return { emails: emailsWithSummaries, nextPageToken };
   },
 });

@@ -1,79 +1,45 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
-  Dimensions,
   Platform,
+  UIManager,
 } from "react-native";
-import {
-  Gesture,
-  GestureDetector,
-  GestureHandlerRootView,
-} from "react-native-gesture-handler";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withDecay,
-  interpolate,
-  Extrapolation,
-} from "react-native-reanimated";
 import { router } from "expo-router";
+import { useAction } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { useGmail, GmailEmail } from "../../hooks/useGmail";
+import { useVoiceRecording } from "../../hooks/useDailyVoice";
+import { PullToReplyInbox, InboxEmail } from "../../components/PullToReplyInbox";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const BALL_SIZE = 40;
-const TARGET_SIZE = 60;
-const TRIAGE_BAR_HEIGHT = 80;
-// Ball can move from left target to right target
-const BALL_TRAVEL_RANGE = SCREEN_WIDTH - TARGET_SIZE * 2;
-
-interface InboxEmail {
-  _id: string;
-  subject: string;
-  bodyPreview: string;
-  receivedAt: number;
-  isRead: boolean;
-  isTriaged: boolean;
-  triageAction?: "done" | "reply_needed" | "delegated";
-  urgencyScore?: number;
-  summary?: string;
-  urgencyReason?: string;
-  fromContact?: {
-    _id: string;
-    email: string;
-    name?: string;
-  } | null;
+// Enable LayoutAnimation on Android
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// Convert Gmail email to InboxEmail format
 function toInboxEmail(email: GmailEmail): InboxEmail {
   return {
-    _id: email.id,
+    _id: email._id,
     subject: email.subject,
-    bodyPreview: email.snippet,
+    bodyPreview: email.bodyPreview,
     receivedAt: email.receivedAt,
     isRead: email.isRead,
     isTriaged: false,
     urgencyScore: email.urgencyScore,
     summary: email.summary,
     urgencyReason: email.urgencyReason,
-    fromContact: {
-      _id: email.from.email,
-      email: email.from.email,
-      name: email.from.name,
-    },
+    actionRequired: email.actionRequired,
+    quickReplies: email.quickReplies,
+    fromContact: email.fromContact ? {
+      _id: email.fromContact._id,
+      email: email.fromContact.email,
+      name: email.fromContact.name,
+    } : null,
   };
 }
 
-type TriageAction = "reply" | "save" | "archive";
-
-// Decode HTML entities in text (for email snippets)
 function decodeHtmlEntities(text: string): string {
   if (!text) return text;
   return text
@@ -85,352 +51,6 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&nbsp;/g, " ");
-}
-
-function getActiveTarget(ballX: number): TriageAction {
-  const normalizedX = (ballX + BALL_TRAVEL_RANGE / 2) / BALL_TRAVEL_RANGE;
-  if (normalizedX < 0.33) return "reply";
-  if (normalizedX > 0.66) return "archive";
-  return "save";
-}
-
-export default function InboxScreen() {
-  const { isAuthenticated, emails: gmailEmails, isLoading, isLoadingMore, isSummarizing, hasMore, fetchEmails, loadMore, refetch } = useGmail();
-  const [refreshing, setRefreshing] = React.useState(false);
-
-  // Ball position (0 = center, negative = left, positive = right)
-  const ballX = useSharedValue(0);
-
-  // For wheel event handling on web
-  const wheelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isWheelActiveRef = useRef(false);
-
-  // Fetch emails when authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchEmails();
-    }
-  }, [isAuthenticated, fetchEmails]);
-
-  // Convert Gmail emails to inbox format
-  const emails = gmailEmails.map(toInboxEmail);
-
-  const handleEmailPress = useCallback((emailId: string) => {
-    router.push(`/email/${emailId}`);
-  }, []);
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
-  }, [refetch]);
-
-  const handleLoadMore = useCallback(() => {
-    if (hasMore && !isLoadingMore) {
-      loadMore();
-    }
-  }, [hasMore, isLoadingMore, loadMore]);
-
-  // Handle wheel events for trackpad scrolling on web
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-
-    const handleWheel = (event: WheelEvent) => {
-      const deltaX = event.deltaX;
-
-      // Only handle if there's meaningful horizontal movement
-      if (Math.abs(deltaX) < 1) return;
-
-      // Update ball position based on horizontal scroll
-      // Negate deltaX so scrolling right moves ball right
-      // Higher multiplier (3) for faster response
-      const newX = Math.max(
-        -BALL_TRAVEL_RANGE / 2,
-        Math.min(BALL_TRAVEL_RANGE / 2, ballX.value - deltaX * 3)
-      );
-      ballX.value = newX;
-
-      // Mark wheel as active
-      isWheelActiveRef.current = true;
-
-      // Clear existing timeout
-      if (wheelTimeoutRef.current) {
-        clearTimeout(wheelTimeoutRef.current);
-      }
-
-      // Set timeout to snap ball when wheel stops
-      wheelTimeoutRef.current = setTimeout(() => {
-        if (isWheelActiveRef.current) {
-          isWheelActiveRef.current = false;
-          // Snap to nearest target
-          const activeTarget = getActiveTarget(ballX.value);
-          if (activeTarget === "reply") {
-            ballX.value = withSpring(-BALL_TRAVEL_RANGE / 2 + TARGET_SIZE / 2);
-          } else if (activeTarget === "archive") {
-            ballX.value = withSpring(BALL_TRAVEL_RANGE / 2 - TARGET_SIZE / 2);
-          } else {
-            ballX.value = withSpring(0);
-          }
-        }
-      }, 150);
-    };
-
-    // Add wheel event listener to window
-    window.addEventListener("wheel", handleWheel, { passive: true });
-
-    return () => {
-      window.removeEventListener("wheel", handleWheel);
-      if (wheelTimeoutRef.current) {
-        clearTimeout(wheelTimeoutRef.current);
-      }
-    };
-  }, [ballX]);
-
-  // Pan gesture for horizontal ball movement
-  const panGesture = Gesture.Pan()
-    .onUpdate((event) => {
-      // Map horizontal translation to ball position
-      // Clamp to travel range
-      const newX = Math.max(
-        -BALL_TRAVEL_RANGE / 2,
-        Math.min(BALL_TRAVEL_RANGE / 2, event.translationX)
-      );
-      ballX.value = newX;
-    })
-    .onEnd(() => {
-      // Snap ball to nearest target
-      const activeTarget = getActiveTarget(ballX.value);
-      if (activeTarget === "reply") {
-        ballX.value = withSpring(-BALL_TRAVEL_RANGE / 2 + TARGET_SIZE / 2);
-      } else if (activeTarget === "archive") {
-        ballX.value = withSpring(BALL_TRAVEL_RANGE / 2 - TARGET_SIZE / 2);
-      } else {
-        ballX.value = withSpring(0);
-      }
-    });
-
-  // Native gesture for FlatList scrolling
-  const nativeGesture = Gesture.Native();
-
-  // Combine gestures - pan for horizontal, native for vertical scroll
-  const composedGesture = Gesture.Simultaneous(panGesture, nativeGesture);
-
-  // Ball animated style
-  const ballStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: ballX.value }],
-  }));
-
-  // Target highlight styles
-  const replyTargetStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(
-      ballX.value,
-      [-BALL_TRAVEL_RANGE / 2, -BALL_TRAVEL_RANGE / 4, 0],
-      [1, 0.5, 0.3],
-      Extrapolation.CLAMP
-    ),
-    transform: [
-      {
-        scale: interpolate(
-          ballX.value,
-          [-BALL_TRAVEL_RANGE / 2, 0],
-          [1.2, 1],
-          Extrapolation.CLAMP
-        ),
-      },
-    ],
-  }));
-
-  const saveTargetStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(
-      Math.abs(ballX.value),
-      [0, BALL_TRAVEL_RANGE / 4],
-      [1, 0.3],
-      Extrapolation.CLAMP
-    ),
-    transform: [
-      {
-        scale: interpolate(
-          Math.abs(ballX.value),
-          [0, BALL_TRAVEL_RANGE / 4],
-          [1.2, 1],
-          Extrapolation.CLAMP
-        ),
-      },
-    ],
-  }));
-
-  const archiveTargetStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(
-      ballX.value,
-      [0, BALL_TRAVEL_RANGE / 4, BALL_TRAVEL_RANGE / 2],
-      [0.3, 0.5, 1],
-      Extrapolation.CLAMP
-    ),
-    transform: [
-      {
-        scale: interpolate(
-          ballX.value,
-          [0, BALL_TRAVEL_RANGE / 2],
-          [1, 1.2],
-          Extrapolation.CLAMP
-        ),
-      },
-    ],
-  }));
-
-  const renderEmailItem = ({ item }: { item: InboxEmail }) => {
-    const fromName = item.fromContact?.name || item.fromContact?.email || "Unknown";
-    const timeAgo = formatTimeAgo(item.receivedAt);
-
-    return (
-      <TouchableOpacity
-        style={[styles.emailItem, !item.isRead && styles.emailItemUnread]}
-        onPress={() => handleEmailPress(item._id)}
-      >
-        <View style={styles.emailHeader}>
-          <View style={styles.senderRow}>
-            {!item.isRead && <View style={styles.unreadDot} />}
-            <Text
-              style={[styles.senderName, !item.isRead && styles.textBold]}
-              numberOfLines={1}
-            >
-              {fromName}
-            </Text>
-            <Text style={styles.timeAgo}>{timeAgo}</Text>
-          </View>
-
-          <View style={styles.subjectRow}>
-            <Text
-              style={[styles.subject, !item.isRead && styles.textBold]}
-              numberOfLines={1}
-            >
-              {decodeHtmlEntities(item.subject)}
-            </Text>
-            {item.triageAction && (
-              <View
-                style={[
-                  styles.triageBadge,
-                  item.triageAction === "reply_needed" && styles.triageBadgeReply,
-                ]}
-              >
-                <Text style={styles.triageBadgeText}>
-                  {item.triageAction === "done"
-                    ? "✓"
-                    : item.triageAction === "reply_needed"
-                    ? "↩"
-                    : "→"}
-                </Text>
-              </View>
-            )}
-          </View>
-        </View>
-
-        {/* AI Summary or body preview */}
-        {item.summary ? (
-          <View style={styles.summaryContainer}>
-            <Text style={styles.summaryLabel}>AI Summary</Text>
-            <Text style={styles.summaryText} numberOfLines={2}>
-              {item.summary}
-            </Text>
-          </View>
-        ) : (
-          <Text style={styles.preview} numberOfLines={2}>
-            {decodeHtmlEntities(item.bodyPreview)}
-          </Text>
-        )}
-
-        {item.urgencyScore !== undefined && item.urgencyScore >= 50 && (
-          <View
-            style={[
-              styles.urgencyIndicator,
-              {
-                backgroundColor:
-                  item.urgencyScore >= 80 ? "#FF4444" : "#FFAA00",
-              },
-            ]}
-          />
-        )}
-      </TouchableOpacity>
-    );
-  };
-
-  if (isLoading && emails.length === 0) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6366F1" />
-      </View>
-    );
-  }
-
-  return (
-    <GestureHandlerRootView style={styles.container}>
-      {/* Triage bar with targets and ball */}
-      <View style={styles.triageBar}>
-        <Animated.View style={[styles.target, styles.targetLeft, replyTargetStyle]}>
-          <Text style={styles.targetIcon}>↩</Text>
-          <Text style={styles.targetLabel}>Reply</Text>
-        </Animated.View>
-
-        <Animated.View style={[styles.target, styles.targetCenter, saveTargetStyle]}>
-          <Text style={styles.targetIcon}>★</Text>
-          <Text style={styles.targetLabel}>Save</Text>
-        </Animated.View>
-
-        <Animated.View style={[styles.target, styles.targetRight, archiveTargetStyle]}>
-          <Text style={styles.targetIcon}>✓</Text>
-          <Text style={styles.targetLabel}>Archive</Text>
-        </Animated.View>
-
-        {/* The ball */}
-        <Animated.View style={[styles.ball, ballStyle]} />
-      </View>
-
-      {/* Email list with gesture detection */}
-      <GestureDetector gesture={composedGesture}>
-        <Animated.View style={styles.listContainer}>
-          <FlatList
-            data={emails}
-            keyExtractor={(item) => item._id}
-            renderItem={renderEmailItem}
-            contentContainerStyle={styles.listContent}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={handleRefresh}
-                tintColor="#6366F1"
-              />
-            }
-            onEndReached={handleLoadMore}
-            onEndReachedThreshold={0.5}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyIcon}>📭</Text>
-                <Text style={styles.emptyText}>No emails yet</Text>
-              </View>
-            }
-            ListFooterComponent={
-              isLoadingMore || isSummarizing ? (
-                <View style={styles.loadingMore}>
-                  <ActivityIndicator size="small" color="#6366F1" />
-                  <Text style={styles.loadingMoreText}>
-                    {isLoadingMore ? "Loading more..." : "Summarizing with AI..."}
-                  </Text>
-                </View>
-              ) : null
-            }
-          />
-        </Animated.View>
-      </GestureDetector>
-
-      {/* Compose FAB */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push("/compose")}
-      >
-        <Text style={styles.fabIcon}>✏️</Text>
-      </TouchableOpacity>
-    </GestureHandlerRootView>
-  );
 }
 
 function formatTimeAgo(timestamp: number): string {
@@ -447,88 +67,152 @@ function formatTimeAgo(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
+export default function InboxScreen() {
+  const { emails: gmailEmails, isLoading, isSyncing, isSummarizing, hasMore, syncWithGmail, loadMore, userEmail } = useGmail();
+
+  const {
+    startRecording,
+    stopRecording,
+    cancelRecording,
+    transcript,
+    isConnecting,
+    isConnected,
+  } = useVoiceRecording();
+
+  const sendEmailAction = useAction(api.gmailSend.sendReply);
+
+  const emails = gmailEmails.map(toInboxEmail);
+  const isRecording = isConnecting || isConnected;
+
+  const handleEmailLongPress = useCallback((emailId: string) => {
+    // Navigate to full email on long press
+    router.push(`/email/${emailId}`);
+  }, []);
+
+  const handleRefresh = useCallback(async () => {
+    await syncWithGmail();
+  }, [syncWithGmail]);
+
+  const handleLoadMore = useCallback(() => {
+    if (hasMore && !isSyncing) {
+      loadMore();
+    }
+  }, [hasMore, isSyncing, loadMore]);
+
+  const handleSendReply = useCallback(async (
+    emailId: string,
+    to: string,
+    subject: string,
+    body: string
+  ) => {
+    if (!userEmail) throw new Error("Not authenticated");
+
+    await sendEmailAction({
+      userEmail,
+      to,
+      subject,
+      body,
+      inReplyTo: emailId,
+    });
+  }, [userEmail, sendEmailAction]);
+
+  const renderEmailItem = useCallback(({ item }: { item: InboxEmail }) => {
+    const fromName = item.fromContact?.name || item.fromContact?.email || "Unknown";
+    const timeAgo = formatTimeAgo(item.receivedAt);
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.emailItem,
+          !item.isRead && styles.emailItemUnread,
+        ]}
+        onPress={() => router.push(`/email/${item._id}`)}
+        onLongPress={() => handleEmailLongPress(item._id)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.emailContent}>
+          <View style={styles.emailHeader}>
+            <View style={styles.senderRow}>
+              {!item.isRead && <View style={styles.unreadDot} />}
+              <Text style={[styles.senderName, !item.isRead && styles.textBold]} numberOfLines={1}>
+                {fromName}
+              </Text>
+              <Text style={styles.timeAgo}>{timeAgo}</Text>
+            </View>
+
+            <Text style={[styles.subject, !item.isRead && styles.textBold]} numberOfLines={1}>
+              {decodeHtmlEntities(item.subject)}
+            </Text>
+          </View>
+
+          {item.summary ? (
+            <View style={styles.summaryContainer}>
+              <Text style={styles.summaryLabel}>AI Summary</Text>
+              <Text style={styles.summaryText} numberOfLines={2}>
+                {item.summary}
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.preview} numberOfLines={2}>
+              {decodeHtmlEntities(item.bodyPreview)}
+            </Text>
+          )}
+        </View>
+
+        {item.urgencyScore !== undefined && item.urgencyScore >= 50 && (
+          <View
+            style={[
+              styles.urgencyIndicator,
+              { backgroundColor: item.urgencyScore >= 80 ? "#FF4444" : "#FFAA00" },
+            ]}
+          />
+        )}
+      </TouchableOpacity>
+    );
+  }, [handleEmailLongPress]);
+
+  return (
+    <PullToReplyInbox
+      emails={emails}
+      isLoading={isLoading}
+      isSyncing={isSyncing}
+      isSummarizing={isSummarizing}
+      hasMore={hasMore}
+      userEmail={userEmail}
+      startRecording={startRecording}
+      stopRecording={stopRecording}
+      cancelRecording={cancelRecording}
+      transcript={transcript}
+      isRecording={isRecording}
+      onLoadMore={handleLoadMore}
+      onRefresh={handleRefresh}
+      onSendReply={handleSendReply}
+      renderEmailItem={renderEmailItem}
+    />
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  triageBar: {
-    height: TRIAGE_BAR_HEIGHT,
-    backgroundColor: "#F5F5F5",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E0E0E0",
-  },
-  target: {
-    width: TARGET_SIZE,
-    height: TARGET_SIZE,
-    borderRadius: TARGET_SIZE / 2,
-    backgroundColor: "#E0E0E0",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  targetLeft: {
-    backgroundColor: "#FFE0B2",
-  },
-  targetCenter: {
-    backgroundColor: "#C8E6C9",
-  },
-  targetRight: {
-    backgroundColor: "#B3E5FC",
-  },
-  targetIcon: {
-    fontSize: 20,
-  },
-  targetLabel: {
-    fontSize: 10,
-    marginTop: 2,
-    color: "#666",
-  },
-  ball: {
-    position: "absolute",
-    width: BALL_SIZE,
-    height: BALL_SIZE,
-    borderRadius: BALL_SIZE / 2,
-    backgroundColor: "#6366F1",
-    left: SCREEN_WIDTH / 2 - BALL_SIZE / 2,
-    top: TRIAGE_BAR_HEIGHT / 2 - BALL_SIZE / 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  listContainer: {
-    flex: 1,
-  },
-  listContent: {
-    paddingBottom: 100,
-  },
   emailItem: {
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
-    position: "relative",
+    backgroundColor: "#fff",
   },
   emailItemUnread: {
     backgroundColor: "#F8F9FF",
   },
+  emailContent: {
+    flex: 1,
+  },
   emailHeader: {
-    marginBottom: 4,
+    marginBottom: 6,
   },
   senderRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   unreadDot: {
     width: 8,
@@ -547,51 +231,30 @@ const styles = StyleSheet.create({
     color: "#999",
     marginLeft: 8,
   },
-  subjectRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
   subject: {
-    flex: 1,
     fontSize: 15,
     color: "#1a1a1a",
   },
   textBold: {
     fontWeight: "600",
   },
-  triageBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#4CAF50",
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 8,
-  },
-  triageBadgeReply: {
-    backgroundColor: "#FF9800",
-  },
-  triageBadgeText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
-  },
   preview: {
     fontSize: 14,
     color: "#666",
     lineHeight: 20,
+    marginTop: 4,
   },
   summaryContainer: {
-    backgroundColor: "#F0F4FF",
+    backgroundColor: "#E8EAFF",
     borderRadius: 8,
-    padding: 8,
-    marginTop: 4,
+    padding: 10,
+    marginTop: 8,
   },
   summaryLabel: {
     fontSize: 10,
     fontWeight: "600",
     color: "#6366F1",
-    marginBottom: 2,
+    marginBottom: 4,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -606,47 +269,5 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 3,
-  },
-  emptyState: {
-    alignItems: "center",
-    paddingTop: 100,
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: "#666",
-  },
-  loadingMore: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 20,
-    gap: 8,
-  },
-  loadingMoreText: {
-    fontSize: 14,
-    color: "#666",
-  },
-  fab: {
-    position: "absolute",
-    right: 20,
-    bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#6366F1",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  fabIcon: {
-    fontSize: 24,
   },
 });

@@ -4,7 +4,7 @@
     "slug": "tokmail",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/ios-light.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "scheme": "tokmail",
@@ -17,7 +17,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tokmail.app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "TokMail needs microphone access to record voice replies to emails"
       }
     },
     "android": {
@@ -26,14 +27,25 @@
         "backgroundColor": "#6366F1"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.tokmail.app"
+      "package": "com.tokmail.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-secure-store",
+      "expo-haptics",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "TokMail needs microphone access to record voice replies to emails"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

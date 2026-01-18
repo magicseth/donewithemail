@@ -13,36 +13,36 @@ const TAP_COOLDOWN_AFTER_SWIPE = 500;
 // Convert Gmail email to EmailCardData format
 function toEmailCardData(email: GmailEmail): EmailCardData {
   return {
-    _id: email.id,
+    _id: email._id,
     subject: email.subject,
-    bodyPreview: email.snippet,
+    bodyPreview: email.bodyPreview,
     receivedAt: email.receivedAt,
     isRead: email.isRead,
-    fromContact: {
-      _id: email.from.email,
-      email: email.from.email,
-      name: email.from.name,
-      relationship: "regular" as const,
-    },
+    summary: email.summary,
+    urgencyScore: email.urgencyScore,
+    urgencyReason: email.urgencyReason,
+    suggestedReply: email.suggestedReply,
+    fromContact: email.fromContact ? {
+      _id: email.fromContact._id,
+      email: email.fromContact.email,
+      name: email.fromContact.name,
+      relationship: email.fromContact.relationship || "regular",
+    } : undefined,
   };
 }
 
 export default function FeedScreen() {
-  const { isAuthenticated, emails, isLoading, error, fetchEmails, refetch } = useGmail();
+  const { isAuthenticated, emails, isLoading, error, syncWithGmail } = useGmail();
   const { archiveEmail, markReplyNeeded, archiveByExternalId, markReplyNeededByExternalId } = useEmailActions();
   const [triagedIds, setTriagedIds] = useState<Set<string>>(new Set());
   const lastSwipeTimeRef = useRef<number>(0);
 
-  // Fetch emails when authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchEmails();
-    }
-  }, [isAuthenticated, fetchEmails]);
+  // No need to fetch on mount - useQuery loads from Convex cache instantly
+  // syncWithGmail is only called on explicit pull-to-refresh
 
   // Convert to card format and filter out triaged emails
   const emailCards = emails
-    .filter(email => !triagedIds.has(email.id))
+    .filter(email => !triagedIds.has(email._id))
     .map(toEmailCardData);
 
   // Check if an ID looks like a valid Convex ID (not a Gmail ID)
@@ -173,7 +173,7 @@ export default function FeedScreen() {
         <Text style={styles.errorIcon}>!</Text>
         <Text style={styles.errorTitle}>Unable to load emails</Text>
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={refetch}>
+        <TouchableOpacity style={styles.retryButton} onPress={() => syncWithGmail()}>
           <Text style={styles.retryButtonText}>Try Again</Text>
         </TouchableOpacity>
       </View>

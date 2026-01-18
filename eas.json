@@ -20,7 +20,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_CONVEX_URL": "${EXPO_PUBLIC_CONVEX_URL}"
+        "EXPO_PUBLIC_CONVEX_URL": "https://cool-kingfisher-293.convex.cloud"
       }
     }
   },

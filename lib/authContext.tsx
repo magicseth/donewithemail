@@ -4,6 +4,7 @@ import { useQuery, useAction } from "convex/react";
 import { api } from "../convex/_generated/api";
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
+import * as SecureStore from "expo-secure-store";
 
 // Complete any pending auth sessions on mount
 WebBrowser.maybeCompleteAuthSession();
@@ -36,7 +37,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   user: User | null;
   signIn: () => Promise<void>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
   handleCallback: (code: string) => Promise<{ success: boolean; hasGmailAccess: boolean }>;
   redirectUri: string;
 }
@@ -45,25 +46,35 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 // Storage helpers that work on both web and native
 const storage = {
-  getItem: (key: string): string | null => {
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      return localStorage.getItem(key);
+  getItem: async (key: string): Promise<string | null> => {
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined") {
+        return localStorage.getItem(key);
+      }
+      return null;
     }
-    // For native, we'd use AsyncStorage, but for now return null
-    // TODO: Add AsyncStorage for native
-    return null;
+    // Use SecureStore for native
+    return await SecureStore.getItemAsync(key);
   },
-  setItem: (key: string, value: string) => {
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      localStorage.setItem(key, value);
+  setItem: async (key: string, value: string): Promise<void> => {
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined") {
+        localStorage.setItem(key, value);
+      }
+      return;
     }
-    // TODO: Add AsyncStorage for native
+    // Use SecureStore for native
+    await SecureStore.setItemAsync(key, value);
   },
-  removeItem: (key: string) => {
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      localStorage.removeItem(key);
+  removeItem: async (key: string): Promise<void> => {
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(key);
+      }
+      return;
     }
-    // TODO: Add AsyncStorage for native
+    // Use SecureStore for native
+    await SecureStore.deleteItemAsync(key);
   },
 };
 
@@ -80,29 +91,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Load stored auth on mount
   useEffect(() => {
-    try {
-      const stored = storage.getItem(AUTH_STORAGE_KEY);
-      if (stored) {
-        const parsed: StoredAuth = JSON.parse(stored);
-        setUser(parsed.user);
-        setAccessToken(parsed.accessToken);
+    const loadAuth = async () => {
+      try {
+        const stored = await storage.getItem(AUTH_STORAGE_KEY);
+        if (stored) {
+          const parsed: StoredAuth = JSON.parse(stored);
+          setUser(parsed.user);
+          setAccessToken(parsed.accessToken);
+        }
+      } catch (e) {
+        console.error("Failed to load stored auth:", e);
       }
-    } catch (e) {
-      console.error("Failed to load stored auth:", e);
-    }
-    setIsLoading(false);
+      setIsLoading(false);
+    };
+    loadAuth();
   }, []);
 
   // Save auth to storage
-  const saveAuth = useCallback((user: User, accessToken: string) => {
-    storage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ user, accessToken }));
-    setUser(user);
-    setAccessToken(accessToken);
+  const saveAuth = useCallback(async (userData: User, token: string) => {
+    await storage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ user: userData, accessToken: token }));
+    setUser(userData);
+    setAccessToken(token);
   }, []);
 
   // Clear auth
-  const clearAuth = useCallback(() => {
-    storage.removeItem(AUTH_STORAGE_KEY);
+  const clearAuth = useCallback(async () => {
+    await storage.removeItem(AUTH_STORAGE_KEY);
     if (Platform.OS === "web" && typeof window !== "undefined") {
       sessionStorage.clear();
     }
@@ -142,11 +156,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [authUrl]);
 
   // Sign out
-  const signOut = useCallback(() => {
-    clearAuth();
-    if (Platform.OS === "web" && typeof window !== "undefined") {
-      window.location.href = "/";
-    }
+  const signOut = useCallback(async () => {
+    await clearAuth();
+    // Navigation should be handled by the calling component
   }, [clearAuth]);
 
   // Handle OAuth callback (exchange code for user profile)
@@ -157,7 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const result = await authenticate({ code });
 
         if (result.success && result.user) {
-          saveAuth(result.user, result.accessToken);
+          await saveAuth(result.user, result.accessToken);
           return { success: true, hasGmailAccess: result.hasGmailAccess };
         }
 

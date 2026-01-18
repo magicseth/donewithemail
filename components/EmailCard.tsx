@@ -51,6 +51,7 @@ interface EmailCardProps {
   email: EmailCardData;
   onPress?: () => void;
   onContactPress?: () => void;
+  onUseReply?: () => void;
   showFullContent?: boolean;
 }
 
@@ -58,6 +59,7 @@ export function EmailCard({
   email,
   onPress,
   onContactPress,
+  onUseReply,
   showFullContent = false,
 }: EmailCardProps) {
   const fromName = email.fromContact?.name || email.fromContact?.email || "Unknown";
@@ -113,6 +115,7 @@ export function EmailCard({
           urgencyReason={email.urgencyReason}
           suggestedReply={email.suggestedReply}
           compact={!showFullContent}
+          onUseReply={onUseReply}
         />
       )}
 
@@ -128,7 +131,7 @@ export function EmailCard({
               border: "none",
               backgroundColor: "#fff",
             }}
-            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-scripts"
           />
         ) : (
           <Text

@@ -1,5 +1,15 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery, DatabaseReader } from "./_generated/server";
+import { Id } from "./_generated/dataModel";
+
+// Helper to fetch summary for an email
+async function getSummaryForEmail(db: DatabaseReader, emailId: Id<"emails">) {
+  const summary = await db
+    .query("emailSummaries")
+    .withIndex("by_email", (q) => q.eq("emailId", emailId))
+    .first();
+  return summary;
+}
 
 /**
  * Get untriaged emails for the feed view
@@ -20,18 +30,28 @@ export const getUntriagedEmails = query({
       .order("desc")
       .take(limit);
 
-    // Fetch contact info for each email
-    const emailsWithContacts = await Promise.all(
+    // Fetch contact info and summary for each email
+    const emailsWithData = await Promise.all(
       emails.map(async (email) => {
         const fromContact = await ctx.db.get(email.from);
+        const summaryData = await getSummaryForEmail(ctx.db, email._id);
         return {
           ...email,
           fromContact,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: summaryData?.urgencyReason,
+          suggestedReply: summaryData?.suggestedReply,
+          actionRequired: summaryData?.actionRequired,
+          actionDescription: summaryData?.actionDescription,
+          quickReplies: summaryData?.quickReplies,
+          calendarEvent: summaryData?.calendarEvent,
+          aiProcessedAt: summaryData?.createdAt,
         };
       })
     );
 
-    return emailsWithContacts;
+    return emailsWithData;
   },
 });
 
@@ -53,17 +73,78 @@ export const getInboxEmails = query({
       .order("desc")
       .take(limit);
 
-    const emailsWithContacts = await Promise.all(
+    const emailsWithData = await Promise.all(
       emails.map(async (email) => {
         const fromContact = await ctx.db.get(email.from);
+        const summaryData = await getSummaryForEmail(ctx.db, email._id);
         return {
           ...email,
           fromContact,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: summaryData?.urgencyReason,
+          suggestedReply: summaryData?.suggestedReply,
+          actionRequired: summaryData?.actionRequired,
+          actionDescription: summaryData?.actionDescription,
+          quickReplies: summaryData?.quickReplies,
+          calendarEvent: summaryData?.calendarEvent,
+          aiProcessedAt: summaryData?.createdAt,
         };
       })
     );
 
-    return emailsWithContacts;
+    return emailsWithData;
+  },
+});
+
+/**
+ * Get inbox emails by user email (for fast cache-first loading)
+ */
+export const getInboxByEmail = query({
+  args: {
+    email: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // Find user by email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+
+    if (!user) {
+      return [];
+    }
+
+    const limit = args.limit ?? 50;
+
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_user_received", (q) => q.eq("userId", user._id))
+      .order("desc")
+      .take(limit);
+
+    const emailsWithData = await Promise.all(
+      emails.map(async (email) => {
+        const fromContact = await ctx.db.get(email.from);
+        const summaryData = await getSummaryForEmail(ctx.db, email._id);
+        return {
+          ...email,
+          fromContact,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: summaryData?.urgencyReason,
+          suggestedReply: summaryData?.suggestedReply,
+          actionRequired: summaryData?.actionRequired,
+          actionDescription: summaryData?.actionDescription,
+          quickReplies: summaryData?.quickReplies,
+          calendarEvent: summaryData?.calendarEvent,
+          aiProcessedAt: summaryData?.createdAt,
+        };
+      })
+    );
+
+    return emailsWithData;
   },
 });
 
@@ -82,11 +163,17 @@ export const getEmail = query({
     const toContacts = await Promise.all(
       email.to.map((id) => ctx.db.get(id))
     );
+    const summaryData = await getSummaryForEmail(ctx.db, email._id);
 
     return {
       ...email,
       fromContact,
       toContacts: toContacts.filter(Boolean),
+      summary: summaryData?.summary,
+      urgencyScore: summaryData?.urgencyScore,
+      urgencyReason: summaryData?.urgencyReason,
+      suggestedReply: summaryData?.suggestedReply,
+      aiProcessedAt: summaryData?.createdAt,
     };
   },
 });
@@ -115,11 +202,17 @@ export const getEmailByExternalId = query({
     const toContacts = await Promise.all(
       email.to.map((id) => ctx.db.get(id))
     );
+    const summaryData = await getSummaryForEmail(ctx.db, email._id);
 
     return {
       ...email,
       fromContact,
       toContacts: toContacts.filter(Boolean),
+      summary: summaryData?.summary,
+      urgencyScore: summaryData?.urgencyScore,
+      urgencyReason: summaryData?.urgencyReason,
+      suggestedReply: summaryData?.suggestedReply,
+      aiProcessedAt: summaryData?.createdAt,
     };
   },
 });
@@ -141,7 +234,22 @@ export const getEmailsByContact = query({
       .order("desc")
       .take(limit);
 
-    return emails;
+    // Add summary data to each email
+    const emailsWithData = await Promise.all(
+      emails.map(async (email) => {
+        const summaryData = await getSummaryForEmail(ctx.db, email._id);
+        return {
+          ...email,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: summaryData?.urgencyReason,
+          suggestedReply: summaryData?.suggestedReply,
+          aiProcessedAt: summaryData?.createdAt,
+        };
+      })
+    );
+
+    return emailsWithData;
   },
 });
 
@@ -269,25 +377,20 @@ export const storeEmail = mutation({
 });
 
 /**
- * Update email with AI-generated content
+ * Get a single email by ID (internal, for actions)
  */
-export const updateEmailWithAI = mutation({
+export const getEmailById = internalQuery({
   args: {
-    emailId: v.id("emails"),
-    summary: v.string(),
-    urgencyScore: v.number(),
-    urgencyReason: v.string(),
-    suggestedReply: v.optional(v.string()),
+    emailId: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.emailId, {
-      summary: args.summary,
-      urgencyScore: args.urgencyScore,
-      urgencyReason: args.urgencyReason,
-      suggestedReply: args.suggestedReply,
-      aiProcessedAt: Date.now(),
-    });
-
-    return { success: true };
+    try {
+      const id = args.emailId as Id<"emails">;
+      const email = await ctx.db.get(id);
+      return email;
+    } catch {
+      return null;
+    }
   },
 });
+

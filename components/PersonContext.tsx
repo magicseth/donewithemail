@@ -8,6 +8,20 @@ import {
   FlatList,
 } from "react-native";
 
+// Decode HTML entities in text
+function decodeHtmlEntities(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
 export interface ContactData {
   _id: string;
   email: string;
@@ -135,7 +149,7 @@ export function PersonContext({
             >
               <View style={styles.emailHeader}>
                 <Text style={styles.emailSubject} numberOfLines={1}>
-                  {item.subject}
+                  {decodeHtmlEntities(item.subject)}
                 </Text>
                 {item.urgencyScore !== undefined && item.urgencyScore >= 50 && (
                   <View
@@ -147,7 +161,7 @@ export function PersonContext({
                 )}
               </View>
               <Text style={styles.emailPreview} numberOfLines={2}>
-                {item.bodyPreview}
+                {decodeHtmlEntities(item.bodyPreview)}
               </Text>
               <Text style={styles.emailDate}>{formatTimeAgo(item.receivedAt)}</Text>
             </TouchableOpacity>

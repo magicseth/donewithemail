@@ -170,12 +170,26 @@ export const getContactStats = query({
       .order("desc")
       .take(10);
 
-    const urgentCount = emails.filter((e) => (e.urgencyScore ?? 0) > 80).length;
+    // Fetch summaries for all emails to calculate urgent count
+    const emailsWithSummaries = await Promise.all(
+      emails.map(async (email) => {
+        const summaryData = await ctx.db
+          .query("emailSummaries")
+          .withIndex("by_email", (q) => q.eq("emailId", email._id))
+          .first();
+        return {
+          ...email,
+          urgencyScore: summaryData?.urgencyScore,
+        };
+      })
+    );
+
+    const urgentCount = emailsWithSummaries.filter((e) => (e.urgencyScore ?? 0) > 80).length;
     const replyNeededCount = emails.filter((e) => e.triageAction === "reply_needed").length;
 
     return {
       contact,
-      recentEmails: emails,
+      recentEmails: emailsWithSummaries,
       stats: {
         totalEmails: contact.emailCount,
         urgentEmails: urgentCount,
@@ -208,12 +222,26 @@ export const getContactStatsByEmail = query({
       .order("desc")
       .take(10);
 
-    const urgentCount = emails.filter((e) => (e.urgencyScore ?? 0) > 80).length;
+    // Fetch summaries for all emails to calculate urgent count
+    const emailsWithSummaries = await Promise.all(
+      emails.map(async (email) => {
+        const summaryData = await ctx.db
+          .query("emailSummaries")
+          .withIndex("by_email", (q) => q.eq("emailId", email._id))
+          .first();
+        return {
+          ...email,
+          urgencyScore: summaryData?.urgencyScore,
+        };
+      })
+    );
+
+    const urgentCount = emailsWithSummaries.filter((e) => (e.urgencyScore ?? 0) > 80).length;
     const replyNeededCount = emails.filter((e) => e.triageAction === "reply_needed").length;
 
     return {
       contact,
-      recentEmails: emails,
+      recentEmails: emailsWithSummaries,
       stats: {
         totalEmails: contact.emailCount,
         urgentEmails: urgentCount,

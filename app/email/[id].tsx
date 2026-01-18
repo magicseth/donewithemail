@@ -41,11 +41,20 @@ export default function EmailDetailScreen() {
   }, [convexId, archiveEmail]);
 
   const handleReply = useCallback(() => {
+    if (!email) return;
+    const replyTo = email.fromContact?.email || "";
+    const subject = email.subject.startsWith("Re:")
+      ? email.subject
+      : `Re: ${email.subject}`;
     router.push({
       pathname: "/compose",
-      params: { replyTo: id },
+      params: {
+        replyTo,
+        subject,
+        emailId: email._id,
+      },
     });
-  }, [id]);
+  }, [email]);
 
   const handleContactPress = useCallback(() => {
     if (email?.fromContact?._id) {
@@ -124,6 +133,7 @@ export default function EmailDetailScreen() {
         <EmailCard
           email={displayEmail}
           onContactPress={handleContactPress}
+          onUseReply={handleReply}
           showFullContent
         />
       </ScrollView>

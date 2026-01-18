@@ -12,14 +12,35 @@ const anthropic = createAnthropic({
 });
 
 // Summarize a single email
+// Type for quick reply options
+interface QuickReply {
+  label: string;
+  body: string;
+}
+
+// Type for calendar event suggestion
+interface CalendarEvent {
+  title: string;
+  startTime?: string;
+  endTime?: string;
+  description?: string;
+}
+
+// Type for summarization result
+interface SummarizeResult {
+  summary: string;
+  urgencyScore: number;
+  urgencyReason: string;
+  suggestedReply?: string;
+  actionRequired?: "reply" | "action" | "fyi" | "none";
+  actionDescription?: string;
+  quickReplies?: QuickReply[];
+  calendarEvent?: CalendarEvent;
+}
+
 export const summarizeEmail = action({
   args: { emailId: v.id("emails") },
-  handler: async (ctx, args): Promise<{
-    summary: string;
-    urgencyScore: number;
-    urgencyReason: string;
-    suggestedReply?: string;
-  } | null> => {
+  handler: async (ctx, args): Promise<SummarizeResult | null> => {
     // Get email content
     const email = await ctx.runQuery(internal.summarize.getEmailForSummary, {
       emailId: args.emailId,
@@ -36,6 +57,10 @@ export const summarizeEmail = action({
         urgencyScore: email.urgencyScore || 0,
         urgencyReason: email.urgencyReason || "",
         suggestedReply: email.suggestedReply,
+        actionRequired: email.actionRequired,
+        actionDescription: email.actionDescription,
+        quickReplies: email.quickReplies,
+        calendarEvent: email.calendarEvent,
       };
     }
 
@@ -47,14 +72,26 @@ Subject: ${email.subject}
 ${email.bodyPreview || email.bodyFull}
 `.trim();
 
-    // Call Anthropic via AI SDK
+    // Call Anthropic via AI SDK with enhanced prompt
     const { text } = await generateText({
       model: anthropic("claude-sonnet-4-20250514"),
-      prompt: `Analyze this email and provide a JSON response with the following fields:
-- summary: A concise 1-2 sentence summary
-- urgencyScore: A number 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
-- urgencyReason: Brief explanation of the urgency score
-- suggestedReply: Optional brief reply if one is needed, or null
+      prompt: `Analyze this email and return a JSON response with these fields:
+
+1. summary: 1-2 sentence summary focused on what the recipient needs to know
+2. urgencyScore: 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
+3. urgencyReason: Brief explanation of the urgency score
+4. actionRequired: One of "reply" | "action" | "fyi" | "none"
+   - "reply": User should reply to this email
+   - "action": User should do something (not reply), like review a document
+   - "fyi": Just informational, no action needed
+   - "none": No action needed (spam, automated, etc.)
+5. actionDescription: If action required, what specifically (e.g., "Schedule meeting", "Review attached document")
+6. quickReplies: If reply needed, up to 3 quick reply options as array of {label, body}:
+   - label: Short button text (max 20 chars) like "Sounds good!", "Let me check", "Can't make it"
+   - body: Full professional reply text to send
+7. calendarEvent: If email mentions a meeting/event, extract {title, startTime, endTime, description}
+   - startTime/endTime can be relative like "next Tuesday 2pm" or ISO format
+8. suggestedReply: If a longer custom reply seems appropriate, draft it here (optional)
 
 Email:
 ${emailContent}
@@ -63,7 +100,7 @@ Respond with only valid JSON, no markdown or explanation.`,
     });
 
     // Parse response
-    let result;
+    let result: SummarizeResult;
     try {
       result = JSON.parse(text);
     } catch {
@@ -76,6 +113,13 @@ Respond with only valid JSON, no markdown or explanation.`,
       }
     }
 
+    // Validate quickReplies (limit to 3 and ensure proper structure)
+    if (result.quickReplies) {
+      result.quickReplies = result.quickReplies.slice(0, 3).filter(
+        (qr): qr is QuickReply => typeof qr.label === "string" && typeof qr.body === "string"
+      );
+    }
+
     // Save to database
     await ctx.runMutation(internal.summarize.updateEmailSummary, {
       emailId: args.emailId,
@@ -83,13 +127,17 @@ Respond with only valid JSON, no markdown or explanation.`,
       urgencyScore: result.urgencyScore || 0,
       urgencyReason: result.urgencyReason || "",
       suggestedReply: result.suggestedReply || undefined,
+      actionRequired: result.actionRequired || undefined,
+      actionDescription: result.actionDescription || undefined,
+      quickReplies: result.quickReplies || undefined,
+      calendarEvent: result.calendarEvent || undefined,
     });
 
     return result;
   },
 });
 
-// Summarize emails by external IDs (for Gmail emails)
+// Summarize emails by external IDs (for Gmail emails) - PARALLEL execution
 export const summarizeByExternalIds = action({
   args: {
     externalIds: v.array(v.string()),
@@ -98,107 +146,142 @@ export const summarizeByExternalIds = action({
   handler: async (ctx, args): Promise<Array<{
     externalId: string;
     success: boolean;
-    result?: {
-      summary: string;
-      urgencyScore: number;
-      urgencyReason: string;
-      suggestedReply?: string;
-    };
+    result?: SummarizeResult;
     error?: string;
   }>> => {
-    const results: Array<{
+    type ResultType = {
       externalId: string;
       success: boolean;
-      result?: {
-        summary: string;
-        urgencyScore: number;
-        urgencyReason: string;
-        suggestedReply?: string;
-      };
+      result?: SummarizeResult;
       error?: string;
-    }> = [];
+    };
 
-    for (const externalId of args.externalIds) {
-      try {
-        // Find email by external ID
-        const email = await ctx.runQuery(internal.summarize.getEmailByExternalId, {
-          externalId,
-        });
-
-        if (!email) {
-          results.push({ externalId, success: false, error: "Email not found in DB" });
-          continue;
-        }
-
-        // Skip if already summarized
-        if (email.aiProcessedAt) {
-          results.push({
+    // Process all emails in parallel
+    const results = await Promise.all(
+      args.externalIds.map(async (externalId): Promise<ResultType> => {
+        try {
+          // Find email by external ID
+          const email = await ctx.runQuery(internal.summarize.getEmailByExternalId, {
             externalId,
-            success: true,
-            result: {
-              summary: email.summary || "",
-              urgencyScore: email.urgencyScore || 0,
-              urgencyReason: email.urgencyReason || "",
-              suggestedReply: email.suggestedReply,
-            },
           });
-          continue;
-        }
 
-        // Build prompt
-        const emailContent = `
-From: Unknown
-Subject: ${email.subject}
+          if (!email) {
+            return { externalId, success: false, error: "Email not found in DB" };
+          }
 
-${email.bodyPreview || email.bodyFull}
-`.trim();
+          // Skip if already summarized
+          if (email.aiProcessedAt) {
+            return {
+              externalId,
+              success: true,
+              result: {
+                summary: email.summary || "",
+                urgencyScore: email.urgencyScore || 0,
+                urgencyReason: email.urgencyReason || "",
+                suggestedReply: email.suggestedReply,
+                actionRequired: email.actionRequired,
+                actionDescription: email.actionDescription,
+                quickReplies: email.quickReplies,
+                calendarEvent: email.calendarEvent,
+              },
+            };
+          }
 
-        // Call Anthropic via AI SDK
-        const { text } = await generateText({
-          model: anthropic("claude-sonnet-4-20250514"),
-          prompt: `Analyze this email and provide a JSON response with the following fields:
-- summary: A concise 1-2 sentence summary
-- urgencyScore: A number 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
-- urgencyReason: Brief explanation of the urgency score
-- suggestedReply: Optional brief reply if one is needed, or null
+          // Build context-rich prompt
+          const bodyText = (email.bodyPreview || email.bodyFull || "").slice(0, 500);
+
+          // Build sender context
+          const senderName = email.fromName || email.fromEmail || "Unknown";
+          const senderRelationship = email.fromRelationship === "vip" ? "VIP contact" :
+            email.senderEmailCount > 10 ? "frequent correspondent" :
+            email.senderEmailCount > 1 ? "known contact" : "new contact";
+
+          // Build recipient context
+          const userName = email.userName || "the user";
+          const ccInfo = email.toEmails?.length > 0
+            ? `\nCC'd: ${email.toEmails.join(", ")}`
+            : "";
+
+          // Build recent history context
+          const recentContext = email.recentFromSender?.length > 0
+            ? `\nRecent emails from this sender: ${email.recentFromSender.slice(0, 3).map((e: { subject: string }) => e.subject).join("; ")}`
+            : "";
+
+          const emailContent = `From: ${senderName} <${email.fromEmail}> (${senderRelationship})
+To: ${userName}${ccInfo}
+Subject: ${email.subject}${recentContext}
+
+${bodyText}`.trim();
+
+          // Call Anthropic via AI SDK with enhanced prompt
+          const { text } = await generateText({
+            model: anthropic("claude-sonnet-4-20250514"),
+            prompt: `You are summarizing an email for ${userName}. Analyze this email and return a JSON response:
+
+1. summary: 1-2 sentence summary focused on what ${userName} needs to know or do
+2. urgencyScore: 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
+3. urgencyReason: Brief explanation of the urgency score
+4. actionRequired: One of "reply" | "action" | "fyi" | "none"
+   - "reply": ${userName} should reply to this email
+   - "action": ${userName} should do something (not reply)
+   - "fyi": Just informational
+   - "none": No action needed
+5. actionDescription: If action required, what specifically
+6. quickReplies: If reply needed, up to 3 quick reply options as array of {label, body}:
+   - label: Short button text (max 20 chars) like "Sounds good!", "Let me check"
+   - body: Full professional reply text from ${userName}'s perspective
+7. calendarEvent: If email mentions a meeting/event, extract {title, startTime, endTime, description}
+8. suggestedReply: If a longer custom reply seems appropriate, draft it (optional)
 
 Email:
 ${emailContent}
 
 Respond with only valid JSON, no markdown or explanation.`,
-        });
+          });
 
-        // Parse response
-        let result;
-        try {
-          result = JSON.parse(text);
-        } catch {
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            result = JSON.parse(jsonMatch[0]);
-          } else {
-            throw new Error("Failed to parse AI response as JSON");
+          // Parse response
+          let result: SummarizeResult;
+          try {
+            result = JSON.parse(text);
+          } catch {
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              result = JSON.parse(jsonMatch[0]);
+            } else {
+              throw new Error("Failed to parse AI response as JSON");
+            }
           }
+
+          // Validate quickReplies
+          if (result.quickReplies) {
+            result.quickReplies = result.quickReplies.slice(0, 3).filter(
+              (qr): qr is QuickReply => typeof qr.label === "string" && typeof qr.body === "string"
+            );
+          }
+
+          // Save to database
+          await ctx.runMutation(internal.summarize.updateEmailSummary, {
+            emailId: email._id,
+            summary: result.summary || "",
+            urgencyScore: result.urgencyScore || 0,
+            urgencyReason: result.urgencyReason || "",
+            suggestedReply: result.suggestedReply || undefined,
+            actionRequired: result.actionRequired || undefined,
+            actionDescription: result.actionDescription || undefined,
+            quickReplies: result.quickReplies || undefined,
+            calendarEvent: result.calendarEvent || undefined,
+          });
+
+          return { externalId, success: true, result };
+        } catch (error) {
+          return {
+            externalId,
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          };
         }
-
-        // Save to database
-        await ctx.runMutation(internal.summarize.updateEmailSummary, {
-          emailId: email._id,
-          summary: result.summary || "",
-          urgencyScore: result.urgencyScore || 0,
-          urgencyReason: result.urgencyReason || "",
-          suggestedReply: result.suggestedReply || undefined,
-        });
-
-        results.push({ externalId, success: true, result });
-      } catch (error) {
-        results.push({
-          externalId,
-          success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        });
-      }
-    }
+      })
+    );
 
     return results;
   },

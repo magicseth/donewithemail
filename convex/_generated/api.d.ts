@@ -15,11 +15,13 @@ import type * as contacts from "../contacts.js";
 import type * as emails from "../emails.js";
 import type * as gmailAuth from "../gmailAuth.js";
 import type * as gmailOAuth from "../gmailOAuth.js";
+import type * as gmailSend from "../gmailSend.js";
 import type * as gmailSync from "../gmailSync.js";
 import type * as summarize from "../summarize.js";
 import type * as summarizeActions from "../summarizeActions.js";
 import type * as sync from "../sync.js";
 import type * as users from "../users.js";
+import type * as voice from "../voice.js";
 import type * as workosAuth from "../workosAuth.js";
 
 import type {
@@ -36,11 +38,13 @@ declare const fullApi: ApiFromModules<{
   emails: typeof emails;
   gmailAuth: typeof gmailAuth;
   gmailOAuth: typeof gmailOAuth;
+  gmailSend: typeof gmailSend;
   gmailSync: typeof gmailSync;
   summarize: typeof summarize;
   summarizeActions: typeof summarizeActions;
   sync: typeof sync;
   users: typeof users;
+  voice: typeof voice;
   workosAuth: typeof workosAuth;
 }>;
 
