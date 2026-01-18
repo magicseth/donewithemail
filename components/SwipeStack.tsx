@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -49,11 +49,23 @@ export function SwipeStack<T>({
   const translateY = useSharedValue(0);
   const cardRotate = useSharedValue(0);
   const isSwipingRef = useRef(false);
+  const unblockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [blockPointerEvents, setBlockPointerEvents] = useState(false);
+
+  // Clear any pending unblock timeout
+  const clearUnblockTimeout = useCallback(() => {
+    if (unblockTimeoutRef.current) {
+      clearTimeout(unblockTimeoutRef.current);
+      unblockTimeoutRef.current = null;
+    }
+  }, []);
 
   const handleSwipeComplete = useCallback(
     (direction: SwipeDirection) => {
       if (data.length > 0 && !isSwipingRef.current) {
         isSwipingRef.current = true;
+        // Clear any pending unblock from previous swipe
+        clearUnblockTimeout();
         onSwipe(data[0], direction);
         // Reset after animation completes (animation is 200ms, wait a bit longer)
         setTimeout(() => {
@@ -61,16 +73,25 @@ export function SwipeStack<T>({
           translateX.value = 0;
           translateY.value = 0;
           cardRotate.value = 0;
+          // Allow taps again after a delay - use ref so we can clear if new swipe starts
+          unblockTimeoutRef.current = setTimeout(() => {
+            setBlockPointerEvents(false);
+          }, 200);
         }, 300);
       }
     },
-    [data, onSwipe, translateX, translateY, cardRotate]
+    [data, onSwipe, translateX, translateY, cardRotate, clearUnblockTimeout]
   );
 
   const panGesture = Gesture.Pan()
     .enableTrackpadTwoFingerGesture(true)
     .mouseButton(MouseButton.LEFT)
     .minDistance(10)
+    .onStart(() => {
+      // Clear any pending unblock and block pointer events immediately
+      runOnJS(clearUnblockTimeout)();
+      runOnJS(setBlockPointerEvents)(true);
+    })
     .onUpdate((event) => {
       translateX.value = event.translationX;
       translateY.value = event.translationY;
@@ -103,9 +124,12 @@ export function SwipeStack<T>({
         translateY.value = withTiming(-SCREEN_HEIGHT, { duration: 200 });
         runOnJS(handleSwipeComplete)("up");
       } else {
+        // Card springs back - re-enable pointer events after spring completes
         translateX.value = withSpring(0);
         translateY.value = withSpring(0);
         cardRotate.value = withSpring(0);
+        // Re-enable pointer events after a short delay for spring animation
+        runOnJS(setBlockPointerEvents)(false);
       }
     });
 
@@ -179,7 +203,9 @@ export function SwipeStack<T>({
               <Text style={styles.indicatorText}>DONE</Text>
             </Animated.View>
 
-            {renderCard(data[0], 0)}
+            <View style={styles.cardContent} pointerEvents={blockPointerEvents ? "none" : "auto"}>
+              {renderCard(data[0], 0)}
+            </View>
           </Animated.View>
         </GestureDetector>
       </View>
@@ -216,6 +242,9 @@ const styles = StyleSheet.create({
   } as any,
   backgroundCard: {
     opacity: 0.8,
+  },
+  cardContent: {
+    flex: 1,
   },
   indicator: {
     position: "absolute",

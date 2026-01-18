@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { View, StyleSheet, Text, ActivityIndicator, TouchableOpacity } from "react-native";
 import { router } from "expo-router";
 import { SwipeStack, SwipeDirection } from "../../components/SwipeStack";
@@ -6,6 +6,9 @@ import { EmailCard, EmailCardData } from "../../components/EmailCard";
 import { useEmailActions } from "../../hooks/useEmails";
 import { useGmail, GmailEmail } from "../../hooks/useGmail";
 import { Id } from "../../convex/_generated/dataModel";
+
+// Minimum time after swipe before allowing taps (ms)
+const TAP_COOLDOWN_AFTER_SWIPE = 500;
 
 // Convert Gmail email to EmailCardData format
 function toEmailCardData(email: GmailEmail): EmailCardData {
@@ -28,6 +31,7 @@ export default function FeedScreen() {
   const { isAuthenticated, emails, isLoading, error, fetchEmails, refetch } = useGmail();
   const { archiveEmail, markReplyNeeded, archiveByExternalId, markReplyNeededByExternalId } = useEmailActions();
   const [triagedIds, setTriagedIds] = useState<Set<string>>(new Set());
+  const lastSwipeTimeRef = useRef<number>(0);
 
   // Fetch emails when authenticated
   useEffect(() => {
@@ -46,6 +50,8 @@ export default function FeedScreen() {
 
   const handleSwipe = useCallback(
     async (email: EmailCardData, direction: SwipeDirection) => {
+      // Record swipe time to prevent accidental taps on next card
+      lastSwipeTimeRef.current = Date.now();
       // Immediately remove from UI
       setTriagedIds(prev => new Set(prev).add(email._id));
 
@@ -79,6 +85,11 @@ export default function FeedScreen() {
   );
 
   const handleEmailPress = useCallback((email: EmailCardData) => {
+    // Ignore taps that happen too soon after a swipe (prevents accidental opens)
+    const timeSinceSwipe = Date.now() - lastSwipeTimeRef.current;
+    if (timeSinceSwipe < TAP_COOLDOWN_AFTER_SWIPE) {
+      return;
+    }
     router.push(`/email/${email._id}`);
   }, []);
 
@@ -144,8 +155,8 @@ export default function FeedScreen() {
     },
   ];
 
-  // Use real emails if authenticated and have data, otherwise mock
-  const displayEmails = isAuthenticated && emailCards.length > 0 ? emailCards : mockEmails;
+  // Use real emails if authenticated, mock only for unauthenticated users
+  const displayEmails = isAuthenticated ? emailCards : mockEmails;
 
   if (isLoading) {
     return (
