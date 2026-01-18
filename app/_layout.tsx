@@ -3,18 +3,26 @@ import { ConvexReactClient, ConvexProvider } from "convex/react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StyleSheet } from "react-native";
 import { AuthProvider } from "../lib/authContext";
+import { usePushNotifications } from "../hooks/usePushNotifications";
 
 // Initialize Convex client
 const convex = new ConvexReactClient(
   process.env.EXPO_PUBLIC_CONVEX_URL || "https://your-deployment.convex.cloud"
 );
 
+// Component that registers push notifications
+function PushNotificationHandler({ children }: { children: React.ReactNode }) {
+  usePushNotifications();
+  return <>{children}</>;
+}
+
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <ConvexProvider client={convex}>
         <AuthProvider>
-          <Stack
+          <PushNotificationHandler>
+            <Stack
             screenOptions={{
               headerShown: false,
               animation: "slide_from_right",
@@ -47,7 +55,8 @@ export default function RootLayout() {
                 headerTitle: "Compose",
               }}
             />
-          </Stack>
+            </Stack>
+          </PushNotificationHandler>
         </AuthProvider>
       </ConvexProvider>
     </GestureHandlerRootView>

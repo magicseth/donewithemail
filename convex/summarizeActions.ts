@@ -75,22 +75,23 @@ ${email.bodyPreview || email.bodyFull}
     // Call Anthropic via AI SDK with enhanced prompt
     const { text } = await generateText({
       model: anthropic("claude-sonnet-4-20250514"),
-      prompt: `Analyze this email and return a JSON response with these fields:
+      prompt: `Analyze this email and return a JSON response with these fields.
+IMPORTANT: Write the summary addressing the user directly with "you" (e.g., "You need to reply" not "The user needs to reply").
 
-1. summary: 1-2 sentence summary focused on what the recipient needs to know
+1. summary: 1-2 sentence summary focused on what you need to know, written in second person ("you")
 2. urgencyScore: 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
 3. urgencyReason: Brief explanation of the urgency score
 4. actionRequired: One of "reply" | "action" | "fyi" | "none"
-   - "reply": User should reply to this email
-   - "action": User should do something (not reply), like review a document
+   - "reply": You should reply to this email
+   - "action": You should do something (not reply), like review a document
    - "fyi": Just informational, no action needed
    - "none": No action needed (spam, automated, etc.)
 5. actionDescription: If action required, what specifically (e.g., "Schedule meeting", "Review attached document")
 6. quickReplies: If reply needed, up to 3 quick reply options as array of {label, body}:
    - label: Short button text (max 20 chars) like "Sounds good!", "Let me check", "Can't make it"
    - body: Full professional reply text to send
-7. calendarEvent: If email mentions a meeting/event, extract {title, startTime, endTime, description}
-   - startTime/endTime can be relative like "next Tuesday 2pm" or ISO format
+7. calendarEvent: If email mentions a meeting/event, extract {title, startTime, endTime, location, description}
+   - startTime/endTime should include AM/PM (e.g., "next Tuesday 2pm" not "next Tuesday 2:00")
 8. suggestedReply: If a longer custom reply seems appropriate, draft it here (optional)
 
 Email:
@@ -216,21 +217,23 @@ ${bodyText}`.trim();
           // Call Anthropic via AI SDK with enhanced prompt
           const { text } = await generateText({
             model: anthropic("claude-sonnet-4-20250514"),
-            prompt: `You are summarizing an email for ${userName}. Analyze this email and return a JSON response:
+            prompt: `Analyze this email and return a JSON response.
+IMPORTANT: Write the summary addressing the user directly with "you" (e.g., "You need to reply" not "${userName} needs to reply").
 
-1. summary: 1-2 sentence summary focused on what ${userName} needs to know or do
+1. summary: 1-2 sentence summary focused on what you need to know or do, written in second person ("you")
 2. urgencyScore: 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
 3. urgencyReason: Brief explanation of the urgency score
 4. actionRequired: One of "reply" | "action" | "fyi" | "none"
-   - "reply": ${userName} should reply to this email
-   - "action": ${userName} should do something (not reply)
+   - "reply": You should reply to this email
+   - "action": You should do something (not reply)
    - "fyi": Just informational
    - "none": No action needed
 5. actionDescription: If action required, what specifically
 6. quickReplies: If reply needed, up to 3 quick reply options as array of {label, body}:
    - label: Short button text (max 20 chars) like "Sounds good!", "Let me check"
-   - body: Full professional reply text from ${userName}'s perspective
-7. calendarEvent: If email mentions a meeting/event, extract {title, startTime, endTime, description}
+   - body: Full professional reply text from your perspective
+7. calendarEvent: If email mentions a meeting/event, extract {title, startTime, endTime, location, description}
+   - startTime/endTime should include AM/PM (e.g., "Tuesday 2pm" not "Tuesday 2:00")
 8. suggestedReply: If a longer custom reply seems appropriate, draft it (optional)
 
 Email:

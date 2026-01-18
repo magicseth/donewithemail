@@ -44,6 +44,12 @@
         {
           "microphonePermission": "TokMail needs microphone access to record voice replies to emails"
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#6366F1"
+        }
       ]
     ],
     "experiments": {

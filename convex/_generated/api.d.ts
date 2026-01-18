@@ -11,12 +11,17 @@
 import type * as agents_autoResponder from "../agents/autoResponder.js";
 import type * as agents_summarizer from "../agents/summarizer.js";
 import type * as auth from "../auth.js";
+import type * as calendar from "../calendar.js";
 import type * as contacts from "../contacts.js";
+import type * as crons from "../crons.js";
+import type * as emailSync from "../emailSync.js";
+import type * as emailSyncHelpers from "../emailSyncHelpers.js";
 import type * as emails from "../emails.js";
 import type * as gmailAuth from "../gmailAuth.js";
 import type * as gmailOAuth from "../gmailOAuth.js";
 import type * as gmailSend from "../gmailSend.js";
 import type * as gmailSync from "../gmailSync.js";
+import type * as notifications from "../notifications.js";
 import type * as summarize from "../summarize.js";
 import type * as summarizeActions from "../summarizeActions.js";
 import type * as sync from "../sync.js";
@@ -34,12 +39,17 @@ declare const fullApi: ApiFromModules<{
   "agents/autoResponder": typeof agents_autoResponder;
   "agents/summarizer": typeof agents_summarizer;
   auth: typeof auth;
+  calendar: typeof calendar;
   contacts: typeof contacts;
+  crons: typeof crons;
+  emailSync: typeof emailSync;
+  emailSyncHelpers: typeof emailSyncHelpers;
   emails: typeof emails;
   gmailAuth: typeof gmailAuth;
   gmailOAuth: typeof gmailOAuth;
   gmailSend: typeof gmailSend;
   gmailSync: typeof gmailSync;
+  notifications: typeof notifications;
   summarize: typeof summarize;
   summarizeActions: typeof summarizeActions;
   sync: typeof sync;
@@ -2924,6 +2934,199 @@ export declare const components: {
           null
         >;
       };
+    };
+  };
+  pushNotifications: {
+    public: {
+      deleteNotificationsForUser: FunctionReference<
+        "mutation",
+        "internal",
+        { logLevel: "DEBUG" | "INFO" | "WARN" | "ERROR"; userId: string },
+        null
+      >;
+      getNotification: FunctionReference<
+        "query",
+        "internal",
+        { id: string; logLevel: "DEBUG" | "INFO" | "WARN" | "ERROR" },
+        null | {
+          _contentAvailable?: boolean;
+          _creationTime: number;
+          badge?: number;
+          body?: string;
+          categoryId?: string;
+          channelId?: string;
+          data?: any;
+          expiration?: number;
+          interruptionLevel?:
+            | "active"
+            | "critical"
+            | "passive"
+            | "time-sensitive";
+          mutableContent?: boolean;
+          numPreviousFailures: number;
+          priority?: "default" | "normal" | "high";
+          sound?: string | null;
+          state:
+            | "awaiting_delivery"
+            | "in_progress"
+            | "delivered"
+            | "needs_retry"
+            | "failed"
+            | "maybe_delivered"
+            | "unable_to_deliver";
+          subtitle?: string;
+          title?: string;
+          ttl?: number;
+        }
+      >;
+      getNotificationsForUser: FunctionReference<
+        "query",
+        "internal",
+        {
+          limit?: number;
+          logLevel: "DEBUG" | "INFO" | "WARN" | "ERROR";
+          userId: string;
+        },
+        Array<{
+          _contentAvailable?: boolean;
+          _creationTime: number;
+          badge?: number;
+          body?: string;
+          categoryId?: string;
+          channelId?: string;
+          data?: any;
+          expiration?: number;
+          id: string;
+          interruptionLevel?:
+            | "active"
+            | "critical"
+            | "passive"
+            | "time-sensitive";
+          mutableContent?: boolean;
+          numPreviousFailures: number;
+          priority?: "default" | "normal" | "high";
+          sound?: string | null;
+          state:
+            | "awaiting_delivery"
+            | "in_progress"
+            | "delivered"
+            | "needs_retry"
+            | "failed"
+            | "maybe_delivered"
+            | "unable_to_deliver";
+          subtitle?: string;
+          title?: string;
+          ttl?: number;
+        }>
+      >;
+      getStatusForUser: FunctionReference<
+        "query",
+        "internal",
+        { logLevel: "DEBUG" | "INFO" | "WARN" | "ERROR"; userId: string },
+        { hasToken: boolean; paused: boolean }
+      >;
+      pauseNotificationsForUser: FunctionReference<
+        "mutation",
+        "internal",
+        { logLevel: "DEBUG" | "INFO" | "WARN" | "ERROR"; userId: string },
+        null
+      >;
+      recordPushNotificationToken: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          logLevel: "DEBUG" | "INFO" | "WARN" | "ERROR";
+          pushToken: string;
+          userId: string;
+        },
+        null
+      >;
+      removePushNotificationToken: FunctionReference<
+        "mutation",
+        "internal",
+        { logLevel: "DEBUG" | "INFO" | "WARN" | "ERROR"; userId: string },
+        null
+      >;
+      restart: FunctionReference<
+        "mutation",
+        "internal",
+        { logLevel: "DEBUG" | "INFO" | "WARN" | "ERROR" },
+        boolean
+      >;
+      sendPushNotification: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          allowUnregisteredTokens?: boolean;
+          logLevel: "DEBUG" | "INFO" | "WARN" | "ERROR";
+          notification: {
+            _contentAvailable?: boolean;
+            badge?: number;
+            body?: string;
+            categoryId?: string;
+            channelId?: string;
+            data?: any;
+            expiration?: number;
+            interruptionLevel?:
+              | "active"
+              | "critical"
+              | "passive"
+              | "time-sensitive";
+            mutableContent?: boolean;
+            priority?: "default" | "normal" | "high";
+            sound?: string | null;
+            subtitle?: string;
+            title?: string;
+            ttl?: number;
+          };
+          userId: string;
+        },
+        string | null
+      >;
+      sendPushNotificationBatch: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          allowUnregisteredTokens?: boolean;
+          logLevel: "DEBUG" | "INFO" | "WARN" | "ERROR";
+          notifications: Array<{
+            notification: {
+              _contentAvailable?: boolean;
+              badge?: number;
+              body?: string;
+              categoryId?: string;
+              channelId?: string;
+              data?: any;
+              expiration?: number;
+              interruptionLevel?:
+                | "active"
+                | "critical"
+                | "passive"
+                | "time-sensitive";
+              mutableContent?: boolean;
+              priority?: "default" | "normal" | "high";
+              sound?: string | null;
+              subtitle?: string;
+              title?: string;
+              ttl?: number;
+            };
+            userId: string;
+          }>;
+        },
+        Array<string | null>
+      >;
+      shutdown: FunctionReference<
+        "mutation",
+        "internal",
+        { logLevel: "DEBUG" | "INFO" | "WARN" | "ERROR" },
+        { data?: any; message: string }
+      >;
+      unpauseNotificationsForUser: FunctionReference<
+        "mutation",
+        "internal",
+        { logLevel: "DEBUG" | "INFO" | "WARN" | "ERROR"; userId: string },
+        null
+      >;
     };
   };
 };

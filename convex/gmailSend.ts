@@ -12,9 +12,9 @@ async function refreshTokenIfNeeded(
   accessToken: string,
   refreshToken: string,
   expiresAt: number
-): Promise<{ accessToken: string; expiresAt: number }> {
+): Promise<{ accessToken: string; expiresAt: number; refreshed: boolean }> {
   if (Date.now() < expiresAt - 5 * 60 * 1000) {
-    return { accessToken, expiresAt };
+    return { accessToken, expiresAt, refreshed: false };
   }
 
   const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -37,6 +37,7 @@ async function refreshTokenIfNeeded(
   return {
     accessToken: data.access_token,
     expiresAt: Date.now() + data.expires_in * 1000,
+    refreshed: true,
   };
 }
 
@@ -88,6 +89,7 @@ export const sendEmail = action({
   handler: async (ctx, args): Promise<{ messageId: string; threadId: string }> => {
     // Get user's Gmail tokens
     type UserWithGmail = {
+      _id: any;
       gmailAccessToken?: string;
       gmailRefreshToken?: string;
       gmailTokenExpiresAt?: number;
@@ -109,6 +111,15 @@ export const sendEmail = action({
         user.gmailTokenExpiresAt
       );
       accessToken = refreshed.accessToken;
+
+      // Save refreshed token to database
+      if (refreshed.refreshed) {
+        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+          userId: user._id,
+          accessToken: refreshed.accessToken,
+          expiresAt: refreshed.expiresAt,
+        });
+      }
     }
 
     // Get thread ID and message ID if this is a reply
@@ -181,6 +192,7 @@ export const sendReply = action({
   handler: async (ctx, args): Promise<{ messageId: string; threadId: string }> => {
     // Get user's Gmail tokens
     type UserWithGmail = {
+      _id: any;
       gmailAccessToken?: string;
       gmailRefreshToken?: string;
       gmailTokenExpiresAt?: number;
@@ -202,6 +214,15 @@ export const sendReply = action({
         user.gmailTokenExpiresAt
       );
       accessToken = refreshed.accessToken;
+
+      // Save refreshed token to database
+      if (refreshed.refreshed) {
+        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+          userId: user._id,
+          accessToken: refreshed.accessToken,
+          expiresAt: refreshed.expiresAt,
+        });
+      }
     }
 
     // Get thread ID and message ID if this is a reply to a known email

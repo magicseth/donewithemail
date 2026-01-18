@@ -12,7 +12,11 @@ export interface CalendarEvent {
   title: string;
   startTime?: string;
   endTime?: string;
+  location?: string;
   description?: string;
+  // Set when event has been added to calendar
+  calendarEventId?: string;
+  calendarEventLink?: string;
 }
 
 export interface GmailEmail {
@@ -164,7 +168,11 @@ export function useGmail() {
     actionRequired: email.actionRequired,
     actionDescription: email.actionDescription,
     quickReplies: email.quickReplies,
-    calendarEvent: email.calendarEvent,
+    calendarEvent: email.calendarEvent ? {
+      ...email.calendarEvent,
+      calendarEventId: email.calendarEventId,
+      calendarEventLink: email.calendarEventLink,
+    } : undefined,
     fromContact: email.fromContact,
   }));
 

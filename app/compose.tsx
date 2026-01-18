@@ -20,29 +20,30 @@ import { useAuth } from "../lib/authContext";
 import { Id } from "../convex/_generated/dataModel";
 
 export default function ComposeScreen() {
-  const { replyTo, subject: initialSubject, emailId } = useLocalSearchParams<{
+  const { replyTo, subject: initialSubject, emailId, body: initialBody } = useLocalSearchParams<{
     replyTo?: string;
     subject?: string;
     emailId?: string;
+    body?: string;
   }>();
   const { user } = useAuth();
 
   const [to, setTo] = useState(replyTo || "");
   const [subject, setSubject] = useState(initialSubject || "");
-  const [body, setBody] = useState("");
+  const [body, setBody] = useState(initialBody || "");
   const [isSending, setIsSending] = useState(false);
 
   const isReply = Boolean(replyTo);
 
-  // Get AI suggested reply if available
+  // Get AI suggested reply if available (only if no body was passed)
   const originalEmail = useQuery(
     api.emails.getEmail,
     emailId ? { emailId: emailId as Id<"emails"> } : "skip"
   );
 
-  // Pre-fill with AI suggested reply if available
+  // Pre-fill with AI suggested reply if available and no body was passed
   useEffect(() => {
-    if (originalEmail?.suggestedReply && !body) {
+    if (originalEmail?.suggestedReply && !body && !initialBody) {
       setBody(originalEmail.suggestedReply);
     }
   }, [originalEmail?.suggestedReply]);

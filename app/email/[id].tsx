@@ -6,14 +6,24 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
+  Platform,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { EmailCard, EmailCardData } from "../../components/EmailCard";
+import { EmailCard, EmailCardData, CalendarEventData } from "../../components/EmailCard";
 import { useEmail, useEmailByExternalId, useEmailActions, useThreadEmails } from "../../hooks/useEmails";
 import { useAuth } from "../../lib/authContext";
 import { Id } from "../../convex/_generated/dataModel";
+
+function showAlert(title: string, message: string) {
+  if (Platform.OS === "web") {
+    window.alert(`${title}: ${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+}
 
 // Check if an ID looks like a valid Convex ID (not a Gmail ID)
 function isConvexId(id: string): boolean {
@@ -38,9 +48,11 @@ export default function EmailDetailScreen() {
   const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set());
   const [fullBodies, setFullBodies] = useState<Record<string, string>>({});
   const [loadingBodies, setLoadingBodies] = useState<Set<string>>(new Set());
+  const [isAddingToCalendar, setIsAddingToCalendar] = useState(false);
 
   const { user } = useAuth();
   const fetchEmailBody = useAction(api.gmailSync.fetchEmailBody);
+  const addToCalendar = useAction(api.calendar.addToCalendar);
 
   // Try Convex ID lookup first, then fall back to external ID
   const isConvex = id ? isConvexId(id) : false;
@@ -130,6 +142,40 @@ export default function EmailDetailScreen() {
     });
   }, [email]);
 
+  const handleAddToCalendar = useCallback(async (event: CalendarEventData) => {
+    if (!user?.email) {
+      showAlert("Error", "Not signed in");
+      return;
+    }
+
+    // Get client timezone
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
+
+    setIsAddingToCalendar(true);
+    try {
+      const result = await addToCalendar({
+        userEmail: user.email,
+        title: event.title,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        location: event.location,
+        description: event.description,
+        timezone,
+        emailId: convexId,
+      });
+      // Open the calendar link on web
+      if (Platform.OS === "web" && result.htmlLink) {
+        window.open(result.htmlLink, "_blank");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to add event";
+      showAlert("Error", message);
+      console.error("Failed to add to calendar:", err);
+    } finally {
+      setIsAddingToCalendar(false);
+    }
+  }, [user?.email, addToCalendar, convexId]);
+
   const handleContactPress = useCallback(() => {
     if (email?.fromContact?._id) {
       router.push(`/person/${email.fromContact._id}`);
@@ -170,6 +216,11 @@ export default function EmailDetailScreen() {
         urgencyScore: email.urgencyScore,
         urgencyReason: email.urgencyReason,
         suggestedReply: email.suggestedReply,
+        calendarEvent: email.calendarEvent ? {
+          ...email.calendarEvent,
+          calendarEventId: (email as any).calendarEventId,
+          calendarEventLink: (email as any).calendarEventLink,
+        } : undefined,
         fromContact: email.fromContact
           ? {
               _id: email.fromContact._id,
@@ -230,6 +281,11 @@ export default function EmailDetailScreen() {
               urgencyScore: threadEmail.urgencyScore,
               urgencyReason: threadEmail.urgencyReason,
               suggestedReply: threadEmail.suggestedReply,
+              calendarEvent: threadEmail.calendarEvent ? {
+                ...threadEmail.calendarEvent,
+                calendarEventId: (threadEmail as any).calendarEventId,
+                calendarEventLink: (threadEmail as any).calendarEventLink,
+              } : undefined,
               fromContact: threadEmail.fromContact
                 ? {
                     _id: threadEmail.fromContact._id,
@@ -266,6 +322,8 @@ export default function EmailDetailScreen() {
                       email={emailData}
                       onContactPress={handleContactPress}
                       onUseReply={isLastEmail ? handleReply : undefined}
+                      onAddToCalendar={handleAddToCalendar}
+                      isAddingToCalendar={isAddingToCalendar}
                       showFullContent
                     />
                   </View>
@@ -279,6 +337,8 @@ export default function EmailDetailScreen() {
             email={displayEmail}
             onContactPress={handleContactPress}
             onUseReply={handleReply}
+            onAddToCalendar={handleAddToCalendar}
+            isAddingToCalendar={isAddingToCalendar}
             showFullContent
           />
         )}

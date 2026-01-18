@@ -6,12 +6,50 @@ import {
   TouchableOpacity,
   Image,
   Platform,
+  ActivityIndicator,
 } from "react-native";
+import { WebView } from "react-native-webview";
 import { AISummary } from "./AISummary";
 
 // Check if content looks like HTML
 function isHtml(content: string): boolean {
   return /<[a-z][\s\S]*>/i.test(content);
+}
+
+// Format event time for display
+function formatEventTime(startTime?: string, endTime?: string): string {
+  if (!startTime) return "";
+
+  // If it's a relative time string, just display it
+  if (!startTime.match(/^\d{4}-\d{2}-\d{2}/)) {
+    return startTime + (endTime && !endTime.match(/^\d{4}-\d{2}-\d{2}/) ? ` - ${endTime}` : "");
+  }
+
+  try {
+    const start = new Date(startTime);
+    const options: Intl.DateTimeFormatOptions = {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    };
+    let result = start.toLocaleString(undefined, options);
+
+    if (endTime) {
+      const end = new Date(endTime);
+      // If same day, just show end time
+      if (start.toDateString() === end.toDateString()) {
+        result += ` - ${end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+      } else {
+        result += ` - ${end.toLocaleString(undefined, options)}`;
+      }
+    }
+
+    return result;
+  } catch {
+    return startTime;
+  }
 }
 
 // Decode HTML entities in text (for email snippets)
@@ -28,6 +66,17 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
+export interface CalendarEventData {
+  title: string;
+  startTime?: string;
+  endTime?: string;
+  location?: string;
+  description?: string;
+  // Set when event has been added to calendar
+  calendarEventId?: string;
+  calendarEventLink?: string;
+}
+
 export interface EmailCardData {
   _id: string;
   subject: string;
@@ -38,6 +87,7 @@ export interface EmailCardData {
   urgencyScore?: number;
   urgencyReason?: string;
   suggestedReply?: string;
+  calendarEvent?: CalendarEventData;
   fromContact?: {
     _id: string;
     email: string;
@@ -52,7 +102,9 @@ interface EmailCardProps {
   onPress?: () => void;
   onContactPress?: () => void;
   onUseReply?: () => void;
+  onAddToCalendar?: (event: CalendarEventData) => void;
   showFullContent?: boolean;
+  isAddingToCalendar?: boolean;
 }
 
 export function EmailCard({
@@ -60,7 +112,9 @@ export function EmailCard({
   onPress,
   onContactPress,
   onUseReply,
+  onAddToCalendar,
   showFullContent = false,
+  isAddingToCalendar = false,
 }: EmailCardProps) {
   const fromName = email.fromContact?.name || email.fromContact?.email || "Unknown";
   const initials = getInitials(fromName);
@@ -119,20 +173,76 @@ export function EmailCard({
         />
       )}
 
+      {/* Calendar Event Suggestion */}
+      {email.calendarEvent && showFullContent && (
+        <View style={styles.calendarContainer}>
+          <View style={styles.calendarHeader}>
+            <Text style={styles.calendarIcon}>📅</Text>
+            <Text style={styles.calendarLabel}>
+              {email.calendarEvent.calendarEventId ? "Event Added" : "Event Detected"}
+            </Text>
+          </View>
+          <Text style={styles.calendarTitle}>{decodeHtmlEntities(email.calendarEvent.title)}</Text>
+          {email.calendarEvent.startTime && (
+            <Text style={styles.calendarTime}>
+              {formatEventTime(email.calendarEvent.startTime, email.calendarEvent.endTime)}
+            </Text>
+          )}
+          {email.calendarEvent.location && (
+            <Text style={styles.calendarLocation}>
+              📍 {decodeHtmlEntities(email.calendarEvent.location)}
+            </Text>
+          )}
+          {email.calendarEvent.description && (
+            <Text style={styles.calendarDescription} numberOfLines={2}>
+              {decodeHtmlEntities(email.calendarEvent.description)}
+            </Text>
+          )}
+          {email.calendarEvent.calendarEventId ? (
+            <View style={styles.addedToCalendarBadge}>
+              <Text style={styles.addedToCalendarText}>✓ Added to Calendar</Text>
+            </View>
+          ) : onAddToCalendar && (
+            <TouchableOpacity
+              style={styles.addToCalendarButton}
+              onPress={() => onAddToCalendar(email.calendarEvent!)}
+              disabled={isAddingToCalendar}
+            >
+              {isAddingToCalendar ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.addToCalendarText}>Add to Calendar</Text>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       {/* Body preview */}
       <View style={styles.bodyContainer}>
-        {showFullContent && Platform.OS === "web" && isHtml(email.bodyPreview) ? (
-          // Render HTML in iframe on web for full content view
-          <iframe
-            srcDoc={email.bodyPreview}
-            style={{
-              width: "100%",
-              minHeight: 400,
-              border: "none",
-              backgroundColor: "#fff",
-            }}
-            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-scripts"
-          />
+        {showFullContent && isHtml(email.bodyPreview) ? (
+          Platform.OS === "web" ? (
+            // Render HTML in iframe on web
+            <iframe
+              srcDoc={email.bodyPreview}
+              style={{
+                width: "100%",
+                minHeight: 400,
+                border: "none",
+                backgroundColor: "#fff",
+              }}
+              sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-scripts"
+            />
+          ) : (
+            // Render HTML in WebView on native
+            <WebView
+              originWhitelist={["*"]}
+              source={{ html: email.bodyPreview }}
+              style={styles.webView}
+              scrollEnabled={false}
+              showsVerticalScrollIndicator={false}
+            />
+          )
         ) : (
           <Text
             style={styles.bodyText}
@@ -265,6 +375,10 @@ const styles = StyleSheet.create({
     color: "#444",
     lineHeight: 24,
   },
+  webView: {
+    minHeight: 400,
+    backgroundColor: "#fff",
+  },
   urgencyBar: {
     height: 4,
     backgroundColor: "#eee",
@@ -275,5 +389,77 @@ const styles = StyleSheet.create({
   urgencyFill: {
     height: "100%",
     borderRadius: 2,
+  },
+  // Calendar event styles
+  calendarContainer: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#FCD34D",
+  },
+  calendarHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  calendarIcon: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  calendarLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#92400E",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  calendarTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#78350F",
+    marginBottom: 4,
+  },
+  calendarTime: {
+    fontSize: 14,
+    color: "#92400E",
+    marginBottom: 4,
+  },
+  calendarLocation: {
+    fontSize: 13,
+    color: "#92400E",
+    marginBottom: 4,
+  },
+  calendarDescription: {
+    fontSize: 13,
+    color: "#A16207",
+    marginBottom: 12,
+  },
+  addToCalendarButton: {
+    backgroundColor: "#F59E0B",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  addToCalendarText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  addedToCalendarBadge: {
+    backgroundColor: "#10B981",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  addedToCalendarText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

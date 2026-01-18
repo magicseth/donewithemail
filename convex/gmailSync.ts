@@ -117,6 +117,7 @@ export const upsertContact = internalMutation({
     userId: v.id("users"),
     email: v.string(),
     name: v.optional(v.string()),
+    avatarStorageId: v.optional(v.id("_storage")),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -126,26 +127,40 @@ export const upsertContact = internalMutation({
       )
       .first();
 
-    if (existing) {
-      // Update name if provided and different
-      if (args.name && args.name !== existing.name) {
-        await ctx.db.patch(existing._id, { name: args.name });
-      }
-      // Update email count and last email time
-      await ctx.db.patch(existing._id, {
-        emailCount: existing.emailCount + 1,
-        lastEmailAt: Date.now(),
-      });
-      return existing._id;
+    // Get the URL for the stored avatar
+    let avatarUrl: string | undefined;
+    if (args.avatarStorageId) {
+      avatarUrl = await ctx.storage.getUrl(args.avatarStorageId) ?? undefined;
     }
 
-    return await ctx.db.insert("contacts", {
+    if (existing) {
+      // Update name if provided and different
+      const updates: Record<string, unknown> = {
+        emailCount: existing.emailCount + 1,
+        lastEmailAt: Date.now(),
+      };
+      if (args.name && args.name !== existing.name) {
+        updates.name = args.name;
+      }
+      // Only update avatar if we have a new one and don't have a cached one
+      if (args.avatarStorageId && !existing.avatarStorageId) {
+        updates.avatarStorageId = args.avatarStorageId;
+        updates.avatarUrl = avatarUrl;
+      }
+      await ctx.db.patch(existing._id, updates);
+      return { contactId: existing._id, hasAvatar: !!existing.avatarStorageId };
+    }
+
+    const contactId = await ctx.db.insert("contacts", {
       userId: args.userId,
       email: args.email,
       name: args.name,
+      avatarStorageId: args.avatarStorageId,
+      avatarUrl,
       emailCount: 1,
       lastEmailAt: Date.now(),
     });
+    return { contactId, hasAvatar: false };
   },
 });
 
@@ -186,6 +201,21 @@ export const storeEmailInternal = internalMutation({
   },
 });
 
+// Internal mutation to update user's OAuth tokens after refresh
+export const updateUserTokens = internalMutation({
+  args: {
+    userId: v.id("users"),
+    accessToken: v.string(),
+    expiresAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.userId, {
+      gmailAccessToken: args.accessToken,
+      gmailTokenExpiresAt: args.expiresAt,
+    });
+  },
+});
+
 // Refresh access token if expired
 async function refreshTokenIfNeeded(
   accessToken: string,
@@ -220,6 +250,67 @@ async function refreshTokenIfNeeded(
     expiresAt: Date.now() + data.expires_in * 1000,
     refreshed: true,
   };
+}
+
+// Fetch profile photo URL from Google People API
+async function fetchProfilePhotoUrl(
+  accessToken: string,
+  email: string
+): Promise<string | undefined> {
+  try {
+    // First try to search in user's contacts
+    const searchUrl = `https://people.googleapis.com/v1/people:searchContacts?query=${encodeURIComponent(email)}&readMask=photos,emailAddresses&pageSize=1`;
+
+    const searchResponse = await fetch(searchUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (searchResponse.ok) {
+      const searchData = await searchResponse.json();
+      if (searchData.results && searchData.results.length > 0) {
+        const person = searchData.results[0].person;
+        if (person?.photos && person.photos.length > 0) {
+          // Return the first photo URL
+          return person.photos[0].url;
+        }
+      }
+    }
+
+    // Try "other contacts" (people you've emailed but aren't in contacts)
+    const otherContactsUrl = `https://people.googleapis.com/v1/otherContacts:search?query=${encodeURIComponent(email)}&readMask=photos,emailAddresses&pageSize=1`;
+
+    const otherResponse = await fetch(otherContactsUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (otherResponse.ok) {
+      const otherData = await otherResponse.json();
+      if (otherData.results && otherData.results.length > 0) {
+        const person = otherData.results[0].person;
+        if (person?.photos && person.photos.length > 0) {
+          return person.photos[0].url;
+        }
+      }
+    }
+
+    // No photo found
+    return undefined;
+  } catch (error) {
+    console.error("Error fetching profile photo URL:", error);
+    return undefined;
+  }
+}
+
+// Download image and return as blob
+async function downloadImage(imageUrl: string): Promise<Blob | undefined> {
+  try {
+    const response = await fetch(imageUrl);
+    if (!response.ok) return undefined;
+    return await response.blob();
+  } catch (error) {
+    console.error("Error downloading image:", error);
+    return undefined;
+  }
 }
 
 // Helper to decode base64url with proper UTF-8 support
@@ -321,6 +412,15 @@ export const fetchEmailBody = action({
         user.gmailTokenExpiresAt
       );
       accessToken = refreshed.accessToken;
+
+      // Save refreshed token to database
+      if (refreshed.refreshed) {
+        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+          userId: user._id,
+          accessToken: refreshed.accessToken,
+          expiresAt: refreshed.expiresAt,
+        });
+      }
     }
 
     // Fetch full email from Gmail
@@ -387,6 +487,15 @@ export const fetchEmails = action({
         user.gmailTokenExpiresAt
       );
       accessToken = refreshed.accessToken;
+
+      // Save refreshed token to database so it persists
+      if (refreshed.refreshed) {
+        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+          userId: user._id,
+          accessToken: refreshed.accessToken,
+          expiresAt: refreshed.expiresAt,
+        });
+      }
     }
 
     // Fetch message list (default to 15 for faster initial load)
@@ -468,8 +577,12 @@ export const fetchEmails = action({
                 h.name.toLowerCase() === name.toLowerCase()
             )?.value || "";
 
-          const from = getHeader("From");
-          const subject = getHeader("Subject") || "(No subject)";
+          // Get headers and unfold them (remove CRLF + whitespace from folded headers)
+          // Use empty string replacement to handle folds that occur mid-word/mid-email
+          const unfold = (s: string) => s.replace(/\r?\n\s+/g, "").trim();
+
+          const from = unfold(getHeader("From"));
+          const subject = unfold(getHeader("Subject")) || "(No subject)";
           const date = getHeader("Date");
 
           // Parse sender name and email - handle various formats
@@ -565,14 +678,40 @@ export const fetchEmails = action({
       return fetchedEmails.find(e => e.id === m.id);
     }).filter((e): e is EmailData => e !== undefined);
 
+    // Batch fetch and cache profile photos for all unique senders
+    const uniqueEmails = [...new Set(emails.map((e: EmailData) => e.from.email))];
+    const storageIdCache: Record<string, Id<"_storage"> | undefined> = {};
+
+    // Fetch and store photos in parallel (limit to avoid rate limiting)
+    const photoPromises = uniqueEmails.slice(0, 10).map(async (senderEmail) => {
+      try {
+        // First get the photo URL from Google People API
+        const photoUrl = await fetchProfilePhotoUrl(accessToken, senderEmail);
+        if (!photoUrl) return;
+
+        // Download the image
+        const imageBlob = await downloadImage(photoUrl);
+        if (!imageBlob) return;
+
+        // Store in Convex storage
+        const storageId = await ctx.storage.store(imageBlob);
+        storageIdCache[senderEmail] = storageId;
+      } catch (error) {
+        console.error("Error caching photo for", senderEmail, error);
+      }
+    });
+    await Promise.all(photoPromises);
+
     // Store emails in Convex database
     for (const email of emails) {
       try {
-        // Create/update contact for sender
-        const contactId = await ctx.runMutation(internal.gmailSync.upsertContact, {
+        // Create/update contact for sender with cached photo
+        const avatarStorageId = storageIdCache[email.from.email];
+        const result = await ctx.runMutation(internal.gmailSync.upsertContact, {
           userId: user._id,
           email: email.from.email,
           name: email.from.name !== email.from.email ? email.from.name : undefined,
+          avatarStorageId,
         });
 
         // Store the email (prefer HTML body, fall back to plain text)
@@ -582,7 +721,7 @@ export const fetchEmails = action({
           threadId: email.threadId || undefined,
           provider: "gmail",
           userId: user._id,
-          from: contactId,
+          from: result.contactId,
           to: [], // We're not parsing recipients yet
           subject: email.subject,
           bodyPreview: email.snippet,

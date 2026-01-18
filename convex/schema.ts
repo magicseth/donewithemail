@@ -63,8 +63,13 @@ export default defineSchema({
       title: v.string(),
       startTime: v.optional(v.string()),  // ISO string or relative like "next Tuesday 2pm"
       endTime: v.optional(v.string()),
+      location: v.optional(v.string()),
       description: v.optional(v.string()),
     })),
+
+    // Set when user adds the event to their calendar
+    calendarEventId: v.optional(v.string()),
+    calendarEventLink: v.optional(v.string()),
 
     createdAt: v.number(),
   })
@@ -75,6 +80,7 @@ export default defineSchema({
     email: v.string(),
     name: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),
+    avatarStorageId: v.optional(v.id("_storage")), // Cached avatar in Convex storage
     emailCount: v.number(),
     lastEmailAt: v.number(),
     relationship: v.optional(v.union(
@@ -116,6 +122,9 @@ export default defineSchema({
       autoProcessEmails: v.optional(v.boolean()),
       urgencyThreshold: v.optional(v.number()),
     })),
+
+    // Last sync timestamp for detecting new emails (used by cron job)
+    lastEmailSyncAt: v.optional(v.number()),
 
     createdAt: v.optional(v.number()),
   })

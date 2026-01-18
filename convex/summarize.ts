@@ -1,6 +1,29 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 
+// Internal mutation to mark an event as added to calendar
+export const markCalendarEventAdded = internalMutation({
+  args: {
+    emailId: v.id("emails"),
+    calendarEventId: v.string(),
+    calendarEventLink: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Find the email summary for this email
+    const summary = await ctx.db
+      .query("emailSummaries")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .first();
+
+    if (summary) {
+      await ctx.db.patch(summary._id, {
+        calendarEventId: args.calendarEventId,
+        calendarEventLink: args.calendarEventLink,
+      });
+    }
+  },
+});
+
 // Get email by ID for summarization
 export const getEmailForSummary = internalQuery({
   args: { emailId: v.id("emails") },
@@ -135,6 +158,7 @@ export const updateEmailSummary = internalMutation({
       title: v.string(),
       startTime: v.optional(v.string()),
       endTime: v.optional(v.string()),
+      location: v.optional(v.string()),
       description: v.optional(v.string()),
     })),
   },

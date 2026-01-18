@@ -46,6 +46,8 @@ export const getUntriagedEmails = query({
           actionDescription: summaryData?.actionDescription,
           quickReplies: summaryData?.quickReplies,
           calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
           aiProcessedAt: summaryData?.createdAt,
         };
       })
@@ -88,6 +90,8 @@ export const getInboxEmails = query({
           actionDescription: summaryData?.actionDescription,
           quickReplies: summaryData?.quickReplies,
           calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
           aiProcessedAt: summaryData?.createdAt,
         };
       })
@@ -160,6 +164,8 @@ export const getInboxByEmail = query({
           actionDescription: summaryData?.actionDescription,
           quickReplies: summaryData?.quickReplies,
           calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
           aiProcessedAt: summaryData?.createdAt,
         };
       })
@@ -194,6 +200,9 @@ export const getEmail = query({
       urgencyScore: summaryData?.urgencyScore,
       urgencyReason: summaryData?.urgencyReason,
       suggestedReply: summaryData?.suggestedReply,
+      calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
       aiProcessedAt: summaryData?.createdAt,
     };
   },
@@ -221,6 +230,9 @@ export const getThreadEmails = query({
         urgencyScore: summaryData?.urgencyScore,
         urgencyReason: summaryData?.urgencyReason,
         suggestedReply: summaryData?.suggestedReply,
+        calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
         aiProcessedAt: summaryData?.createdAt,
       }];
     }
@@ -243,6 +255,9 @@ export const getThreadEmails = query({
           urgencyScore: summaryData?.urgencyScore,
           urgencyReason: summaryData?.urgencyReason,
           suggestedReply: summaryData?.suggestedReply,
+          calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
           aiProcessedAt: summaryData?.createdAt,
         };
       })
@@ -286,6 +301,9 @@ export const getEmailByExternalId = query({
       urgencyScore: summaryData?.urgencyScore,
       urgencyReason: summaryData?.urgencyReason,
       suggestedReply: summaryData?.suggestedReply,
+      calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
       aiProcessedAt: summaryData?.createdAt,
     };
   },
