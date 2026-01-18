@@ -47,12 +47,22 @@ export function useVIPContacts(userId: Id<"users"> | undefined) {
 }
 
 /**
- * Hook for fetching contact stats
+ * Hook for fetching contact stats by ID
  */
 export function useContactStats(contactId: Id<"contacts"> | undefined) {
   return useQuery(
     api.contacts.getContactStats,
     contactId ? { contactId } : "skip"
+  );
+}
+
+/**
+ * Hook for fetching contact stats by email
+ */
+export function useContactStatsByEmail(email: string | undefined) {
+  return useQuery(
+    api.contacts.getContactStatsByEmail,
+    email ? { email } : "skip"
   );
 }
 

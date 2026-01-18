@@ -56,24 +56,30 @@ export default defineSchema({
     relationshipSummary: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
+    .index("by_email", ["email"])
     .index("by_user_email", ["userId", "email"])
     .index("by_user_last_email", ["userId", "lastEmailAt"]),
 
   users: defineTable({
-    // WorkOS user ID
-    workosId: v.string(),
+    // WorkOS user ID (optional for Gmail-only auth)
+    workosId: v.optional(v.string()),
     email: v.string(),
     name: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),
 
-    // Connected email providers
-    connectedProviders: v.array(v.object({
+    // Direct Gmail OAuth tokens
+    gmailAccessToken: v.optional(v.string()),
+    gmailRefreshToken: v.optional(v.string()),
+    gmailTokenExpiresAt: v.optional(v.number()),
+
+    // Connected email providers (legacy/multi-provider)
+    connectedProviders: v.optional(v.array(v.object({
       provider: v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap")),
       email: v.string(),
       accessToken: v.string(),
       refreshToken: v.string(),
       expiresAt: v.number(),
-    })),
+    }))),
 
     // User preferences
     preferences: v.optional(v.object({
@@ -81,7 +87,7 @@ export default defineSchema({
       urgencyThreshold: v.optional(v.number()),
     })),
 
-    createdAt: v.number(),
+    createdAt: v.optional(v.number()),
   })
     .index("by_workos_id", ["workosId"])
     .index("by_email", ["email"]),

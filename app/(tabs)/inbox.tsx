@@ -25,7 +25,7 @@ interface InboxEmail {
     _id: string;
     email: string;
     name?: string;
-  };
+  } | null;
 }
 
 export default function InboxScreen() {

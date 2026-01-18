@@ -1,9 +1,8 @@
 import { Stack } from "expo-router";
-import { ConvexReactClient } from "convex/react";
-import { ConvexProviderWithAuth } from "convex/react";
+import { ConvexReactClient, ConvexProvider } from "convex/react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StyleSheet } from "react-native";
-import { AuthProvider, useConvexAuth } from "../lib/authContext";
+import { AuthProvider } from "../lib/authContext";
 
 // Initialize Convex client
 const convex = new ConvexReactClient(
@@ -13,8 +12,8 @@ const convex = new ConvexReactClient(
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.container}>
-      <AuthProvider>
-        <ConvexProviderWithAuth client={convex} useAuth={useConvexAuth}>
+      <ConvexProvider client={convex}>
+        <AuthProvider>
           <Stack
             screenOptions={{
               headerShown: false,
@@ -49,8 +48,8 @@ export default function RootLayout() {
               }}
             />
           </Stack>
-        </ConvexProviderWithAuth>
-      </AuthProvider>
+        </AuthProvider>
+      </ConvexProvider>
     </GestureHandlerRootView>
   );
 }

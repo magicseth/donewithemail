@@ -1,41 +1,81 @@
-import React, { useCallback } from "react";
-import { View, StyleSheet, Text, ActivityIndicator } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import { View, StyleSheet, Text, ActivityIndicator, TouchableOpacity } from "react-native";
 import { router } from "expo-router";
 import { SwipeStack, SwipeDirection } from "../../components/SwipeStack";
 import { EmailCard, EmailCardData } from "../../components/EmailCard";
-import { useUntriagedEmails, useEmailActions } from "../../hooks/useEmails";
+import { useEmailActions } from "../../hooks/useEmails";
+import { useGmail, GmailEmail } from "../../hooks/useGmail";
 import { Id } from "../../convex/_generated/dataModel";
 
-// Mock user ID for development - replace with real auth
-const MOCK_USER_ID = "placeholder" as Id<"users">;
+// Convert Gmail email to EmailCardData format
+function toEmailCardData(email: GmailEmail): EmailCardData {
+  return {
+    _id: email.id,
+    subject: email.subject,
+    bodyPreview: email.snippet,
+    receivedAt: email.receivedAt,
+    isRead: email.isRead,
+    fromContact: {
+      _id: email.from.email,
+      email: email.from.email,
+      name: email.from.name,
+      relationship: "regular" as const,
+    },
+  };
+}
 
 export default function FeedScreen() {
-  // In production, get userId from auth context
-  const emails = useUntriagedEmails(undefined); // Will use "skip" until we have real auth
-  const { archiveEmail, markReplyNeeded } = useEmailActions();
+  const { isAuthenticated, emails, isLoading, error, fetchEmails, refetch } = useGmail();
+  const { archiveEmail, markReplyNeeded, archiveByExternalId, markReplyNeededByExternalId } = useEmailActions();
+  const [triagedIds, setTriagedIds] = useState<Set<string>>(new Set());
 
-  // Check if an ID looks like a valid Convex ID (not a simple mock ID like "1")
-  const isValidConvexId = (id: string) => id.length > 10;
+  // Fetch emails when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchEmails();
+    }
+  }, [isAuthenticated, fetchEmails]);
+
+  // Convert to card format and filter out triaged emails
+  const emailCards = emails
+    .filter(email => !triagedIds.has(email.id))
+    .map(toEmailCardData);
+
+  // Check if an ID looks like a valid Convex ID (not a Gmail ID)
+  const isValidConvexId = (id: string) => id.length > 20 && !id.match(/^[0-9a-f]+$/);
 
   const handleSwipe = useCallback(
     async (email: EmailCardData, direction: SwipeDirection) => {
-      // Skip Convex mutation for mock data
-      if (!isValidConvexId(email._id)) {
-        console.log(`Mock email swiped ${direction}:`, email.subject);
-        return;
-      }
+      // Immediately remove from UI
+      setTriagedIds(prev => new Set(prev).add(email._id));
 
       try {
-        if (direction === "right") {
-          await archiveEmail(email._id as Id<"emails">);
-        } else if (direction === "left") {
-          await markReplyNeeded(email._id as Id<"emails">);
+        if (isValidConvexId(email._id)) {
+          // Use Convex ID directly
+          if (direction === "right") {
+            await archiveEmail(email._id as Id<"emails">);
+          } else if (direction === "left") {
+            await markReplyNeeded(email._id as Id<"emails">);
+          }
+        } else {
+          // Use external ID (Gmail ID)
+          if (direction === "right") {
+            await archiveByExternalId(email._id);
+          } else if (direction === "left") {
+            await markReplyNeededByExternalId(email._id);
+          }
         }
       } catch (error) {
         console.error("Error triaging email:", error);
+        // Revert on error
+        setTriagedIds(prev => {
+          const next = new Set(prev);
+          next.delete(email._id);
+          return next;
+        });
       }
     },
-    [archiveEmail, markReplyNeeded]
+    [archiveEmail, markReplyNeeded, archiveByExternalId, markReplyNeededByExternalId]
   );
 
   const handleEmailPress = useCallback((email: EmailCardData) => {
@@ -48,7 +88,7 @@ export default function FeedScreen() {
     }
   }, []);
 
-  // Show mock data for development
+  // Mock data for when not authenticated
   const mockEmails: EmailCardData[] = [
     {
       _id: "1",
@@ -104,13 +144,27 @@ export default function FeedScreen() {
     },
   ];
 
-  const displayEmails = emails ?? mockEmails;
+  // Use real emails if authenticated and have data, otherwise mock
+  const displayEmails = isAuthenticated && emailCards.length > 0 ? emailCards : mockEmails;
 
-  if (emails === undefined && !mockEmails.length) {
+  if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#6366F1" />
         <Text style={styles.loadingText}>Loading emails...</Text>
+      </View>
+    );
+  }
+
+  if (error && isAuthenticated) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorIcon}>!</Text>
+        <Text style={styles.errorTitle}>Unable to load emails</Text>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={refetch}>
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -169,6 +223,43 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     color: "#666",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F5F5F5",
+    padding: 40,
+  },
+  errorIcon: {
+    fontSize: 48,
+    color: "#EF4444",
+    fontWeight: "700",
+    marginBottom: 16,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  retryButton: {
+    backgroundColor: "#6366F1",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
   emptyState: {
     alignItems: "center",

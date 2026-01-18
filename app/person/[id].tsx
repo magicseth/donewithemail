@@ -7,25 +7,39 @@ import {
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { PersonContext, ContactData, EmailPreview } from "../../components/PersonContext";
-import { useContactStats, useContactActions } from "../../hooks/useContacts";
+import { useContactStats, useContactStatsByEmail, useContactActions } from "../../hooks/useContacts";
 import { Id } from "../../convex/_generated/dataModel";
+
+// Check if the ID looks like an email address
+function isEmail(id: string): boolean {
+  return id.includes("@");
+}
 
 export default function PersonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const contactStats = useContactStats(id as Id<"contacts"> | undefined);
+
+  // Use the appropriate lookup based on whether it's an email or Convex ID
+  const isEmailId = id ? isEmail(id) : false;
+  const contactStatsByEmail = useContactStatsByEmail(isEmailId ? id : undefined);
+  const contactStatsById = useContactStats(!isEmailId ? (id as Id<"contacts">) : undefined);
+
+  const contactStats = isEmailId ? contactStatsByEmail : contactStatsById;
   const { updateRelationship } = useContactActions();
 
   const handleEmailPress = useCallback((emailId: string) => {
     router.push(`/email/${emailId}`);
   }, []);
 
+  // Get the actual Convex contact ID (from contactStats, not URL param)
+  const contactId = contactStats?.contact?._id;
+
   const handleRelationshipChange = useCallback(
     async (relationship: "vip" | "regular" | "unknown") => {
-      if (id) {
-        await updateRelationship(id as Id<"contacts">, relationship);
+      if (contactId) {
+        await updateRelationship(contactId, relationship);
       }
     },
-    [id, updateRelationship]
+    [contactId, updateRelationship]
   );
 
   // Mock data for development

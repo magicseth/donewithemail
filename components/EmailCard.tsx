@@ -45,12 +45,13 @@ export function EmailCard({
   const timeAgo = formatTimeAgo(email.receivedAt);
   const isVip = email.fromContact?.relationship === "vip";
 
+  const Container = onPress ? TouchableOpacity : View;
+  const containerProps = onPress
+    ? { style: styles.container, onPress, activeOpacity: 0.9 }
+    : { style: styles.container };
+
   return (
-    <TouchableOpacity
-      style={styles.container}
-      onPress={onPress}
-      activeOpacity={0.9}
-    >
+    <Container {...containerProps}>
       {/* Header with sender info */}
       <TouchableOpacity style={styles.header} onPress={onContactPress}>
         <View style={styles.avatarContainer}>
@@ -119,7 +120,7 @@ export function EmailCard({
           />
         </View>
       )}
-    </TouchableOpacity>
+    </Container>
   );
 }
 

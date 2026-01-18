@@ -184,3 +184,41 @@ export const getContactStats = query({
     };
   },
 });
+
+/**
+ * Get contact statistics by email address (searches all users' contacts)
+ */
+export const getContactStatsByEmail = query({
+  args: {
+    email: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Find the contact by email (across all users for now)
+    const contact = await ctx.db
+      .query("contacts")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+
+    if (!contact) return null;
+
+    // Get email count and recent emails
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_from", (q) => q.eq("from", contact._id))
+      .order("desc")
+      .take(10);
+
+    const urgentCount = emails.filter((e) => (e.urgencyScore ?? 0) > 80).length;
+    const replyNeededCount = emails.filter((e) => e.triageAction === "reply_needed").length;
+
+    return {
+      contact,
+      recentEmails: emails,
+      stats: {
+        totalEmails: contact.emailCount,
+        urgentEmails: urgentCount,
+        replyNeeded: replyNeededCount,
+      },
+    };
+  },
+});

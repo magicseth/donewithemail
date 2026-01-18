@@ -4,11 +4,13 @@ import {
   StyleSheet,
   Dimensions,
   Text,
+  Platform,
 } from "react-native";
 import {
   Gesture,
   GestureDetector,
   GestureHandlerRootView,
+  MouseButton,
 } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -21,7 +23,8 @@ import Animated, {
 } from "react-native-reanimated";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.25;
+const SWIPE_THRESHOLD = Math.min(SCREEN_WIDTH * 0.25, 150); // Max 150px for large screens
+const VELOCITY_THRESHOLD = 500; // Pixels per second
 
 export type SwipeDirection = "left" | "right" | "up" | "down";
 
@@ -52,19 +55,22 @@ export function SwipeStack<T>({
       if (data.length > 0 && !isSwipingRef.current) {
         isSwipingRef.current = true;
         onSwipe(data[0], direction);
-        // Reset after animation
+        // Reset after animation completes (animation is 200ms, wait a bit longer)
         setTimeout(() => {
           isSwipingRef.current = false;
           translateX.value = 0;
           translateY.value = 0;
           cardRotate.value = 0;
-        }, 100);
+        }, 300);
       }
     },
     [data, onSwipe, translateX, translateY, cardRotate]
   );
 
   const panGesture = Gesture.Pan()
+    .enableTrackpadTwoFingerGesture(true)
+    .mouseButton(MouseButton.LEFT)
+    .minDistance(10)
     .onUpdate((event) => {
       translateX.value = event.translationX;
       translateY.value = event.translationY;
@@ -76,9 +82,16 @@ export function SwipeStack<T>({
       );
     })
     .onEnd((event) => {
-      const swipedRight = translateX.value > SWIPE_THRESHOLD;
-      const swipedLeft = translateX.value < -SWIPE_THRESHOLD;
-      const swipedUp = translateY.value < -SWIPE_THRESHOLD;
+      // Use both distance and velocity to detect swipes
+      const swipedRight =
+        event.translationX > SWIPE_THRESHOLD ||
+        (event.translationX > 50 && event.velocityX > VELOCITY_THRESHOLD);
+      const swipedLeft =
+        event.translationX < -SWIPE_THRESHOLD ||
+        (event.translationX < -50 && event.velocityX < -VELOCITY_THRESHOLD);
+      const swipedUp =
+        event.translationY < -SWIPE_THRESHOLD ||
+        (event.translationY < -50 && event.velocityY < -VELOCITY_THRESHOLD);
 
       if (swipedRight) {
         translateX.value = withTiming(SCREEN_WIDTH * 1.5, { duration: 200 });
@@ -195,7 +208,12 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
     overflow: "hidden",
-  },
+    // Web-specific: enable drag and prevent text selection
+    ...(Platform.OS === "web" && {
+      cursor: "grab",
+      userSelect: "none",
+    }),
+  } as any,
   backgroundCard: {
     opacity: 0.8,
   },

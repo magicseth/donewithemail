@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -10,68 +10,54 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useAuth } from "../../lib/authContext";
-import { isGmailConnected, initiateGmailOAuth, clearGmailToken } from "../../lib/gmailAuth";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 
 export default function SettingsScreen() {
   const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
   const [autoProcess, setAutoProcess] = useState(true);
   const [urgencyThreshold, setUrgencyThreshold] = useState(80);
-  const [gmailConnected, setGmailConnected] = useState(false);
 
-  // Check Gmail connection status on mount
-  useEffect(() => {
-    setGmailConnected(isGmailConnected());
-  }, []);
+  // Check if Gmail is actually connected (has tokens stored)
+  const isGmailConnected = useQuery(
+    api.gmailOAuth.hasGmailConnected,
+    user?.email ? { email: user.email } : "skip"
+  );
 
-  // Connected providers based on actual connection state
-  const connectedProviders = gmailConnected
-    ? [
-        {
-          provider: "gmail",
-          email: user?.email || "Connected",
-          isConnected: true,
-        },
-      ]
-    : [];
+  const handleSignOut = async () => {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm("Are you sure you want to sign out?");
+      if (!confirmed) return;
 
-  const handleConnectGmail = () => {
-    initiateGmailOAuth();
-  };
+      try {
+        await signOut();
+      } catch (e) {
+        console.log("SignOut error:", e);
+      }
 
-  const handleDisconnect = (provider: string) => {
-    Alert.alert(
-      "Disconnect Account",
-      `Are you sure you want to disconnect your ${provider} account?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: () => {
-            if (provider === "gmail") {
-              clearGmailToken();
-              setGmailConnected(false);
-            }
-          },
-        },
-      ]
-    );
-  };
+      localStorage.clear();
+      sessionStorage.clear();
+      document.cookie.split(";").forEach((c) => {
+        document.cookie = c
+          .replace(/^ +/, "")
+          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+      window.location.href = "/";
+      return;
+    }
 
-  const handleSignOut = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Sign Out",
         style: "destructive",
-        onPress: () => {
-          signOut();
+        onPress: async () => {
+          await signOut();
         },
       },
     ]);
   };
 
-  // Show sign in screen if not authenticated
   if (!isAuthenticated) {
     return (
       <View style={styles.signInContainer}>
@@ -87,7 +73,7 @@ export default function SettingsScreen() {
           {isLoading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.signInButtonText}>Sign in with WorkOS</Text>
+            <Text style={styles.signInButtonText}>Sign in with Google</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -120,37 +106,42 @@ export default function SettingsScreen() {
 
       {/* Connected Accounts Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Connected Accounts</Text>
+        <Text style={styles.sectionTitle}>Email Access</Text>
         <View style={styles.card}>
-          {connectedProviders.map((provider) => (
-            <View key={provider.provider} style={styles.providerRow}>
-              <View style={styles.providerIcon}>
-                <Text style={styles.providerIconText}>
-                  {provider.provider === "gmail" ? "📧" : "📬"}
-                </Text>
-              </View>
-              <View style={styles.providerInfo}>
-                <Text style={styles.providerName}>
-                  {provider.provider.charAt(0).toUpperCase() +
-                    provider.provider.slice(1)}
-                </Text>
-                <Text style={styles.providerEmail}>{provider.email}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.disconnectButton}
-                onPress={() => handleDisconnect(provider.provider)}
-              >
-                <Text style={styles.disconnectText}>Disconnect</Text>
-              </TouchableOpacity>
+          <View style={styles.providerRow}>
+            <View style={styles.providerIcon}>
+              <Text style={styles.providerIconText}>📧</Text>
             </View>
-          ))}
-
-          <TouchableOpacity
-            style={styles.connectButton}
-            onPress={handleConnectGmail}
-          >
-            <Text style={styles.connectButtonText}>+ Connect Gmail Account</Text>
-          </TouchableOpacity>
+            <View style={styles.providerInfo}>
+              <Text style={styles.providerName}>Gmail</Text>
+              <Text style={styles.providerEmail}>
+                {isGmailConnected === undefined
+                  ? "Checking connection..."
+                  : isGmailConnected
+                    ? user?.email
+                    : "Not connected"}
+              </Text>
+            </View>
+            {isGmailConnected === undefined ? (
+              <ActivityIndicator size="small" color="#6366F1" />
+            ) : isGmailConnected ? (
+              <View style={styles.connectedBadge}>
+                <Text style={styles.connectedText}>Connected</Text>
+              </View>
+            ) : (
+              <View style={styles.notConnectedBadge}>
+                <Text style={styles.notConnectedText}>Not Connected</Text>
+              </View>
+            )}
+          </View>
+          {isGmailConnected === false && (
+            <View style={styles.helpText}>
+              <Text style={styles.helpTextContent}>
+                Gmail access is granted during sign-in. Sign out and sign in
+                again, making sure to accept all Gmail permissions when prompted.
+              </Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -176,9 +167,12 @@ export default function SettingsScreen() {
 
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Urgency notification threshold</Text>
+              <Text style={styles.settingLabel}>
+                Urgency notification threshold
+              </Text>
               <Text style={styles.settingDescription}>
-                Get notified for emails with urgency score above {urgencyThreshold}
+                Get notified for emails with urgency score above{" "}
+                {urgencyThreshold}
               </Text>
             </View>
             <Text style={styles.thresholdValue}>{urgencyThreshold}</Text>
@@ -284,6 +278,7 @@ const styles = StyleSheet.create({
   },
   profileInfo: {
     marginLeft: 16,
+    flex: 1,
   },
   profileName: {
     fontSize: 18,
@@ -325,24 +320,36 @@ const styles = StyleSheet.create({
     color: "#666",
     marginTop: 2,
   },
-  disconnectButton: {
+  connectedBadge: {
+    backgroundColor: "#10B981",
     paddingHorizontal: 12,
     paddingVertical: 6,
+    borderRadius: 16,
   },
-  disconnectText: {
-    color: "#FF4444",
-    fontSize: 14,
+  connectedText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
   },
-  connectButton: {
+  notConnectedBadge: {
+    backgroundColor: "#F3F4F6",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  notConnectedText: {
+    color: "#6B7280",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  helpText: {
     padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
+    paddingTop: 0,
   },
-  connectButtonText: {
-    color: "#6366F1",
-    fontSize: 16,
-    fontWeight: "500",
-    textAlign: "center",
+  helpTextContent: {
+    fontSize: 13,
+    color: "#6B7280",
+    lineHeight: 18,
   },
   settingRow: {
     flexDirection: "row",

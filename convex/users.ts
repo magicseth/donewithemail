@@ -82,7 +82,7 @@ export const connectGmailAccount = mutation({
     const user = await ctx.db.get(args.userId);
     if (!user) throw new Error("User not found");
 
-    const otherProviders = user.connectedProviders.filter(
+    const otherProviders = (user.connectedProviders || []).filter(
       (p) => p.provider !== "gmail"
     );
 
@@ -116,7 +116,7 @@ export const disconnectProvider = mutation({
     if (!user) throw new Error("User not found");
 
     await ctx.db.patch(args.userId, {
-      connectedProviders: user.connectedProviders.filter(
+      connectedProviders: (user.connectedProviders || []).filter(
         (p) => p.provider !== args.provider
       ),
     });
@@ -162,7 +162,7 @@ export const getConnectedProviders = query({
     const user = await ctx.db.get(args.userId);
     if (!user) return [];
 
-    return user.connectedProviders.map((p) => ({
+    return (user.connectedProviders || []).map((p) => ({
       provider: p.provider,
       email: p.email,
       isConnected: true,

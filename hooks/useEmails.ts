@@ -24,12 +24,22 @@ export function useInboxEmails(userId: Id<"users"> | undefined) {
 }
 
 /**
- * Hook for fetching a single email
+ * Hook for fetching a single email by Convex ID
  */
 export function useEmail(emailId: Id<"emails"> | undefined) {
   return useQuery(
     api.emails.getEmail,
     emailId ? { emailId } : "skip"
+  );
+}
+
+/**
+ * Hook for fetching a single email by external ID (Gmail ID)
+ */
+export function useEmailByExternalId(externalId: string | undefined) {
+  return useQuery(
+    api.emails.getEmailByExternalId,
+    externalId ? { externalId, provider: "gmail" } : "skip"
   );
 }
 
@@ -79,18 +89,42 @@ export function useMarkAsRead() {
 }
 
 /**
+ * Hook for triaging by external ID (Gmail ID)
+ */
+export function useTriageByExternalId() {
+  const triageMutation = useMutation(api.emails.triageEmailByExternalId);
+
+  const triageByExternalId = useCallback(
+    async (
+      externalId: string,
+      action: "done" | "reply_needed" | "delegated"
+    ) => {
+      return triageMutation({ externalId, action });
+    },
+    [triageMutation]
+  );
+
+  return { triageByExternalId };
+}
+
+/**
  * Combined hook for email actions
  */
 export function useEmailActions() {
   const { triageEmail } = useTriageEmail();
+  const { triageByExternalId } = useTriageByExternalId();
   const { markAsRead } = useMarkAsRead();
 
   return {
     triageEmail,
+    triageByExternalId,
     markAsRead,
     // Convenience methods for swipe actions
     archiveEmail: (emailId: Id<"emails">) => triageEmail(emailId, "done"),
     markReplyNeeded: (emailId: Id<"emails">) => triageEmail(emailId, "reply_needed"),
     delegateEmail: (emailId: Id<"emails">) => triageEmail(emailId, "delegated"),
+    // External ID versions
+    archiveByExternalId: (externalId: string) => triageByExternalId(externalId, "done"),
+    markReplyNeededByExternalId: (externalId: string) => triageByExternalId(externalId, "reply_needed"),
   };
 }

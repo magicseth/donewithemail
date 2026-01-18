@@ -92,6 +92,39 @@ export const getEmail = query({
 });
 
 /**
+ * Get a single email by external ID (e.g., Gmail message ID)
+ */
+export const getEmailByExternalId = query({
+  args: {
+    externalId: v.string(),
+    provider: v.optional(v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap"))),
+  },
+  handler: async (ctx, args) => {
+    const provider = args.provider ?? "gmail";
+
+    const email = await ctx.db
+      .query("emails")
+      .withIndex("by_external_id", (q) =>
+        q.eq("externalId", args.externalId).eq("provider", provider)
+      )
+      .first();
+
+    if (!email) return null;
+
+    const fromContact = await ctx.db.get(email.from);
+    const toContacts = await Promise.all(
+      email.to.map((id) => ctx.db.get(id))
+    );
+
+    return {
+      ...email,
+      fromContact,
+      toContacts: toContacts.filter(Boolean),
+    };
+  },
+});
+
+/**
  * Get emails from a specific contact
  */
 export const getEmailsByContact = query({
@@ -132,6 +165,43 @@ export const triageEmail = mutation({
     });
 
     return { success: true };
+  },
+});
+
+/**
+ * Triage an email by external ID (Gmail ID)
+ */
+export const triageEmailByExternalId = mutation({
+  args: {
+    externalId: v.string(),
+    provider: v.optional(v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap"))),
+    action: v.union(
+      v.literal("done"),
+      v.literal("reply_needed"),
+      v.literal("delegated")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const provider = args.provider ?? "gmail";
+
+    const email = await ctx.db
+      .query("emails")
+      .withIndex("by_external_id", (q) =>
+        q.eq("externalId", args.externalId).eq("provider", provider)
+      )
+      .first();
+
+    if (!email) {
+      throw new Error(`Email not found: ${args.externalId}`);
+    }
+
+    await ctx.db.patch(email._id, {
+      isTriaged: true,
+      triageAction: args.action,
+      triagedAt: Date.now(),
+    });
+
+    return { success: true, emailId: email._id };
   },
 });
 

@@ -9,20 +9,36 @@ import {
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { EmailCard, EmailCardData } from "../../components/EmailCard";
-import { useEmail, useEmailActions } from "../../hooks/useEmails";
+import { useEmail, useEmailByExternalId, useEmailActions } from "../../hooks/useEmails";
 import { Id } from "../../convex/_generated/dataModel";
+
+// Check if an ID looks like a valid Convex ID (not a Gmail ID)
+function isConvexId(id: string): boolean {
+  // Convex IDs are longer and contain special characters
+  // Gmail IDs are typically hex strings like "19bcec856e234249"
+  return id.length > 20 || !id.match(/^[0-9a-f]+$/i);
+}
 
 export default function EmailDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const email = useEmail(id as Id<"emails"> | undefined);
+
+  // Try Convex ID lookup first, then fall back to external ID
+  const isConvex = id ? isConvexId(id) : false;
+  const emailByConvexId = useEmail(isConvex ? (id as Id<"emails">) : undefined);
+  const emailByExternalId = useEmailByExternalId(!isConvex ? id : undefined);
+
+  const email = isConvex ? emailByConvexId : emailByExternalId;
   const { archiveEmail, markReplyNeeded } = useEmailActions();
 
+  // Use the Convex _id from the email object for mutations
+  const convexId = email?._id;
+
   const handleArchive = useCallback(async () => {
-    if (id) {
-      await archiveEmail(id as Id<"emails">);
+    if (convexId) {
+      await archiveEmail(convexId);
       router.back();
     }
-  }, [id, archiveEmail]);
+  }, [convexId, archiveEmail]);
 
   const handleReply = useCallback(() => {
     router.push({
@@ -130,7 +146,7 @@ export default function EmailDetailScreen() {
         <TouchableOpacity
           style={styles.actionButton}
           onPress={() => {
-            if (id) markReplyNeeded(id as Id<"emails">);
+            if (convexId) markReplyNeeded(convexId);
           }}
         >
           <Text style={styles.actionIcon}>⏰</Text>
