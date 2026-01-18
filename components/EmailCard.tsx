@@ -14,6 +14,20 @@ function isHtml(content: string): boolean {
   return /<[a-z][\s\S]*>/i.test(content);
 }
 
+// Decode HTML entities in text (for email snippets)
+function decodeHtmlEntities(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
 export interface EmailCardData {
   _id: string;
   subject: string;
@@ -88,7 +102,7 @@ export function EmailCard({
 
       {/* Subject */}
       <Text style={styles.subject} numberOfLines={showFullContent ? undefined : 2}>
-        {email.subject}
+        {decodeHtmlEntities(email.subject)}
       </Text>
 
       {/* AI Summary */}
@@ -121,7 +135,7 @@ export function EmailCard({
             style={styles.bodyText}
             numberOfLines={showFullContent ? undefined : 6}
           >
-            {email.bodyPreview}
+            {decodeHtmlEntities(email.bodyPreview)}
           </Text>
         )}
       </View>

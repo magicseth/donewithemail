@@ -127,21 +127,30 @@ async function refreshTokenIfNeeded(
   };
 }
 
+// Helper to decode base64url with proper UTF-8 support
+function decodeBase64Url(data: string): string {
+  try {
+    // Replace URL-safe characters
+    const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
+    // Decode base64 to binary string
+    const binaryString = atob(base64);
+    // Convert binary string to Uint8Array
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    // Decode UTF-8
+    const decoder = new TextDecoder("utf-8");
+    return decoder.decode(bytes);
+  } catch {
+    return "";
+  }
+}
+
 // Extract email body from Gmail payload (handles multipart messages)
 function extractBody(payload: any): { html: string; plain: string } {
   let html = "";
   let plain = "";
-
-  // Helper to decode base64url
-  const decodeBase64Url = (data: string): string => {
-    try {
-      // Replace URL-safe characters
-      const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
-      return atob(base64);
-    } catch {
-      return "";
-    }
-  };
 
   // Check if body is directly in payload
   if (payload.body?.data) {
@@ -178,6 +187,7 @@ export const fetchEmails = action({
   args: {
     userEmail: v.string(),
     maxResults: v.optional(v.number()),
+    pageToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Get user's Gmail tokens from database
@@ -203,21 +213,26 @@ export const fetchEmails = action({
     }
 
     // Fetch message list
-    const maxResults = args.maxResults || 20;
-    const listResponse = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    const maxResults = args.maxResults || 50;
+    let url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}`;
+    if (args.pageToken) {
+      url += `&pageToken=${args.pageToken}`;
+    }
+
+    const listResponse = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
 
     if (!listResponse.ok) {
       const error = await listResponse.text();
       throw new Error(`Gmail API error: ${listResponse.status} - ${error}`);
     }
 
-    const listData: { messages?: { id: string }[] } = await listResponse.json();
+    const listData: { messages?: { id: string }[]; nextPageToken?: string } = await listResponse.json();
     const messageIds: { id: string }[] = listData.messages || [];
+    const nextPageToken = listData.nextPageToken;
 
-    // Fetch full message details for first 10 messages
+    // Fetch full message details for all messages
     const emails: Array<{
       id: string;
       threadId: string;
@@ -230,7 +245,7 @@ export const fetchEmails = action({
       labels: string[];
       from: { name: string; email: string };
     }> = await Promise.all(
-      messageIds.slice(0, 10).map(async (msg: { id: string }) => {
+      messageIds.map(async (msg: { id: string }) => {
         const msgResponse = await fetch(
           `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,
           { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -305,6 +320,6 @@ export const fetchEmails = action({
       }
     }
 
-    return emails;
+    return { emails, nextPageToken };
   },
 });

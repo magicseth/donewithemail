@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -7,9 +7,31 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Dimensions,
+  Platform,
 } from "react-native";
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from "react-native-gesture-handler";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withDecay,
+  interpolate,
+  Extrapolation,
+} from "react-native-reanimated";
 import { router } from "expo-router";
 import { useGmail, GmailEmail } from "../../hooks/useGmail";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const BALL_SIZE = 40;
+const TARGET_SIZE = 60;
+const TRIAGE_BAR_HEIGHT = 80;
+// Ball can move from left target to right target
+const BALL_TRAVEL_RANGE = SCREEN_WIDTH - TARGET_SIZE * 2;
 
 interface InboxEmail {
   _id: string;
@@ -20,6 +42,8 @@ interface InboxEmail {
   isTriaged: boolean;
   triageAction?: "done" | "reply_needed" | "delegated";
   urgencyScore?: number;
+  summary?: string;
+  urgencyReason?: string;
   fromContact?: {
     _id: string;
     email: string;
@@ -36,6 +60,9 @@ function toInboxEmail(email: GmailEmail): InboxEmail {
     receivedAt: email.receivedAt,
     isRead: email.isRead,
     isTriaged: false,
+    urgencyScore: email.urgencyScore,
+    summary: email.summary,
+    urgencyReason: email.urgencyReason,
     fromContact: {
       _id: email.from.email,
       email: email.from.email,
@@ -44,9 +71,39 @@ function toInboxEmail(email: GmailEmail): InboxEmail {
   };
 }
 
+type TriageAction = "reply" | "save" | "archive";
+
+// Decode HTML entities in text (for email snippets)
+function decodeHtmlEntities(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
+function getActiveTarget(ballX: number): TriageAction {
+  const normalizedX = (ballX + BALL_TRAVEL_RANGE / 2) / BALL_TRAVEL_RANGE;
+  if (normalizedX < 0.33) return "reply";
+  if (normalizedX > 0.66) return "archive";
+  return "save";
+}
+
 export default function InboxScreen() {
-  const { isAuthenticated, emails: gmailEmails, isLoading, fetchEmails, refetch } = useGmail();
+  const { isAuthenticated, emails: gmailEmails, isLoading, isLoadingMore, isSummarizing, hasMore, fetchEmails, loadMore, refetch } = useGmail();
   const [refreshing, setRefreshing] = React.useState(false);
+
+  // Ball position (0 = center, negative = left, positive = right)
+  const ballX = useSharedValue(0);
+
+  // For wheel event handling on web
+  const wheelTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isWheelActiveRef = useRef(false);
 
   // Fetch emails when authenticated
   useEffect(() => {
@@ -67,6 +124,159 @@ export default function InboxScreen() {
     await refetch();
     setRefreshing(false);
   }, [refetch]);
+
+  const handleLoadMore = useCallback(() => {
+    if (hasMore && !isLoadingMore) {
+      loadMore();
+    }
+  }, [hasMore, isLoadingMore, loadMore]);
+
+  // Handle wheel events for trackpad scrolling on web
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+
+    const handleWheel = (event: WheelEvent) => {
+      const deltaX = event.deltaX;
+
+      // Only handle if there's meaningful horizontal movement
+      if (Math.abs(deltaX) < 1) return;
+
+      // Update ball position based on horizontal scroll
+      // Negate deltaX so scrolling right moves ball right
+      // Higher multiplier (3) for faster response
+      const newX = Math.max(
+        -BALL_TRAVEL_RANGE / 2,
+        Math.min(BALL_TRAVEL_RANGE / 2, ballX.value - deltaX * 3)
+      );
+      ballX.value = newX;
+
+      // Mark wheel as active
+      isWheelActiveRef.current = true;
+
+      // Clear existing timeout
+      if (wheelTimeoutRef.current) {
+        clearTimeout(wheelTimeoutRef.current);
+      }
+
+      // Set timeout to snap ball when wheel stops
+      wheelTimeoutRef.current = setTimeout(() => {
+        if (isWheelActiveRef.current) {
+          isWheelActiveRef.current = false;
+          // Snap to nearest target
+          const activeTarget = getActiveTarget(ballX.value);
+          if (activeTarget === "reply") {
+            ballX.value = withSpring(-BALL_TRAVEL_RANGE / 2 + TARGET_SIZE / 2);
+          } else if (activeTarget === "archive") {
+            ballX.value = withSpring(BALL_TRAVEL_RANGE / 2 - TARGET_SIZE / 2);
+          } else {
+            ballX.value = withSpring(0);
+          }
+        }
+      }, 150);
+    };
+
+    // Add wheel event listener to window
+    window.addEventListener("wheel", handleWheel, { passive: true });
+
+    return () => {
+      window.removeEventListener("wheel", handleWheel);
+      if (wheelTimeoutRef.current) {
+        clearTimeout(wheelTimeoutRef.current);
+      }
+    };
+  }, [ballX]);
+
+  // Pan gesture for horizontal ball movement
+  const panGesture = Gesture.Pan()
+    .onUpdate((event) => {
+      // Map horizontal translation to ball position
+      // Clamp to travel range
+      const newX = Math.max(
+        -BALL_TRAVEL_RANGE / 2,
+        Math.min(BALL_TRAVEL_RANGE / 2, event.translationX)
+      );
+      ballX.value = newX;
+    })
+    .onEnd(() => {
+      // Snap ball to nearest target
+      const activeTarget = getActiveTarget(ballX.value);
+      if (activeTarget === "reply") {
+        ballX.value = withSpring(-BALL_TRAVEL_RANGE / 2 + TARGET_SIZE / 2);
+      } else if (activeTarget === "archive") {
+        ballX.value = withSpring(BALL_TRAVEL_RANGE / 2 - TARGET_SIZE / 2);
+      } else {
+        ballX.value = withSpring(0);
+      }
+    });
+
+  // Native gesture for FlatList scrolling
+  const nativeGesture = Gesture.Native();
+
+  // Combine gestures - pan for horizontal, native for vertical scroll
+  const composedGesture = Gesture.Simultaneous(panGesture, nativeGesture);
+
+  // Ball animated style
+  const ballStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: ballX.value }],
+  }));
+
+  // Target highlight styles
+  const replyTargetStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      ballX.value,
+      [-BALL_TRAVEL_RANGE / 2, -BALL_TRAVEL_RANGE / 4, 0],
+      [1, 0.5, 0.3],
+      Extrapolation.CLAMP
+    ),
+    transform: [
+      {
+        scale: interpolate(
+          ballX.value,
+          [-BALL_TRAVEL_RANGE / 2, 0],
+          [1.2, 1],
+          Extrapolation.CLAMP
+        ),
+      },
+    ],
+  }));
+
+  const saveTargetStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      Math.abs(ballX.value),
+      [0, BALL_TRAVEL_RANGE / 4],
+      [1, 0.3],
+      Extrapolation.CLAMP
+    ),
+    transform: [
+      {
+        scale: interpolate(
+          Math.abs(ballX.value),
+          [0, BALL_TRAVEL_RANGE / 4],
+          [1.2, 1],
+          Extrapolation.CLAMP
+        ),
+      },
+    ],
+  }));
+
+  const archiveTargetStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      ballX.value,
+      [0, BALL_TRAVEL_RANGE / 4, BALL_TRAVEL_RANGE / 2],
+      [0.3, 0.5, 1],
+      Extrapolation.CLAMP
+    ),
+    transform: [
+      {
+        scale: interpolate(
+          ballX.value,
+          [0, BALL_TRAVEL_RANGE / 2],
+          [1, 1.2],
+          Extrapolation.CLAMP
+        ),
+      },
+    ],
+  }));
 
   const renderEmailItem = ({ item }: { item: InboxEmail }) => {
     const fromName = item.fromContact?.name || item.fromContact?.email || "Unknown";
@@ -94,7 +304,7 @@ export default function InboxScreen() {
               style={[styles.subject, !item.isRead && styles.textBold]}
               numberOfLines={1}
             >
-              {item.subject}
+              {decodeHtmlEntities(item.subject)}
             </Text>
             {item.triageAction && (
               <View
@@ -115,9 +325,19 @@ export default function InboxScreen() {
           </View>
         </View>
 
-        <Text style={styles.preview} numberOfLines={2}>
-          {item.bodyPreview}
-        </Text>
+        {/* AI Summary or body preview */}
+        {item.summary ? (
+          <View style={styles.summaryContainer}>
+            <Text style={styles.summaryLabel}>AI Summary</Text>
+            <Text style={styles.summaryText} numberOfLines={2}>
+              {item.summary}
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.preview} numberOfLines={2}>
+            {decodeHtmlEntities(item.bodyPreview)}
+          </Text>
+        )}
 
         {item.urgencyScore !== undefined && item.urgencyScore >= 50 && (
           <View
@@ -143,26 +363,64 @@ export default function InboxScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={emails}
-        keyExtractor={(item) => item._id}
-        renderItem={renderEmailItem}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor="#6366F1"
+    <GestureHandlerRootView style={styles.container}>
+      {/* Triage bar with targets and ball */}
+      <View style={styles.triageBar}>
+        <Animated.View style={[styles.target, styles.targetLeft, replyTargetStyle]}>
+          <Text style={styles.targetIcon}>↩</Text>
+          <Text style={styles.targetLabel}>Reply</Text>
+        </Animated.View>
+
+        <Animated.View style={[styles.target, styles.targetCenter, saveTargetStyle]}>
+          <Text style={styles.targetIcon}>★</Text>
+          <Text style={styles.targetLabel}>Save</Text>
+        </Animated.View>
+
+        <Animated.View style={[styles.target, styles.targetRight, archiveTargetStyle]}>
+          <Text style={styles.targetIcon}>✓</Text>
+          <Text style={styles.targetLabel}>Archive</Text>
+        </Animated.View>
+
+        {/* The ball */}
+        <Animated.View style={[styles.ball, ballStyle]} />
+      </View>
+
+      {/* Email list with gesture detection */}
+      <GestureDetector gesture={composedGesture}>
+        <Animated.View style={styles.listContainer}>
+          <FlatList
+            data={emails}
+            keyExtractor={(item) => item._id}
+            renderItem={renderEmailItem}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                tintColor="#6366F1"
+              />
+            }
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.5}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyIcon}>📭</Text>
+                <Text style={styles.emptyText}>No emails yet</Text>
+              </View>
+            }
+            ListFooterComponent={
+              isLoadingMore || isSummarizing ? (
+                <View style={styles.loadingMore}>
+                  <ActivityIndicator size="small" color="#6366F1" />
+                  <Text style={styles.loadingMoreText}>
+                    {isLoadingMore ? "Loading more..." : "Summarizing with AI..."}
+                  </Text>
+                </View>
+              ) : null
+            }
           />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>📭</Text>
-            <Text style={styles.emptyText}>No emails yet</Text>
-          </View>
-        }
-      />
+        </Animated.View>
+      </GestureDetector>
 
       {/* Compose FAB */}
       <TouchableOpacity
@@ -171,7 +429,7 @@ export default function InboxScreen() {
       >
         <Text style={styles.fabIcon}>✏️</Text>
       </TouchableOpacity>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -198,6 +456,58 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  triageBar: {
+    height: TRIAGE_BAR_HEIGHT,
+    backgroundColor: "#F5F5F5",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E0E0E0",
+  },
+  target: {
+    width: TARGET_SIZE,
+    height: TARGET_SIZE,
+    borderRadius: TARGET_SIZE / 2,
+    backgroundColor: "#E0E0E0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  targetLeft: {
+    backgroundColor: "#FFE0B2",
+  },
+  targetCenter: {
+    backgroundColor: "#C8E6C9",
+  },
+  targetRight: {
+    backgroundColor: "#B3E5FC",
+  },
+  targetIcon: {
+    fontSize: 20,
+  },
+  targetLabel: {
+    fontSize: 10,
+    marginTop: 2,
+    color: "#666",
+  },
+  ball: {
+    position: "absolute",
+    width: BALL_SIZE,
+    height: BALL_SIZE,
+    borderRadius: BALL_SIZE / 2,
+    backgroundColor: "#6366F1",
+    left: SCREEN_WIDTH / 2 - BALL_SIZE / 2,
+    top: TRIAGE_BAR_HEIGHT / 2 - BALL_SIZE / 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  listContainer: {
+    flex: 1,
   },
   listContent: {
     paddingBottom: 100,
@@ -271,6 +581,25 @@ const styles = StyleSheet.create({
     color: "#666",
     lineHeight: 20,
   },
+  summaryContainer: {
+    backgroundColor: "#F0F4FF",
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 4,
+  },
+  summaryLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#6366F1",
+    marginBottom: 2,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  summaryText: {
+    fontSize: 14,
+    color: "#333",
+    lineHeight: 20,
+  },
   urgencyIndicator: {
     position: "absolute",
     left: 0,
@@ -288,6 +617,17 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
+    color: "#666",
+  },
+  loadingMore: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 20,
+    gap: 8,
+  },
+  loadingMoreText: {
+    fontSize: 14,
     color: "#666",
   },
   fab: {
