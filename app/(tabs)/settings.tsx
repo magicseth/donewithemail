@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,30 +10,32 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useAuth } from "../../lib/authContext";
+import { isGmailConnected, initiateGmailOAuth, clearGmailToken } from "../../lib/gmailAuth";
 
 export default function SettingsScreen() {
   const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
-  const [autoProcess, setAutoProcess] = React.useState(true);
-  const [urgencyThreshold, setUrgencyThreshold] = React.useState(80);
+  const [autoProcess, setAutoProcess] = useState(true);
+  const [urgencyThreshold, setUrgencyThreshold] = useState(80);
+  const [gmailConnected, setGmailConnected] = useState(false);
 
-  // Mock connected providers for development
-  const mockProviders = isAuthenticated
+  // Check Gmail connection status on mount
+  useEffect(() => {
+    setGmailConnected(isGmailConnected());
+  }, []);
+
+  // Connected providers based on actual connection state
+  const connectedProviders = gmailConnected
     ? [
         {
           provider: "gmail",
-          email: user?.email || "user@gmail.com",
+          email: user?.email || "Connected",
           isConnected: true,
-          expiresAt: Date.now() + 86400000,
         },
       ]
     : [];
 
   const handleConnectGmail = () => {
-    if (isAuthenticated) {
-      Alert.alert("Already Connected", "You are already signed in.");
-      return;
-    }
-    signIn();
+    initiateGmailOAuth();
   };
 
   const handleDisconnect = (provider: string) => {
@@ -46,7 +48,10 @@ export default function SettingsScreen() {
           text: "Disconnect",
           style: "destructive",
           onPress: () => {
-            console.log(`Disconnecting ${provider}...`);
+            if (provider === "gmail") {
+              clearGmailToken();
+              setGmailConnected(false);
+            }
           },
         },
       ]
@@ -117,7 +122,7 @@ export default function SettingsScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Connected Accounts</Text>
         <View style={styles.card}>
-          {mockProviders.map((provider) => (
+          {connectedProviders.map((provider) => (
             <View key={provider.provider} style={styles.providerRow}>
               <View style={styles.providerIcon}>
                 <Text style={styles.providerIconText}>
