@@ -18,6 +18,8 @@ export interface CalendarEvent {
 export interface GmailEmail {
   _id: string;
   externalId: string;
+  threadId?: string;
+  threadCount?: number;
   subject: string;
   bodyPreview: string;
   receivedAt: number;
@@ -149,6 +151,8 @@ export function useGmail() {
   const emails: GmailEmail[] = (cachedEmails || []).map((email: any) => ({
     _id: email._id,
     externalId: email.externalId,
+    threadId: email.threadId,
+    threadCount: email.threadCount,
     subject: email.subject,
     bodyPreview: email.bodyPreview,
     receivedAt: email.receivedAt,

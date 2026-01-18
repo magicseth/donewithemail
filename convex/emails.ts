@@ -99,6 +99,7 @@ export const getInboxEmails = query({
 
 /**
  * Get inbox emails by user email (for fast cache-first loading)
+ * Groups emails by thread and returns the most recent email per thread
  */
 export const getInboxByEmail = query({
   args: {
@@ -118,18 +119,38 @@ export const getInboxByEmail = query({
 
     const limit = args.limit ?? 50;
 
+    // Fetch more emails to account for thread grouping
     const emails = await ctx.db
       .query("emails")
       .withIndex("by_user_received", (q) => q.eq("userId", user._id))
       .order("desc")
-      .take(limit);
+      .take(limit * 3); // Fetch extra to ensure enough unique threads
+
+    // Group emails by threadId (or use email._id if no threadId)
+    const threadMap = new Map<string, typeof emails>();
+    for (const email of emails) {
+      const threadKey = email.threadId || email._id;
+      if (!threadMap.has(threadKey)) {
+        threadMap.set(threadKey, []);
+      }
+      threadMap.get(threadKey)!.push(email);
+    }
+
+    // Get the most recent email per thread (first in each group since sorted desc)
+    const latestPerThread = Array.from(threadMap.values())
+      .map(threadEmails => ({
+        email: threadEmails[0], // Most recent
+        threadCount: threadEmails.length,
+      }))
+      .slice(0, limit); // Apply limit after grouping
 
     const emailsWithData = await Promise.all(
-      emails.map(async (email) => {
+      latestPerThread.map(async ({ email, threadCount }) => {
         const fromContact = await ctx.db.get(email.from);
         const summaryData = await getSummaryForEmail(ctx.db, email._id);
         return {
           ...email,
+          threadCount,
           fromContact,
           summary: summaryData?.summary,
           urgencyScore: summaryData?.urgencyScore,
@@ -175,6 +196,59 @@ export const getEmail = query({
       suggestedReply: summaryData?.suggestedReply,
       aiProcessedAt: summaryData?.createdAt,
     };
+  },
+});
+
+/**
+ * Get all emails in a thread
+ */
+export const getThreadEmails = query({
+  args: {
+    emailId: v.id("emails"),
+  },
+  handler: async (ctx, args) => {
+    const email = await ctx.db.get(args.emailId);
+    if (!email) return [];
+
+    // If no threadId, just return this email
+    if (!email.threadId) {
+      const fromContact = await ctx.db.get(email.from);
+      const summaryData = await getSummaryForEmail(ctx.db, email._id);
+      return [{
+        ...email,
+        fromContact,
+        summary: summaryData?.summary,
+        urgencyScore: summaryData?.urgencyScore,
+        urgencyReason: summaryData?.urgencyReason,
+        suggestedReply: summaryData?.suggestedReply,
+        aiProcessedAt: summaryData?.createdAt,
+      }];
+    }
+
+    // Get all emails in this thread
+    const threadEmails = await ctx.db
+      .query("emails")
+      .withIndex("by_thread", (q) => q.eq("userId", email.userId).eq("threadId", email.threadId))
+      .order("asc") // Oldest first for thread view
+      .collect();
+
+    const emailsWithData = await Promise.all(
+      threadEmails.map(async (e) => {
+        const fromContact = await ctx.db.get(e.from);
+        const summaryData = await getSummaryForEmail(ctx.db, e._id);
+        return {
+          ...e,
+          fromContact,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: summaryData?.urgencyReason,
+          suggestedReply: summaryData?.suggestedReply,
+          aiProcessedAt: summaryData?.createdAt,
+        };
+      })
+    );
+
+    return emailsWithData;
   },
 });
 

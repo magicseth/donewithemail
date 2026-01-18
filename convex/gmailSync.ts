@@ -153,6 +153,7 @@ export const upsertContact = internalMutation({
 export const storeEmailInternal = internalMutation({
   args: {
     externalId: v.string(),
+    threadId: v.optional(v.string()),
     provider: v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap")),
     userId: v.id("users"),
     from: v.id("contacts"),
@@ -276,6 +277,88 @@ function extractBody(payload: any): { html: string; plain: string } {
   return { html, plain };
 }
 
+// Fetch full email body on demand (for email detail view)
+export const fetchEmailBody = action({
+  args: {
+    userEmail: v.string(),
+    emailId: v.id("emails"),
+  },
+  handler: async (ctx, args): Promise<{ body: string; isHtml: boolean }> => {
+    // Get the email to find its externalId
+    type EmailData = {
+      externalId: string;
+      bodyFull: string;
+      bodyPreview: string;
+    };
+    const email: EmailData | null = await ctx.runQuery(internal.emails.getEmailById, {
+      emailId: args.emailId,
+    });
+
+    if (!email) {
+      throw new Error("Email not found");
+    }
+
+    // If we already have HTML content, return it
+    if (email.bodyFull && email.bodyFull.includes("<")) {
+      return { body: email.bodyFull, isHtml: true };
+    }
+
+    // Get user's Gmail tokens
+    const user = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+      email: args.userEmail,
+    });
+
+    if (!user?.gmailAccessToken) {
+      throw new Error("Gmail not connected");
+    }
+
+    // Refresh token if needed
+    let accessToken: string = user.gmailAccessToken;
+    if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
+      const refreshed = await refreshTokenIfNeeded(
+        user.gmailAccessToken,
+        user.gmailRefreshToken,
+        user.gmailTokenExpiresAt
+      );
+      accessToken = refreshed.accessToken;
+    }
+
+    // Fetch full email from Gmail
+    const response = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${email.externalId}?format=full`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch email: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const { html, plain } = extractBody(data.payload);
+    const bodyFull = html || plain || email.bodyPreview;
+    const isHtml = !!html;
+
+    // Update the email with full body
+    await ctx.runMutation(internal.gmailSync.updateEmailBody, {
+      emailId: args.emailId,
+      bodyFull,
+    });
+
+    return { body: bodyFull, isHtml };
+  },
+});
+
+// Internal mutation to update email body
+export const updateEmailBody = internalMutation({
+  args: {
+    emailId: v.id("emails"),
+    bodyFull: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.emailId, { bodyFull: args.bodyFull });
+  },
+});
+
 // Fetch emails from Gmail using stored tokens
 export const fetchEmails = action({
   args: {
@@ -363,50 +446,81 @@ export const fetchEmails = action({
       isRead: boolean;
       labels: string[];
       from: { name: string; email: string };
-    }> = await Promise.all(
+    }> = (await Promise.all(
       uncachedIds.map(async (msg: { id: string }) => {
-        const msgResponse = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        );
-        const msgData = await msgResponse.json();
+        try {
+          const msgResponse = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
 
-        const headers = msgData.payload?.headers || [];
-        const getHeader = (name: string) =>
-          headers.find(
-            (h: { name: string; value: string }) =>
-              h.name.toLowerCase() === name.toLowerCase()
-          )?.value || "";
+          if (!msgResponse.ok) {
+            console.error(`Failed to fetch message ${msg.id}: ${msgResponse.status}`);
+            return null;
+          }
 
-        const from = getHeader("From");
-        const subject = getHeader("Subject") || "(No subject)";
-        const date = getHeader("Date");
+          const msgData = await msgResponse.json();
 
-        // Parse sender name and email
-        const fromMatch = from.match(
-          /(?:"?([^"]*)"?\s)?<?([^\s<>]+@[^\s<>]+)>?/
-        );
-        const senderName = fromMatch?.[1]?.trim() || fromMatch?.[2] || from;
-        const senderEmail = fromMatch?.[2] || from;
+          const headers = msgData.payload?.headers || [];
+          const getHeader = (name: string) =>
+            headers.find(
+              (h: { name: string; value: string }) =>
+                h.name.toLowerCase() === name.toLowerCase()
+            )?.value || "";
 
-        // Use snippet as body preview (no full body fetch for inbox view)
-        return {
-          id: msg.id,
-          threadId: msgData.threadId,
-          subject,
-          snippet: msgData.snippet || "",
-          bodyHtml: "",
-          bodyPlain: msgData.snippet || "",
-          receivedAt: date ? new Date(date).getTime() : Date.now(),
-          isRead: !msgData.labelIds?.includes("UNREAD"),
-          labels: msgData.labelIds || [],
-          from: {
-            name: senderName,
-            email: senderEmail,
-          },
-        };
+          const from = getHeader("From");
+          const subject = getHeader("Subject") || "(No subject)";
+          const date = getHeader("Date");
+
+          // Parse sender name and email - handle various formats
+          let senderName = "";
+          let senderEmail = "";
+
+          if (from) {
+            // Try to match "Name <email>" or just "email"
+            const fromMatch = from.match(
+              /(?:"?([^"<]*)"?\s*)?<?([^\s<>]+@[^\s<>]+)>?/
+            );
+            if (fromMatch) {
+              senderName = fromMatch[1]?.trim() || "";
+              senderEmail = fromMatch[2] || from;
+            } else {
+              senderEmail = from;
+            }
+            // If name is empty but we have email, use email as name
+            if (!senderName) {
+              senderName = senderEmail;
+            }
+          }
+
+          // Skip if we couldn't extract an email address
+          if (!senderEmail || !senderEmail.includes("@")) {
+            console.error(`Could not parse sender from: ${from}`);
+            return null;
+          }
+
+          // Use snippet as body preview (no full body fetch for inbox view)
+          return {
+            id: msg.id,
+            threadId: msgData.threadId,
+            subject,
+            snippet: msgData.snippet || "",
+            bodyHtml: "",
+            bodyPlain: msgData.snippet || "",
+            receivedAt: date ? new Date(date).getTime() : Date.now(),
+            isRead: !msgData.labelIds?.includes("UNREAD"),
+            labels: msgData.labelIds || [],
+            from: {
+              name: senderName,
+              email: senderEmail,
+            },
+          };
+        } catch (err) {
+          console.error(`Error fetching message ${msg.id}:`, err);
+          return null;
+        }
       })
-    );
+    )).filter((e): e is NonNullable<typeof e> => e !== null);
 
     // Type for combined email data
     type EmailData = {
@@ -465,6 +579,7 @@ export const fetchEmails = action({
         const bodyFull = email.bodyHtml || email.bodyPlain || email.snippet;
         await ctx.runMutation(internal.gmailSync.storeEmailInternal, {
           externalId: email.id,
+          threadId: email.threadId || undefined,
           provider: "gmail",
           userId: user._id,
           from: contactId,

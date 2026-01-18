@@ -54,6 +54,16 @@ export function useEmailsByContact(contactId: Id<"contacts"> | undefined) {
 }
 
 /**
+ * Hook for fetching all emails in a thread
+ */
+export function useThreadEmails(emailId: Id<"emails"> | undefined) {
+  return useQuery(
+    api.emails.getThreadEmails,
+    emailId ? { emailId } : "skip"
+  );
+}
+
+/**
  * Hook for email triage actions
  */
 export function useTriageEmail() {

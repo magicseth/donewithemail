@@ -5,6 +5,7 @@ export default defineSchema({
   emails: defineTable({
     // External provider data
     externalId: v.string(),
+    threadId: v.optional(v.string()), // Gmail thread ID for grouping conversations
     provider: v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap")),
     userId: v.id("users"),
 
@@ -31,7 +32,8 @@ export default defineSchema({
     .index("by_user_untriaged", ["userId", "isTriaged"])
     .index("by_user_received", ["userId", "receivedAt"])
     .index("by_external_id", ["externalId", "provider"])
-    .index("by_from", ["from"]),
+    .index("by_from", ["from"])
+    .index("by_thread", ["userId", "threadId"]),
 
   // AI-generated email summaries (separate table for cleaner data model)
   emailSummaries: defineTable({

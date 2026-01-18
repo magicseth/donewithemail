@@ -39,7 +39,6 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-haptics",
       [
         "expo-av",
         {

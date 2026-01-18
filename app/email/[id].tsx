@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,8 +8,11 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
+import { useAction } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { EmailCard, EmailCardData } from "../../components/EmailCard";
-import { useEmail, useEmailByExternalId, useEmailActions } from "../../hooks/useEmails";
+import { useEmail, useEmailByExternalId, useEmailActions, useThreadEmails } from "../../hooks/useEmails";
+import { useAuth } from "../../lib/authContext";
 import { Id } from "../../convex/_generated/dataModel";
 
 // Check if an ID looks like a valid Convex ID (not a Gmail ID)
@@ -19,8 +22,25 @@ function isConvexId(id: string): boolean {
   return id.length > 20 || !id.match(/^[0-9a-f]+$/i);
 }
 
+function formatDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+
+  if (isToday) {
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 export default function EmailDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set());
+  const [fullBodies, setFullBodies] = useState<Record<string, string>>({});
+  const [loadingBodies, setLoadingBodies] = useState<Set<string>>(new Set());
+
+  const { user } = useAuth();
+  const fetchEmailBody = useAction(api.gmailSync.fetchEmailBody);
 
   // Try Convex ID lookup first, then fall back to external ID
   const isConvex = id ? isConvexId(id) : false;
@@ -30,8 +50,62 @@ export default function EmailDetailScreen() {
   const email = isConvex ? emailByConvexId : emailByExternalId;
   const { archiveEmail, markReplyNeeded } = useEmailActions();
 
+  // Fetch all emails in this thread
+  const threadEmails = useThreadEmails(email?._id);
+
   // Use the Convex _id from the email object for mutations
   const convexId = email?._id;
+
+  // Fetch full body for the current email and thread emails
+  useEffect(() => {
+    async function fetchBodies() {
+      if (!user?.email) return;
+
+      const emailsToFetch = threadEmails && threadEmails.length > 1
+        ? threadEmails
+        : email ? [email] : [];
+
+      for (const e of emailsToFetch) {
+        // Skip if already fetched or loading, or if body looks like HTML already
+        if (fullBodies[e._id] || loadingBodies.has(e._id)) continue;
+        if (e.bodyFull && e.bodyFull.includes("<")) {
+          setFullBodies(prev => ({ ...prev, [e._id]: e.bodyFull }));
+          continue;
+        }
+
+        setLoadingBodies(prev => new Set(prev).add(e._id));
+        try {
+          const result = await fetchEmailBody({
+            userEmail: user.email,
+            emailId: e._id as Id<"emails">,
+          });
+          setFullBodies(prev => ({ ...prev, [e._id]: result.body }));
+        } catch (err) {
+          console.error("Failed to fetch email body:", err);
+        } finally {
+          setLoadingBodies(prev => {
+            const next = new Set(prev);
+            next.delete(e._id);
+            return next;
+          });
+        }
+      }
+    }
+
+    fetchBodies();
+  }, [email, threadEmails, user?.email, fetchEmailBody, fullBodies, loadingBodies]);
+
+  const toggleExpanded = useCallback((emailId: string) => {
+    setExpandedEmails(prev => {
+      const next = new Set(prev);
+      if (next.has(emailId)) {
+        next.delete(emailId);
+      } else {
+        next.add(emailId);
+      }
+      return next;
+    });
+  }, []);
 
   const handleArchive = useCallback(async () => {
     if (convexId) {
@@ -89,7 +163,7 @@ export default function EmailDetailScreen() {
     ? {
         _id: email._id,
         subject: email.subject,
-        bodyPreview: email.bodyFull || email.bodyPreview,
+        bodyPreview: fullBodies[email._id] || email.bodyFull || email.bodyPreview,
         receivedAt: email.receivedAt,
         isRead: email.isRead,
         summary: email.summary,
@@ -130,12 +204,84 @@ export default function EmailDetailScreen() {
       />
 
       <ScrollView style={styles.container}>
-        <EmailCard
-          email={displayEmail}
-          onContactPress={handleContactPress}
-          onUseReply={handleReply}
-          showFullContent
-        />
+        {/* Thread header if multiple emails */}
+        {threadEmails && threadEmails.length > 1 && (
+          <View style={styles.threadHeader}>
+            <Text style={styles.threadHeaderText}>
+              {threadEmails.length} messages in thread
+            </Text>
+          </View>
+        )}
+
+        {/* Show all thread emails */}
+        {threadEmails && threadEmails.length > 1 ? (
+          threadEmails.map((threadEmail, index) => {
+            const isCurrentEmail = threadEmail._id === id;
+            const isLastEmail = index === threadEmails.length - 1;
+            const isExpanded = isCurrentEmail || isLastEmail || expandedEmails.has(threadEmail._id);
+
+            const emailData: EmailCardData = {
+              _id: threadEmail._id,
+              subject: threadEmail.subject,
+              bodyPreview: fullBodies[threadEmail._id] || threadEmail.bodyFull || threadEmail.bodyPreview,
+              receivedAt: threadEmail.receivedAt,
+              isRead: threadEmail.isRead,
+              summary: threadEmail.summary,
+              urgencyScore: threadEmail.urgencyScore,
+              urgencyReason: threadEmail.urgencyReason,
+              suggestedReply: threadEmail.suggestedReply,
+              fromContact: threadEmail.fromContact
+                ? {
+                    _id: threadEmail.fromContact._id,
+                    email: threadEmail.fromContact.email,
+                    name: threadEmail.fromContact.name,
+                    avatarUrl: threadEmail.fromContact.avatarUrl,
+                    relationship: threadEmail.fromContact.relationship,
+                  }
+                : undefined,
+            };
+
+            return (
+              <View key={threadEmail._id}>
+                {!isExpanded ? (
+                  <TouchableOpacity
+                    style={styles.collapsedEmail}
+                    onPress={() => toggleExpanded(threadEmail._id)}
+                  >
+                    <View style={styles.collapsedEmailContent}>
+                      <Text style={styles.collapsedSender} numberOfLines={1}>
+                        {threadEmail.fromContact?.name || threadEmail.fromContact?.email || "Unknown"}
+                      </Text>
+                      <Text style={styles.collapsedPreview} numberOfLines={1}>
+                        {threadEmail.bodyPreview}
+                      </Text>
+                    </View>
+                    <Text style={styles.collapsedTime}>
+                      {formatDate(threadEmail.receivedAt)}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={isCurrentEmail ? styles.currentEmailHighlight : undefined}>
+                    <EmailCard
+                      email={emailData}
+                      onContactPress={handleContactPress}
+                      onUseReply={isLastEmail ? handleReply : undefined}
+                      showFullContent
+                    />
+                  </View>
+                )}
+                {index < threadEmails.length - 1 && <View style={styles.threadDivider} />}
+              </View>
+            );
+          })
+        ) : (
+          <EmailCard
+            email={displayEmail}
+            onContactPress={handleContactPress}
+            onUseReply={handleReply}
+            showFullContent
+          />
+        )}
       </ScrollView>
 
       {/* Action buttons */}
@@ -219,5 +365,51 @@ const styles = StyleSheet.create({
   },
   actionTextPrimary: {
     color: "#fff",
+  },
+  // Thread styles
+  threadHeader: {
+    backgroundColor: "#F8F9FF",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8EAFF",
+  },
+  threadHeaderText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#6366F1",
+  },
+  threadDivider: {
+    height: 1,
+    backgroundColor: "#eee",
+    marginHorizontal: 16,
+  },
+  collapsedEmail: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#FAFAFA",
+  },
+  collapsedEmailContent: {
+    flex: 1,
+    marginRight: 8,
+  },
+  collapsedSender: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 2,
+  },
+  collapsedPreview: {
+    fontSize: 13,
+    color: "#666",
+  },
+  collapsedTime: {
+    fontSize: 12,
+    color: "#999",
+  },
+  currentEmailHighlight: {
+    backgroundColor: "#F8F9FF",
   },
 });

@@ -15,7 +15,7 @@ interface UseVoiceResult {
 }
 
 // Native implementation using expo-av + Deepgram WebSocket
-function useDeepgramVoice(): UseVoiceResult {
+function useDeepgramNative(): UseVoiceResult {
   const [transcript, setTranscript] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -61,13 +61,16 @@ function useDeepgramVoice(): UseVoiceResult {
         playsInSilentModeIOS: true,
       });
 
-      // Connect to Deepgram WebSocket
-      const ws = new WebSocket(
-        `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&model=nova-2&smart_format=true&interim_results=true`,
-        ["token", apiKey]
-      );
+      // Connect to Deepgram WebSocket using subprotocol authentication
+      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&model=nova-2&smart_format=true&interim_results=true`;
+
+      console.log("Connecting to Deepgram...");
+
+      // Deepgram supports authentication via WebSocket subprotocols: ["token", "YOUR_API_KEY"]
+      const ws = new WebSocket(wsUrl, ["token", apiKey]);
 
       ws.onopen = () => {
+        console.log("Deepgram WebSocket connected successfully");
         setIsConnecting(false);
         setIsConnected(true);
       };
@@ -105,7 +108,8 @@ function useDeepgramVoice(): UseVoiceResult {
         setIsConnected(false);
       };
 
-      ws.onclose = () => {
+      ws.onclose = (e) => {
+        console.log("WebSocket closed:", { code: e.code, reason: e.reason });
         setIsConnected(false);
       };
 
@@ -139,42 +143,8 @@ function useDeepgramVoice(): UseVoiceResult {
         },
       });
 
-      // Set up audio streaming callback
-      recording.setOnRecordingStatusUpdate(async (status) => {
-        if (status.isRecording && wsRef.current?.readyState === WebSocket.OPEN) {
-          // Get the current audio data and send to Deepgram
-          // Note: expo-av doesn't support real-time streaming natively
-          // We'll send audio in chunks when recording stops
-        }
-      });
-
       await recording.startAsync();
       recordingRef.current = recording;
-
-      // For expo-av, we need to periodically send audio chunks
-      // This is a workaround since expo-av doesn't support streaming
-      const sendAudioChunks = async () => {
-        if (!recordingRef.current || !wsRef.current) return;
-
-        try {
-          const uri = recordingRef.current.getURI();
-          if (uri) {
-            // Read audio file and send to WebSocket
-            const response = await fetch(uri);
-            const blob = await response.blob();
-            const arrayBuffer = await blob.arrayBuffer();
-
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(arrayBuffer);
-            }
-          }
-        } catch (e) {
-          console.error("Error sending audio chunk:", e);
-        }
-      };
-
-      // Note: Real streaming requires a more complex setup with native modules
-      // For now, we'll send the full recording when stopped
 
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start recording");
@@ -252,29 +222,38 @@ function useDeepgramVoice(): UseVoiceResult {
   };
 }
 
-// Web fallback using browser's SpeechRecognition API (free, no API key needed)
-export function useWebVoice(): UseVoiceResult {
+// Web implementation using MediaRecorder + Deepgram WebSocket
+function useDeepgramWeb(): UseVoiceResult {
   const [transcript, setTranscript] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
   const transcriptRef = useRef("");
 
+  const getDeepgramKey = useAction(api.voice.getDeepgramKey);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
+
   const startRecording = useCallback(async () => {
-    if (typeof window === "undefined") {
-      setError("Voice recording is not available in this environment");
-      return;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const win = window as any;
-    const SpeechRecognitionClass = win.SpeechRecognition || win.webkitSpeechRecognition;
-
-    if (!SpeechRecognitionClass) {
-      setError("Speech recognition is not supported in this browser");
+    if (typeof window === "undefined" || !navigator.mediaDevices) {
+      setError("Media devices not available");
       return;
     }
 
@@ -284,75 +263,134 @@ export function useWebVoice(): UseVoiceResult {
     transcriptRef.current = "";
 
     try {
-      const recognition = new SpeechRecognitionClass();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = "en-US";
+      // Request microphone access
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+        },
+      });
+      streamRef.current = stream;
 
-      recognition.onstart = () => {
+      // Get Deepgram API key from backend
+      const { apiKey } = await getDeepgramKey();
+
+      // Connect to Deepgram WebSocket
+      // For web, we use webm/opus encoding which Deepgram supports
+      const wsUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&interim_results=true`;
+
+      console.log("Connecting to Deepgram (web)...");
+
+      const ws = new WebSocket(wsUrl, ["token", apiKey]);
+
+      ws.onopen = () => {
+        console.log("Deepgram WebSocket connected (web)");
         setIsConnecting(false);
         setIsConnected(true);
-      };
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      recognition.onresult = (event: any) => {
-        let interimTranscript = "";
-        let finalTranscript = transcriptRef.current;
+        // Start MediaRecorder after WebSocket is open
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: "audio/webm;codecs=opus",
+        });
 
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          if (result.isFinal) {
-            finalTranscript += " " + result[0].transcript;
-          } else {
-            interimTranscript += result[0].transcript;
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+            ws.send(event.data);
           }
-        }
+        };
 
-        transcriptRef.current = finalTranscript.trim();
-        setTranscript(
-          (finalTranscript + " " + interimTranscript).trim()
-        );
+        mediaRecorder.start(250); // Send chunks every 250ms
+        mediaRecorderRef.current = mediaRecorder;
       };
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      recognition.onerror = (event: any) => {
-        if (event.error === "not-allowed") {
-          setError("Microphone access denied");
-        } else {
-          setError(`Speech recognition error: ${event.error}`);
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.channel?.alternatives?.[0]?.transcript) {
+            const text = data.channel.alternatives[0].transcript;
+            const isFinal = data.is_final;
+
+            if (isFinal && text.trim()) {
+              transcriptRef.current = transcriptRef.current
+                ? `${transcriptRef.current} ${text}`
+                : text;
+              setTranscript(transcriptRef.current);
+            } else if (!isFinal && text.trim()) {
+              setTranscript(
+                transcriptRef.current
+                  ? `${transcriptRef.current} ${text}`
+                  : text
+              );
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing Deepgram message:", e);
         }
+      };
+
+      ws.onerror = (e) => {
+        console.error("WebSocket error:", e);
+        setError("Connection error");
         setIsConnecting(false);
         setIsConnected(false);
       };
 
-      recognition.onend = () => {
+      ws.onclose = (e) => {
+        console.log("WebSocket closed:", { code: e.code, reason: e.reason });
         setIsConnected(false);
       };
 
-      recognition.start();
-      recognitionRef.current = recognition;
+      wsRef.current = ws;
+
     } catch (err) {
+      console.error("Error starting recording:", err);
       setError(err instanceof Error ? err.message : "Failed to start recording");
       setIsConnecting(false);
     }
-  }, []);
+  }, [getDeepgramKey]);
 
   const stopRecording = useCallback(async (): Promise<string> => {
     const finalTranscript = transcriptRef.current;
 
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
+    // Stop MediaRecorder
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
+    }
+
+    // Stop media stream
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+
+    // Wait a bit for final transcription before closing WebSocket
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Close WebSocket
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
     }
 
     setIsConnected(false);
-    return finalTranscript;
+    return transcriptRef.current || finalTranscript;
   }, []);
 
   const cancelRecording = useCallback(() => {
-    if (recognitionRef.current) {
-      recognitionRef.current.abort();
-      recognitionRef.current = null;
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
     }
 
     setTranscript("");
@@ -375,13 +413,13 @@ export function useWebVoice(): UseVoiceResult {
 
 // Combined hook that uses the appropriate implementation
 export function useVoiceRecording(): UseVoiceResult {
-  const deepgramVoice = useDeepgramVoice();
-  const webVoice = useWebVoice();
+  const nativeVoice = useDeepgramNative();
+  const webVoice = useDeepgramWeb();
 
-  // Use Web Speech API on web (free), Deepgram on native
+  // Use Deepgram on both web and native
   if (Platform.OS === "web") {
     return webVoice;
   }
 
-  return deepgramVoice;
+  return nativeVoice;
 }
