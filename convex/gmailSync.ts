@@ -127,6 +127,52 @@ async function refreshTokenIfNeeded(
   };
 }
 
+// Extract email body from Gmail payload (handles multipart messages)
+function extractBody(payload: any): { html: string; plain: string } {
+  let html = "";
+  let plain = "";
+
+  // Helper to decode base64url
+  const decodeBase64Url = (data: string): string => {
+    try {
+      // Replace URL-safe characters
+      const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
+      return atob(base64);
+    } catch {
+      return "";
+    }
+  };
+
+  // Check if body is directly in payload
+  if (payload.body?.data) {
+    const decoded = decodeBase64Url(payload.body.data);
+    if (payload.mimeType === "text/html") {
+      html = decoded;
+    } else {
+      plain = decoded;
+    }
+  }
+
+  // Check parts for multipart messages
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      if (part.mimeType === "text/html" && part.body?.data) {
+        html = decodeBase64Url(part.body.data);
+      } else if (part.mimeType === "text/plain" && part.body?.data) {
+        plain = decodeBase64Url(part.body.data);
+      }
+      // Recursively check nested parts
+      if (part.parts) {
+        const nested = extractBody(part);
+        if (nested.html) html = nested.html;
+        if (nested.plain && !plain) plain = nested.plain;
+      }
+    }
+  }
+
+  return { html, plain };
+}
+
 // Fetch emails from Gmail using stored tokens
 export const fetchEmails = action({
   args: {
@@ -177,6 +223,8 @@ export const fetchEmails = action({
       threadId: string;
       subject: string;
       snippet: string;
+      bodyHtml: string;
+      bodyPlain: string;
       receivedAt: number;
       isRead: boolean;
       labels: string[];
@@ -207,11 +255,16 @@ export const fetchEmails = action({
         const senderName = fromMatch?.[1]?.trim() || fromMatch?.[2] || from;
         const senderEmail = fromMatch?.[2] || from;
 
+        // Extract full body
+        const body = extractBody(msgData.payload || {});
+
         return {
           id: msg.id,
           threadId: msgData.threadId,
           subject,
           snippet: msgData.snippet || "",
+          bodyHtml: body.html,
+          bodyPlain: body.plain,
           receivedAt: date ? new Date(date).getTime() : Date.now(),
           isRead: !msgData.labelIds?.includes("UNREAD"),
           labels: msgData.labelIds || [],
@@ -233,7 +286,8 @@ export const fetchEmails = action({
           name: email.from.name !== email.from.email ? email.from.name : undefined,
         });
 
-        // Store the email
+        // Store the email (prefer HTML body, fall back to plain text)
+        const bodyFull = email.bodyHtml || email.bodyPlain || email.snippet;
         await ctx.runMutation(internal.gmailSync.storeEmailInternal, {
           externalId: email.id,
           provider: "gmail",
@@ -242,7 +296,7 @@ export const fetchEmails = action({
           to: [], // We're not parsing recipients yet
           subject: email.subject,
           bodyPreview: email.snippet,
-          bodyFull: email.snippet, // Using snippet for now, could fetch full body
+          bodyFull,
           receivedAt: email.receivedAt,
           isRead: email.isRead,
         });

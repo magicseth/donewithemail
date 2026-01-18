@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,8 +9,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { router } from "expo-router";
-import { useInboxEmails } from "../../hooks/useEmails";
-import { Id } from "../../convex/_generated/dataModel";
+import { useGmail, GmailEmail } from "../../hooks/useGmail";
 
 interface InboxEmail {
   _id: string;
@@ -28,9 +27,36 @@ interface InboxEmail {
   } | null;
 }
 
+// Convert Gmail email to InboxEmail format
+function toInboxEmail(email: GmailEmail): InboxEmail {
+  return {
+    _id: email.id,
+    subject: email.subject,
+    bodyPreview: email.snippet,
+    receivedAt: email.receivedAt,
+    isRead: email.isRead,
+    isTriaged: false,
+    fromContact: {
+      _id: email.from.email,
+      email: email.from.email,
+      name: email.from.name,
+    },
+  };
+}
+
 export default function InboxScreen() {
-  const emails = useInboxEmails(undefined);
+  const { isAuthenticated, emails: gmailEmails, isLoading, fetchEmails, refetch } = useGmail();
   const [refreshing, setRefreshing] = React.useState(false);
+
+  // Fetch emails when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchEmails();
+    }
+  }, [isAuthenticated, fetchEmails]);
+
+  // Convert Gmail emails to inbox format
+  const emails = gmailEmails.map(toInboxEmail);
 
   const handleEmailPress = useCallback((emailId: string) => {
     router.push(`/email/${emailId}`);
@@ -38,75 +64,9 @@ export default function InboxScreen() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    // Convex auto-syncs, so just wait a bit
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await refetch();
     setRefreshing(false);
-  }, []);
-
-  // Mock data for development
-  const mockEmails: InboxEmail[] = [
-    {
-      _id: "1",
-      subject: "Q4 Planning Meeting - Action Items",
-      bodyPreview: "Hi team, Following up on our Q4 planning meeting...",
-      receivedAt: Date.now() - 3600000,
-      isRead: true,
-      isTriaged: true,
-      triageAction: "done",
-      urgencyScore: 65,
-      fromContact: {
-        _id: "c1",
-        email: "sarah@company.com",
-        name: "Sarah Chen",
-      },
-    },
-    {
-      _id: "2",
-      subject: "Invoice #INV-2024-001 - Payment Due",
-      bodyPreview: "Please find attached the invoice for services...",
-      receivedAt: Date.now() - 7200000,
-      isRead: false,
-      isTriaged: false,
-      urgencyScore: 45,
-      fromContact: {
-        _id: "c2",
-        email: "billing@vendor.com",
-        name: "Vendor Billing",
-      },
-    },
-    {
-      _id: "3",
-      subject: "Quick question about the API",
-      bodyPreview: "Hey! I was looking at the API docs and had a question...",
-      receivedAt: Date.now() - 86400000,
-      isRead: true,
-      isTriaged: true,
-      triageAction: "reply_needed",
-      urgencyScore: 30,
-      fromContact: {
-        _id: "c3",
-        email: "dev@partner.io",
-        name: "Alex Developer",
-      },
-    },
-    {
-      _id: "4",
-      subject: "Weekly Newsletter - Tech Updates",
-      bodyPreview: "This week in tech: AI advances, new frameworks...",
-      receivedAt: Date.now() - 172800000,
-      isRead: true,
-      isTriaged: true,
-      triageAction: "done",
-      urgencyScore: 10,
-      fromContact: {
-        _id: "c4",
-        email: "newsletter@tech.com",
-        name: "Tech Weekly",
-      },
-    },
-  ];
-
-  const displayEmails = emails ?? mockEmails;
+  }, [refetch]);
 
   const renderEmailItem = ({ item }: { item: InboxEmail }) => {
     const fromName = item.fromContact?.name || item.fromContact?.email || "Unknown";
@@ -174,7 +134,7 @@ export default function InboxScreen() {
     );
   };
 
-  if (emails === undefined && !mockEmails.length) {
+  if (isLoading && emails.length === 0) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#6366F1" />
@@ -185,7 +145,7 @@ export default function InboxScreen() {
   return (
     <View style={styles.container}>
       <FlatList
-        data={displayEmails}
+        data={emails}
         keyExtractor={(item) => item._id}
         renderItem={renderEmailItem}
         contentContainerStyle={styles.listContent}

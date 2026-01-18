@@ -5,8 +5,14 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
+  Platform,
 } from "react-native";
 import { AISummary } from "./AISummary";
+
+// Check if content looks like HTML
+function isHtml(content: string): boolean {
+  return /<[a-z][\s\S]*>/i.test(content);
+}
 
 export interface EmailCardData {
   _id: string;
@@ -98,12 +104,26 @@ export function EmailCard({
 
       {/* Body preview */}
       <View style={styles.bodyContainer}>
-        <Text
-          style={styles.bodyText}
-          numberOfLines={showFullContent ? undefined : 6}
-        >
-          {email.bodyPreview}
-        </Text>
+        {showFullContent && Platform.OS === "web" && isHtml(email.bodyPreview) ? (
+          // Render HTML in iframe on web for full content view
+          <iframe
+            srcDoc={email.bodyPreview}
+            style={{
+              width: "100%",
+              minHeight: 400,
+              border: "none",
+              backgroundColor: "#fff",
+            }}
+            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          />
+        ) : (
+          <Text
+            style={styles.bodyText}
+            numberOfLines={showFullContent ? undefined : 6}
+          >
+            {email.bodyPreview}
+          </Text>
+        )}
       </View>
 
       {/* Urgency indicator bar */}
