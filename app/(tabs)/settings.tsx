@@ -7,38 +7,33 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  ActivityIndicator,
 } from "react-native";
-import { useConnectedProviders } from "../../hooks/useAuth";
+import { useAuth } from "../../lib/authContext";
 
 export default function SettingsScreen() {
+  const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
   const [autoProcess, setAutoProcess] = React.useState(true);
   const [urgencyThreshold, setUrgencyThreshold] = React.useState(80);
 
   // Mock connected providers for development
-  const mockProviders = [
-    {
-      provider: "gmail",
-      email: "user@gmail.com",
-      isConnected: true,
-      expiresAt: Date.now() + 86400000,
-    },
-  ];
-
-  const handleConnectGmail = () => {
-    Alert.alert(
-      "Connect Gmail",
-      "This will open Google sign-in to connect your Gmail account.",
-      [
-        { text: "Cancel", style: "cancel" },
+  const mockProviders = isAuthenticated
+    ? [
         {
-          text: "Connect",
-          onPress: () => {
-            // In production, initiate OAuth flow
-            console.log("Initiating Gmail OAuth...");
-          },
+          provider: "gmail",
+          email: user?.email || "user@gmail.com",
+          isConnected: true,
+          expiresAt: Date.now() + 86400000,
         },
       ]
-    );
+    : [];
+
+  const handleConnectGmail = () => {
+    if (isAuthenticated) {
+      Alert.alert("Already Connected", "You are already signed in.");
+      return;
+    }
+    signIn();
   };
 
   const handleDisconnect = (provider: string) => {
@@ -65,11 +60,34 @@ export default function SettingsScreen() {
         text: "Sign Out",
         style: "destructive",
         onPress: () => {
-          console.log("Signing out...");
+          signOut();
         },
       },
     ]);
   };
+
+  // Show sign in screen if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <View style={styles.signInContainer}>
+        <Text style={styles.signInTitle}>Welcome to TokMail</Text>
+        <Text style={styles.signInSubtitle}>
+          Sign in to connect your email and start triaging
+        </Text>
+        <TouchableOpacity
+          style={styles.signInButton}
+          onPress={signIn}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.signInButtonText}>Sign in with WorkOS</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
@@ -79,11 +97,17 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <View style={styles.profileRow}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>SR</Text>
+              <Text style={styles.avatarText}>
+                {user?.firstName?.[0] || user?.email?.[0]?.toUpperCase() || "?"}
+              </Text>
             </View>
             <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>Seth Raphael</Text>
-              <Text style={styles.profileEmail}>seth@example.com</Text>
+              <Text style={styles.profileName}>
+                {user?.firstName && user?.lastName
+                  ? `${user.firstName} ${user.lastName}`
+                  : user?.email || "User"}
+              </Text>
+              <Text style={styles.profileEmail}>{user?.email || ""}</Text>
             </View>
           </View>
         </View>
@@ -397,5 +421,38 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 40,
+  },
+  signInContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+    backgroundColor: "#F5F5F5",
+  },
+  signInTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    marginBottom: 12,
+  },
+  signInSubtitle: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 32,
+    lineHeight: 24,
+  },
+  signInButton: {
+    backgroundColor: "#6366F1",
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+    minWidth: 200,
+    alignItems: "center",
+  },
+  signInButtonText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
   },
 });
