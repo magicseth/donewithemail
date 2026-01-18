@@ -14,8 +14,17 @@ export default function FeedScreen() {
   const emails = useUntriagedEmails(undefined); // Will use "skip" until we have real auth
   const { archiveEmail, markReplyNeeded } = useEmailActions();
 
+  // Check if an ID looks like a valid Convex ID (not a simple mock ID like "1")
+  const isValidConvexId = (id: string) => id.length > 10;
+
   const handleSwipe = useCallback(
     async (email: EmailCardData, direction: SwipeDirection) => {
+      // Skip Convex mutation for mock data
+      if (!isValidConvexId(email._id)) {
+        console.log(`Mock email swiped ${direction}:`, email.subject);
+        return;
+      }
+
       try {
         if (direction === "right") {
           await archiveEmail(email._id as Id<"emails">);
