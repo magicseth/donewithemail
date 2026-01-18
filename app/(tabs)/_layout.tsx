@@ -4,7 +4,7 @@ import { View, Text, StyleSheet } from "react-native";
 // Simple icon components (replace with proper icons later)
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
   const iconMap: Record<string, string> = {
-    feed: "📬",
+    todos: "📋",
     inbox: "📥",
     settings: "⚙️",
   };
@@ -34,9 +34,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Feed",
-          headerTitle: "TokMail",
-          tabBarIcon: ({ focused }) => <TabIcon name="feed" focused={focused} />,
+          title: "TODOs",
+          headerTitle: "TODOs",
+          tabBarIcon: ({ focused }) => <TabIcon name="todos" focused={focused} />,
         }}
       />
       <Tabs.Screen

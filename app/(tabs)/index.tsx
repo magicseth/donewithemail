@@ -1,17 +1,18 @@
-import React, { useCallback, useEffect, useState, useRef } from "react";
+import React, { useCallback, useState, useRef } from "react";
 import { View, StyleSheet, Text, ActivityIndicator, TouchableOpacity } from "react-native";
 import { router } from "expo-router";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { SwipeStack, SwipeDirection } from "../../components/SwipeStack";
 import { EmailCard, EmailCardData } from "../../components/EmailCard";
-import { useEmailActions } from "../../hooks/useEmails";
-import { useGmail, GmailEmail } from "../../hooks/useGmail";
+import { useAuth } from "../../lib/authContext";
 import { Id } from "../../convex/_generated/dataModel";
 
 // Minimum time after swipe before allowing taps (ms)
 const TAP_COOLDOWN_AFTER_SWIPE = 500;
 
-// Convert Gmail email to EmailCardData format
-function toEmailCardData(email: GmailEmail): EmailCardData {
+// Convert TODO email to EmailCardData format
+function toEmailCardData(email: any): EmailCardData {
   return {
     _id: email._id,
     subject: email.subject,
@@ -31,57 +32,54 @@ function toEmailCardData(email: GmailEmail): EmailCardData {
   };
 }
 
-export default function FeedScreen() {
-  const { isAuthenticated, emails, isLoading, error, syncWithGmail } = useGmail();
-  const { archiveEmail, markReplyNeeded, archiveByExternalId, markReplyNeededByExternalId } = useEmailActions();
-  const [triagedIds, setTriagedIds] = useState<Set<string>>(new Set());
+export default function TodosScreen() {
+  const { user, isAuthenticated } = useAuth();
+  const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
   const lastSwipeTimeRef = useRef<number>(0);
 
-  // No need to fetch on mount - useQuery loads from Convex cache instantly
-  // syncWithGmail is only called on explicit pull-to-refresh
+  // Query for TODO emails (marked as reply_needed)
+  const todoEmails = useQuery(
+    api.emails.getTodosByEmail,
+    isAuthenticated && user?.email ? { email: user.email, limit: 50 } : "skip"
+  );
 
-  // Convert to card format and filter out triaged emails
-  const emailCards = emails
-    .filter(email => !triagedIds.has(email._id))
+  const triageEmail = useMutation(api.emails.triageEmail);
+
+  const isLoading = todoEmails === undefined;
+
+  // Convert to card format and filter out processed emails
+  const emailCards = (todoEmails || [])
+    .filter((email: any) => !processedIds.has(email._id))
     .map(toEmailCardData);
-
-  // Check if an ID looks like a valid Convex ID (not a Gmail ID)
-  const isValidConvexId = (id: string) => id.length > 20 && !id.match(/^[0-9a-f]+$/);
 
   const handleSwipe = useCallback(
     async (email: EmailCardData, direction: SwipeDirection) => {
       // Record swipe time to prevent accidental taps on next card
       lastSwipeTimeRef.current = Date.now();
       // Immediately remove from UI
-      setTriagedIds(prev => new Set(prev).add(email._id));
+      setProcessedIds(prev => new Set(prev).add(email._id));
 
       try {
-        if (isValidConvexId(email._id)) {
-          // Use Convex ID directly
-          if (direction === "right") {
-            await archiveEmail(email._id as Id<"emails">);
-          } else if (direction === "left") {
-            await markReplyNeeded(email._id as Id<"emails">);
-          }
-        } else {
-          // Use external ID (Gmail ID)
-          if (direction === "right") {
-            await archiveByExternalId(email._id);
-          } else if (direction === "left") {
-            await markReplyNeededByExternalId(email._id);
-          }
+        // Swipe right = mark as done (processed)
+        if (direction === "right") {
+          await triageEmail({
+            emailId: email._id as Id<"emails">,
+            action: "done",
+          });
         }
+        // Swipe left = keep as TODO (do nothing, just remove from stack view)
+        // The email will still appear in the list on next query
       } catch (error) {
-        console.error("Error triaging email:", error);
+        console.error("Error processing TODO email:", error);
         // Revert on error
-        setTriagedIds(prev => {
+        setProcessedIds(prev => {
           const next = new Set(prev);
           next.delete(email._id);
           return next;
         });
       }
     },
-    [archiveEmail, markReplyNeeded, archiveByExternalId, markReplyNeededByExternalId]
+    [triageEmail]
   );
 
   const handleEmailPress = useCallback((email: EmailCardData) => {
@@ -99,83 +97,23 @@ export default function FeedScreen() {
     }
   }, []);
 
-  // Mock data for when not authenticated
-  const mockEmails: EmailCardData[] = [
-    {
-      _id: "1",
-      subject: "Q4 Planning Meeting - Action Items",
-      bodyPreview:
-        "Hi team, Following up on our Q4 planning meeting, here are the key action items we discussed. Please review and let me know if I missed anything important...",
-      receivedAt: Date.now() - 3600000,
-      isRead: false,
-      summary: "Follow-up from Q4 planning meeting with action items for the team to review.",
-      urgencyScore: 65,
-      urgencyReason: "Contains action items with implied deadline",
-      fromContact: {
-        _id: "c1",
-        email: "sarah@company.com",
-        name: "Sarah Chen",
-        relationship: "vip",
-      },
-    },
-    {
-      _id: "2",
-      subject: "Invoice #INV-2024-001 - Payment Due",
-      bodyPreview:
-        "Please find attached the invoice for services rendered in December. Payment is due within 30 days. Let me know if you have any questions...",
-      receivedAt: Date.now() - 7200000,
-      isRead: false,
-      summary: "Invoice for December services, payment due in 30 days.",
-      urgencyScore: 45,
-      urgencyReason: "Payment request with standard 30-day terms",
-      suggestedReply: "Thanks for sending this over. I'll process the payment this week.",
-      fromContact: {
-        _id: "c2",
-        email: "billing@vendor.com",
-        name: "Vendor Billing",
-        relationship: "regular",
-      },
-    },
-    {
-      _id: "3",
-      subject: "Quick question about the API",
-      bodyPreview:
-        "Hey! I was looking at the API docs and had a quick question about the authentication flow. Do we need to refresh tokens manually or is that handled automatically?",
-      receivedAt: Date.now() - 86400000,
-      isRead: false,
-      summary: "Technical question about API authentication token refresh.",
-      urgencyScore: 30,
-      urgencyReason: "Non-urgent technical question",
-      fromContact: {
-        _id: "c3",
-        email: "dev@partner.io",
-        name: "Alex Developer",
-        relationship: "regular",
-      },
-    },
-  ];
-
-  // Use real emails if authenticated, mock only for unauthenticated users
-  const displayEmails = isAuthenticated ? emailCards : mockEmails;
+  if (!isAuthenticated) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyIcon}>📋</Text>
+        <Text style={styles.emptyTitle}>TODOs</Text>
+        <Text style={styles.emptySubtitle}>
+          Sign in to see emails you've marked as TODO
+        </Text>
+      </View>
+    );
+  }
 
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#6366F1" />
-        <Text style={styles.loadingText}>Loading emails...</Text>
-      </View>
-    );
-  }
-
-  if (error && isAuthenticated) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorIcon}>!</Text>
-        <Text style={styles.errorTitle}>Unable to load emails</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => syncWithGmail()}>
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </TouchableOpacity>
+        <Text style={styles.loadingText}>Loading TODOs...</Text>
       </View>
     );
   }
@@ -183,7 +121,7 @@ export default function FeedScreen() {
   return (
     <View style={styles.container}>
       <SwipeStack
-        data={displayEmails}
+        data={emailCards}
         keyExtractor={(email) => email._id}
         onSwipe={handleSwipe}
         renderCard={(email) => (
@@ -195,10 +133,10 @@ export default function FeedScreen() {
         )}
         emptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>🎉</Text>
-            <Text style={styles.emptyTitle}>All caught up!</Text>
+            <Text style={styles.emptyIcon}>✅</Text>
+            <Text style={styles.emptyTitle}>No TODOs!</Text>
             <Text style={styles.emptySubtitle}>
-              You've triaged all your emails. Check back later for new messages.
+              Swipe left on inbox emails to add them here for later processing.
             </Text>
           </View>
         }
@@ -208,7 +146,7 @@ export default function FeedScreen() {
       <View style={styles.hintsContainer}>
         <View style={styles.hint}>
           <Text style={styles.hintArrow}>←</Text>
-          <Text style={styles.hintText}>Needs Reply</Text>
+          <Text style={styles.hintText}>Skip</Text>
         </View>
         <View style={styles.hint}>
           <Text style={styles.hintText}>Done</Text>
@@ -234,6 +172,13 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     color: "#666",
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F5F5F5",
+    padding: 40,
   },
   errorContainer: {
     flex: 1,

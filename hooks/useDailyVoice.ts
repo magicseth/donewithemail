@@ -83,7 +83,7 @@ function useDeepgramNative(): UseVoiceResult {
           PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
           {
             title: "Microphone Permission",
-            message: "TokMail needs access to your microphone to record voice replies",
+            message: "sayless needs access to your microphone to record voice replies",
             buttonNeutral: "Ask Me Later",
             buttonNegative: "Cancel",
             buttonPositive: "OK",

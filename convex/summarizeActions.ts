@@ -1,7 +1,7 @@
 "use node";
 
 import { v } from "convex/values";
-import { action } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -23,6 +23,7 @@ interface CalendarEvent {
   title: string;
   startTime?: string;
   endTime?: string;
+  location?: string;
   description?: string;
 }
 
@@ -121,6 +122,22 @@ Respond with only valid JSON, no markdown or explanation.`,
       );
     }
 
+    // Sanitize calendarEvent (convert null to undefined, handle arrays)
+    let sanitizedCalendarEvent: CalendarEvent | undefined;
+    // AI sometimes returns an array of events - take the first one
+    const rawEvent = Array.isArray(result.calendarEvent)
+      ? result.calendarEvent[0]
+      : result.calendarEvent;
+    if (rawEvent && rawEvent.title) {
+      sanitizedCalendarEvent = {
+        title: rawEvent.title,
+        startTime: rawEvent.startTime || undefined,
+        endTime: rawEvent.endTime || undefined,
+        location: rawEvent.location || undefined,
+        description: rawEvent.description || undefined,
+      };
+    }
+
     // Save to database
     await ctx.runMutation(internal.summarize.updateEmailSummary, {
       emailId: args.emailId,
@@ -131,15 +148,34 @@ Respond with only valid JSON, no markdown or explanation.`,
       actionRequired: result.actionRequired || undefined,
       actionDescription: result.actionDescription || undefined,
       quickReplies: result.quickReplies || undefined,
-      calendarEvent: result.calendarEvent || undefined,
+      calendarEvent: sanitizedCalendarEvent,
     });
 
     return result;
   },
 });
 
+// Public action for client-side summarization requests
+// This wrapper allows the client to trigger summarization
+export const summarizeEmailsByExternalIds = action({
+  args: {
+    externalIds: v.array(v.string()),
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args): Promise<Array<{
+    externalId: string;
+    success: boolean;
+    result?: SummarizeResult;
+    error?: string;
+  }>> => {
+    // Call the internal action
+    return await ctx.runAction(internal.summarizeActions.summarizeByExternalIds, args);
+  },
+});
+
 // Summarize emails by external IDs (for Gmail emails) - PARALLEL execution
-export const summarizeByExternalIds = action({
+// Internal action for use by workflow
+export const summarizeByExternalIds = internalAction({
   args: {
     externalIds: v.array(v.string()),
     userEmail: v.string(),
@@ -262,6 +298,22 @@ Respond with only valid JSON, no markdown or explanation.`,
             );
           }
 
+          // Sanitize calendarEvent (convert null to undefined, handle arrays)
+          let sanitizedCalendarEvent: CalendarEvent | undefined;
+          // AI sometimes returns an array of events - take the first one
+          const rawEvent = Array.isArray(result.calendarEvent)
+            ? result.calendarEvent[0]
+            : result.calendarEvent;
+          if (rawEvent && rawEvent.title) {
+            sanitizedCalendarEvent = {
+              title: rawEvent.title,
+              startTime: rawEvent.startTime || undefined,
+              endTime: rawEvent.endTime || undefined,
+              location: rawEvent.location || undefined,
+              description: rawEvent.description || undefined,
+            };
+          }
+
           // Save to database
           await ctx.runMutation(internal.summarize.updateEmailSummary, {
             emailId: email._id,
@@ -272,7 +324,7 @@ Respond with only valid JSON, no markdown or explanation.`,
             actionRequired: result.actionRequired || undefined,
             actionDescription: result.actionDescription || undefined,
             quickReplies: result.quickReplies || undefined,
-            calendarEvent: result.calendarEvent || undefined,
+            calendarEvent: sanitizedCalendarEvent,
           });
 
           return { externalId, success: true, result };

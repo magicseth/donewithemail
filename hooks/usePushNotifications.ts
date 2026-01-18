@@ -4,6 +4,7 @@ import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { useMutation } from "convex/react";
+import { useRouter } from "expo-router";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../lib/authContext";
 
@@ -22,6 +23,7 @@ export function usePushNotifications() {
   const notificationListener = useRef<Notifications.EventSubscription>();
   const responseListener = useRef<Notifications.EventSubscription>();
 
+  const router = useRouter();
   const { user, isAuthenticated } = useAuth();
   const registerToken = useMutation(api.notifications.registerPushToken);
 
@@ -35,6 +37,20 @@ export function usePushNotifications() {
       }
     });
 
+    // Check if app was launched from a notification (app was closed)
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        const data = response.notification.request.content.data;
+        console.log("App launched from notification:", data);
+        if (data?.emailId) {
+          // Small delay to ensure navigation is ready
+          setTimeout(() => {
+            router.push(`/email/${data.emailId}`);
+          }, 100);
+        }
+      }
+    });
+
     // Listen for notifications received while app is foregrounded
     notificationListener.current = Notifications.addNotificationReceivedListener(
       (notification) => {
@@ -42,12 +58,16 @@ export function usePushNotifications() {
       }
     );
 
-    // Listen for user interactions with notifications
+    // Listen for user interactions with notifications (app in background or foreground)
     responseListener.current = Notifications.addNotificationResponseReceivedListener(
       (response) => {
         const data = response.notification.request.content.data;
-        // Handle notification tap - could navigate to inbox
         console.log("Notification tapped:", data);
+
+        // Navigate to the specific email if emailId is provided
+        if (data?.emailId) {
+          router.push(`/email/${data.emailId}`);
+        }
       }
     );
 
@@ -59,7 +79,7 @@ export function usePushNotifications() {
         Notifications.removeNotificationSubscription(responseListener.current);
       }
     };
-  }, []);
+  }, [router]);
 
   // Register token with backend when user is authenticated
   useEffect(() => {

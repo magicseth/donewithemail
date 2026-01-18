@@ -45,22 +45,26 @@ export interface GmailEmail {
   };
 }
 
-export function useGmail() {
+export function useGmail(sessionStart?: number) {
   const { user, isAuthenticated } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nextPageTokenRef = useRef<string | undefined>(undefined);
 
-  // Query for cached emails - this is INSTANT from Convex
+  // Query for cached untriaged emails - this is INSTANT from Convex
+  // Now using getUntriagedByEmail to only show emails that haven't been triaged
+  // If sessionStart is provided, also includes emails triaged after that time
   const cachedEmails = useQuery(
-    api.emails.getInboxByEmail,
-    isAuthenticated && user?.email ? { email: user.email, limit: 50 } : "skip"
+    api.emails.getUntriagedByEmail,
+    isAuthenticated && user?.email
+      ? { email: user.email, limit: 50, sessionStart }
+      : "skip"
   );
 
   // Actions for syncing with Gmail (only on explicit refresh)
   const fetchEmailsAction = useAction(api.gmailSync.fetchEmails);
-  const summarizeAction = useAction(api.summarizeActions.summarizeByExternalIds);
+  const summarizeAction = useAction(api.summarizeActions.summarizeEmailsByExternalIds);
 
   // Trigger summarization for emails that need it
   const summarizeEmails = useCallback(

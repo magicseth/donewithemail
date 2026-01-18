@@ -1,4 +1,4 @@
-# TokMail - Development Notes
+# sayless - Development Notes
 
 ## Project Overview
 AI-powered email triage app with TikTok-style swiping interface.

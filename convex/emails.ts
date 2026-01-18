@@ -12,7 +12,7 @@ async function getSummaryForEmail(db: DatabaseReader, emailId: Id<"emails">) {
 }
 
 /**
- * Get untriaged emails for the feed view
+ * Get untriaged emails for the inbox view - ordered newest first
  */
 export const getUntriagedEmails = query({
   args: {
@@ -20,19 +20,114 @@ export const getUntriagedEmails = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 20;
+    const limit = args.limit ?? 50;
 
     const emails = await ctx.db
       .query("emails")
       .withIndex("by_user_untriaged", (q) =>
         q.eq("userId", args.userId).eq("isTriaged", false)
       )
-      .order("desc")
+      .order("desc") // Newest first
       .take(limit);
 
     // Fetch contact info and summary for each email
     const emailsWithData = await Promise.all(
       emails.map(async (email) => {
+        const fromContact = await ctx.db.get(email.from);
+        const summaryData = await getSummaryForEmail(ctx.db, email._id);
+        return {
+          ...email,
+          fromContact,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: summaryData?.urgencyReason,
+          suggestedReply: summaryData?.suggestedReply,
+          actionRequired: summaryData?.actionRequired,
+          actionDescription: summaryData?.actionDescription,
+          quickReplies: summaryData?.quickReplies,
+          calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
+          aiProcessedAt: summaryData?.createdAt,
+        };
+      })
+    );
+
+    return emailsWithData;
+  },
+});
+
+/**
+ * Get untriaged emails by user email - ordered newest first
+ *
+ * sessionStart: If provided, also includes emails that were triaged AFTER this timestamp.
+ * This allows items triaged during the current session to stay visible until tab switch.
+ */
+export const getUntriagedByEmail = query({
+  args: {
+    email: v.string(),
+    limit: v.optional(v.number()),
+    sessionStart: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // Find user by email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+
+    if (!user) {
+      return [];
+    }
+
+    const limit = args.limit ?? 50;
+
+    // Get untriaged emails
+    const untriagedEmails = await ctx.db
+      .query("emails")
+      .withIndex("by_user_untriaged", (q) =>
+        q.eq("userId", user._id).eq("isTriaged", false)
+      )
+      .order("desc")
+      .take(limit);
+
+    // If sessionStart provided, also get emails triaged after that time
+    let recentlyTriagedEmails: typeof untriagedEmails = [];
+    if (args.sessionStart) {
+      recentlyTriagedEmails = await ctx.db
+        .query("emails")
+        .withIndex("by_user_triaged_at", (q) =>
+          q.eq("userId", user._id).gt("triagedAt", args.sessionStart)
+        )
+        .collect();
+
+      console.log(`[getUntriagedByEmail] sessionStart=${args.sessionStart}, recentlyTriaged=${recentlyTriagedEmails.length}`);
+      if (recentlyTriagedEmails.length > 0) {
+        console.log(`[getUntriagedByEmail] recentlyTriaged triagedAt values:`, recentlyTriagedEmails.map(e => e.triagedAt));
+      }
+    }
+
+    // Merge and dedupe (in case of race conditions)
+    const emailMap = new Map<string, typeof untriagedEmails[0]>();
+    for (const email of untriagedEmails) {
+      emailMap.set(email._id, email);
+    }
+    for (const email of recentlyTriagedEmails) {
+      if (!emailMap.has(email._id)) {
+        emailMap.set(email._id, email);
+      }
+    }
+
+    // Sort by receivedAt descending (newest first)
+    const emails = Array.from(emailMap.values()).sort(
+      (a, b) => b.receivedAt - a.receivedAt
+    );
+
+    // Apply limit after merge
+    const limitedEmails = emails.slice(0, limit);
+
+    const emailsWithData = await Promise.all(
+      limitedEmails.map(async (email) => {
         const fromContact = await ctx.db.get(email.from);
         const summaryData = await getSummaryForEmail(ctx.db, email._id);
         return {
@@ -483,6 +578,165 @@ export const getEmailById = internalQuery({
     } catch {
       return null;
     }
+  },
+});
+
+/**
+ * Get TODO emails (triaged with reply_needed action) - ordered newest first
+ */
+export const getTodoEmails = query({
+  args: {
+    userId: v.id("users"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
+
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_user_received", (q) => q.eq("userId", args.userId))
+      .order("desc") // Newest first
+      .filter((q) => q.eq(q.field("triageAction"), "reply_needed"))
+      .take(limit);
+
+    const emailsWithData = await Promise.all(
+      emails.map(async (email) => {
+        const fromContact = await ctx.db.get(email.from);
+        const summaryData = await getSummaryForEmail(ctx.db, email._id);
+        return {
+          ...email,
+          fromContact,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: summaryData?.urgencyReason,
+          suggestedReply: summaryData?.suggestedReply,
+          actionRequired: summaryData?.actionRequired,
+          actionDescription: summaryData?.actionDescription,
+          quickReplies: summaryData?.quickReplies,
+          calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
+          aiProcessedAt: summaryData?.createdAt,
+        };
+      })
+    );
+
+    return emailsWithData;
+  },
+});
+
+/**
+ * Get TODO emails by user email - ordered newest first
+ */
+export const getTodosByEmail = query({
+  args: {
+    email: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // Find user by email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+
+    if (!user) {
+      return [];
+    }
+
+    const limit = args.limit ?? 50;
+
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_user_received", (q) => q.eq("userId", user._id))
+      .order("desc") // Newest first
+      .filter((q) => q.eq(q.field("triageAction"), "reply_needed"))
+      .take(limit);
+
+    const emailsWithData = await Promise.all(
+      emails.map(async (email) => {
+        const fromContact = await ctx.db.get(email.from);
+        const summaryData = await getSummaryForEmail(ctx.db, email._id);
+        return {
+          ...email,
+          fromContact,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: summaryData?.urgencyReason,
+          suggestedReply: summaryData?.suggestedReply,
+          actionRequired: summaryData?.actionRequired,
+          actionDescription: summaryData?.actionDescription,
+          quickReplies: summaryData?.quickReplies,
+          calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
+          aiProcessedAt: summaryData?.createdAt,
+        };
+      })
+    );
+
+    return emailsWithData;
+  },
+});
+
+/**
+ * Search emails by subject
+ */
+export const searchEmails = query({
+  args: {
+    email: v.string(),
+    searchQuery: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    if (!args.searchQuery.trim()) {
+      return [];
+    }
+
+    // Find user by email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+
+    if (!user) {
+      return [];
+    }
+
+    const limit = args.limit ?? 20;
+
+    // Search using the search index
+    const emails = await ctx.db
+      .query("emails")
+      .withSearchIndex("search_content", (q) =>
+        q.search("subject", args.searchQuery).eq("userId", user._id)
+      )
+      .take(limit);
+
+    // Fetch contact info and summary for each email
+    const emailsWithData = await Promise.all(
+      emails.map(async (email) => {
+        const fromContact = await ctx.db.get(email.from);
+        const summaryData = await getSummaryForEmail(ctx.db, email._id);
+        return {
+          ...email,
+          fromContact,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: summaryData?.urgencyReason,
+          suggestedReply: summaryData?.suggestedReply,
+          actionRequired: summaryData?.actionRequired,
+          actionDescription: summaryData?.actionDescription,
+          quickReplies: summaryData?.quickReplies,
+          calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
+          aiProcessedAt: summaryData?.createdAt,
+        };
+      })
+    );
+
+    return emailsWithData;
   },
 });
 

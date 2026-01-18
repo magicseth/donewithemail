@@ -14,14 +14,31 @@ import {
   Modal,
   TextInput,
   KeyboardAvoidingView,
+  ViewToken,
 } from "react-native";
-import { router, Stack } from "expo-router";
-import { useAction } from "convex/react";
+import { router, Stack, useFocusEffect } from "expo-router";
+import { useAction, useQuery, useMutation } from "convex/react";
 import { Audio } from "expo-av";
 import * as Haptics from "expo-haptics";
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+  MouseButton,
+} from "react-native-gesture-handler";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  runOnJS,
+  interpolate,
+  Extrapolation,
+} from "react-native-reanimated";
 import { api } from "../../convex/_generated/api";
 import { useGmail, GmailEmail, QuickReply, CalendarEvent } from "../../hooks/useGmail";
 import { useVoiceRecording } from "../../hooks/useDailyVoice";
+import { Id } from "../../convex/_generated/dataModel";
 
 // Sound feedback for mic actions
 const useMicSounds = () => {
@@ -32,7 +49,7 @@ const useMicSounds = () => {
     // Preload sounds - using system-like tones
     const loadSounds = async () => {
       if (Platform.OS === "web") return;
-      
+
       try {
         // We'll use haptics + a simple notification-style feedback
         // Since we don't have custom sound files, we rely on haptics for native
@@ -50,7 +67,7 @@ const useMicSounds = () => {
 
   const playStartSound = useCallback(async () => {
     if (Platform.OS === "web") return;
-    
+
     try {
       // Strong haptic feedback for recording start
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -61,7 +78,7 @@ const useMicSounds = () => {
 
   const playStopSound = useCallback(async () => {
     if (Platform.OS === "web") return;
-    
+
     try {
       // Double tap haptic for recording stop
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -230,13 +247,377 @@ const transcriptStyles = StyleSheet.create({
   },
 });
 
+// Swipe threshold for TODO action
+const SWIPE_THRESHOLD = 100;
+
+// Swipeable email row component - memoized for performance
+interface SwipeableEmailRowProps {
+  children: React.ReactNode;
+  onSwipeLeft: () => void;
+  disabled?: boolean;
+}
+
+const SwipeableEmailRow = React.memo(function SwipeableEmailRow({
+  children,
+  onSwipeLeft,
+  disabled
+}: SwipeableEmailRowProps) {
+  const translateX = useSharedValue(0);
+  const onSwipeLeftRef = useRef(onSwipeLeft);
+  onSwipeLeftRef.current = onSwipeLeft;
+
+  const handleSwipeComplete = useCallback(() => {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    onSwipeLeftRef.current();
+  }, []);
+
+  const panGesture = Gesture.Pan()
+    .enableTrackpadTwoFingerGesture(true)
+    .mouseButton(MouseButton.LEFT)
+    .minDistance(10)
+    .enabled(!disabled)
+    .activeOffsetX([-20, -10]) // Only activate when swiping left (negative X)
+    .failOffsetY([-10, 10]) // Fail if vertical movement detected first
+    .failOffsetX([10, 10000]) // Fail if swiping right
+    .onUpdate((event) => {
+      // Only allow swiping left (negative values)
+      if (event.translationX < 0) {
+        translateX.value = event.translationX;
+      }
+    })
+    .onEnd((event) => {
+      const swipedLeft = event.translationX < -SWIPE_THRESHOLD ||
+        (event.translationX < -50 && event.velocityX < -500);
+
+      if (swipedLeft) {
+        translateX.value = withTiming(-400, { duration: 200 }, () => {
+          runOnJS(handleSwipeComplete)();
+        });
+      } else {
+        translateX.value = withSpring(0);
+      }
+    });
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const todoIndicatorStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      translateX.value,
+      [-SWIPE_THRESHOLD, 0],
+      [1, 0],
+      Extrapolation.CLAMP
+    ),
+  }));
+
+  return (
+    <View style={swipeRowStyles.container}>
+      {/* Background indicator */}
+      <Animated.View style={[swipeRowStyles.todoIndicator, todoIndicatorStyle]}>
+        <Text style={swipeRowStyles.todoIndicatorText}>TODO</Text>
+      </Animated.View>
+
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={animatedStyle}>
+          {children}
+        </Animated.View>
+      </GestureDetector>
+    </View>
+  );
+});
+
+const swipeRowStyles = StyleSheet.create({
+  container: {
+    position: "relative",
+    overflow: "hidden",
+  },
+  todoIndicator: {
+    position: "absolute",
+    right: 20,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "flex-end",
+    paddingRight: 20,
+  },
+  todoIndicatorText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#F59E0B",
+    letterSpacing: 1,
+  },
+});
+
+// Memoized email row component for FlatList performance
+interface EmailRowProps {
+  item: InboxEmail;
+  onSwipeToTodo: (email: InboxEmail) => void;
+  onQuickReply: (email: InboxEmail, reply: QuickReply) => void;
+  onMicPressIn: (emailId: string) => void;
+  onMicPressOut: (email: InboxEmail) => void;
+  onAddToCalendar: (email: InboxEmail, event: CalendarEvent) => void;
+  sendingReplyFor: string | null;
+  recordingFor: string | null;
+  addingCalendarFor: string | null;
+  isRecording: boolean;
+  transcript: string;
+}
+
+const EmailRow = React.memo(function EmailRow({
+  item,
+  onSwipeToTodo,
+  onQuickReply,
+  onMicPressIn,
+  onMicPressOut,
+  onAddToCalendar,
+  sendingReplyFor,
+  recordingFor,
+  addingCalendarFor,
+  isRecording,
+  transcript,
+}: EmailRowProps) {
+  const fromName = item.fromContact?.name || item.fromContact?.email || "Unknown";
+  const initials = getInitials(fromName);
+  const timeAgo = formatTimeAgo(item.receivedAt);
+  const isSending = sendingReplyFor === item._id;
+  const isRecordingThis = recordingFor === item._id;
+
+  const handleSwipeLeft = useCallback(() => {
+    onSwipeToTodo(item);
+  }, [item, onSwipeToTodo]);
+
+  const handlePress = useCallback(() => {
+    router.push(`/email/${item._id}`);
+  }, [item._id]);
+
+  const handleMicIn = useCallback(() => {
+    onMicPressIn(item._id);
+  }, [item._id, onMicPressIn]);
+
+  const handleMicOut = useCallback(() => {
+    onMicPressOut(item);
+  }, [item, onMicPressOut]);
+
+  return (
+    <SwipeableEmailRow
+      onSwipeLeft={handleSwipeLeft}
+      disabled={isSending || isRecording}
+    >
+      <TouchableOpacity
+        style={[
+          styles.emailItem,
+          !item.isRead && styles.emailItemUnread,
+        ]}
+        onPress={handlePress}
+        activeOpacity={0.7}
+      >
+        {/* Avatar */}
+        <View style={styles.avatarContainer}>
+          {item.fromContact?.avatarUrl ? (
+            <Image
+              source={{ uri: item.fromContact.avatarUrl }}
+              style={styles.avatar}
+            />
+          ) : (
+            <View style={[styles.avatar, styles.avatarPlaceholder]}>
+              <Text style={styles.avatarText}>{initials}</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.emailContent}>
+          {/* Header row */}
+          <View style={styles.emailHeader}>
+            <View style={styles.senderRow}>
+              <Text style={[styles.senderName, !item.isRead && styles.textBold]} numberOfLines={1}>
+                {fromName}
+              </Text>
+              {item.threadCount && item.threadCount > 1 && (
+                <View style={styles.threadBadge}>
+                  <Text style={styles.threadBadgeText}>{item.threadCount}</Text>
+                </View>
+              )}
+              <Text style={styles.timeAgo}>{timeAgo}</Text>
+            </View>
+
+            <Text style={[styles.subject, !item.isRead && styles.textBold]} numberOfLines={1}>
+              {decodeHtmlEntities(item.subject)}
+            </Text>
+          </View>
+
+          {/* Summary or preview */}
+          <Text style={styles.preview} numberOfLines={2}>
+            {item.summary || decodeHtmlEntities(item.bodyPreview)}
+          </Text>
+
+          {/* Calendar event detected */}
+          {item.calendarEvent && (
+            <View style={styles.calendarRow}>
+              <View style={styles.calendarInfo}>
+                <Text style={styles.calendarIcon}>📅</Text>
+                <View style={styles.calendarDetails}>
+                  <Text style={styles.calendarTitle} numberOfLines={1}>
+                    {decodeHtmlEntities(item.calendarEvent.title)}
+                  </Text>
+                  {item.calendarEvent.startTime && (
+                    <Text style={styles.calendarTime} numberOfLines={1}>
+                      {formatEventTime(item.calendarEvent.startTime, item.calendarEvent.endTime)}
+                    </Text>
+                  )}
+                  {item.calendarEvent.location && (
+                    <Text style={styles.calendarLocation} numberOfLines={1}>
+                      📍 {decodeHtmlEntities(item.calendarEvent.location)}
+                    </Text>
+                  )}
+                </View>
+              </View>
+              {item.calendarEvent.calendarEventId ? (
+                <View style={styles.addedBadge}>
+                  <Text style={styles.addedBadgeText}>✓ Added</Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.addCalendarButton,
+                    addingCalendarFor === item._id && styles.addCalendarButtonDisabled,
+                  ]}
+                  onPress={() => onAddToCalendar(item, item.calendarEvent!)}
+                  disabled={addingCalendarFor === item._id}
+                >
+                  {addingCalendarFor === item._id ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.addCalendarButtonText}>Add</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Quick reply chips with mic button */}
+          <View style={styles.quickReplyRow}>
+            {item.quickReplies && item.quickReplies.slice(0, 3).map((reply, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={[
+                  styles.quickReplyChip,
+                  idx === 0 && styles.quickReplyChipPrimary,
+                  isSending && styles.quickReplyChipDisabled,
+                ]}
+                onPress={() => onQuickReply(item, reply)}
+                disabled={isSending || isRecording}
+              >
+                {isSending ? (
+                  <ActivityIndicator size="small" color={idx === 0 ? "#fff" : "#6366F1"} />
+                ) : (
+                  <Text
+                    style={[
+                      styles.quickReplyText,
+                      idx === 0 && styles.quickReplyTextPrimary,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {reply.label}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ))}
+
+            {/* Mic button - always visible */}
+            <TouchableOpacity
+              style={[
+                styles.micButton,
+                isRecordingThis && styles.micButtonRecording,
+              ]}
+              onPressIn={handleMicIn}
+              onPressOut={handleMicOut}
+              disabled={isSending || (isRecording && !isRecordingThis)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.micIcon}>
+                {isRecordingThis ? "🔴" : "🎤"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Show recording status */}
+          {isRecordingThis && <TranscriptPreview transcript={transcript} />}
+        </View>
+
+        {/* Urgency indicator */}
+        {item.urgencyScore !== undefined && item.urgencyScore >= 50 && (
+          <View
+            style={[
+              styles.urgencyIndicator,
+              { backgroundColor: item.urgencyScore >= 80 ? "#FF4444" : "#FFAA00" },
+            ]}
+          />
+        )}
+      </TouchableOpacity>
+    </SwipeableEmailRow>
+  );
+});
+
 export default function InboxScreen() {
-  const { emails: gmailEmails, isLoading, isSyncing, isSummarizing, hasMore, syncWithGmail, loadMore, userEmail } = useGmail();
+  // Session start time - emails triaged after this will still be shown
+  // Reset when tab is focused to clear triaged items
+  const [sessionStart, setSessionStart] = useState(() => Date.now());
+
+  const { emails: gmailEmails, isLoading, isSyncing, isSummarizing, hasMore, syncWithGmail, loadMore, userEmail } = useGmail(sessionStart);
   const [refreshing, setRefreshing] = useState(false);
   const [sendingReplyFor, setSendingReplyFor] = useState<string | null>(null);
   const [recordingFor, setRecordingFor] = useState<string | null>(null);
   const [addingCalendarFor, setAddingCalendarFor] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState<ReplyDraft | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Triage state for optimistic updates (no longer needed for display, but keeps UI responsive)
+  const [triagedIds, setTriagedIds] = useState<Set<string>>(new Set());
+  const triageEmail = useMutation(api.emails.triageEmail);
+
+  // Track previously visible items for auto-triage
+  const previouslyVisibleRef = useRef<Set<string>>(new Set());
+  const scrolledPastTopRef = useRef<Set<string>>(new Set());
+  const scrollDirectionRef = useRef<"up" | "down" | null>(null);
+  const lastScrollOffsetRef = useRef<number>(0);
+  const flatListRef = useRef<FlatList>(null);
+
+  // Track if this is the initial mount to avoid resetting on first focus
+  const isInitialMount = useRef(true);
+
+  // Reset session when tab is focused (but not on initial mount)
+  useFocusEffect(
+    useCallback(() => {
+      if (isInitialMount.current) {
+        isInitialMount.current = false;
+        console.log("[Inbox] Initial mount, keeping sessionStart:", sessionStart);
+        return;
+      }
+
+      const newSessionStart = Date.now();
+      console.log("[Inbox] Tab RE-focused, resetting sessionStart to:", newSessionStart);
+      // Reset session start to "now" - this will filter out previously triaged items
+      setSessionStart(newSessionStart);
+      // Clear local triage tracking
+      setTriagedIds(new Set());
+      scrolledPastTopRef.current = new Set();
+      previouslyVisibleRef.current = new Set();
+      // Scroll to top
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+    }, [])
+  );
+
+  // Search query with debounce effect
+  const searchResults = useQuery(
+    api.emails.searchEmails,
+    searchQuery.trim().length > 0 && userEmail
+      ? { email: userEmail, searchQuery: searchQuery.trim() }
+      : "skip"
+  );
 
   const {
     startRecording,
@@ -251,10 +632,142 @@ export default function InboxScreen() {
 
   const sendEmailAction = useAction(api.gmailSend.sendReply);
   const addToCalendarAction = useAction(api.calendar.addToCalendar);
-  const flatListRef = useRef<FlatList>(null);
 
-  const emails = gmailEmails.map(toInboxEmail);
+  // Use search results when searching, otherwise use regular emails
+  // Filter out locally triaged emails for optimistic updates
+  const displayEmails = searchQuery.trim().length > 0 && searchResults
+    ? searchResults.map((email): InboxEmail => ({
+        _id: email._id,
+        subject: email.subject,
+        bodyPreview: email.bodyPreview,
+        receivedAt: email.receivedAt,
+        isRead: email.isRead,
+        urgencyScore: email.urgencyScore,
+        summary: email.summary,
+        quickReplies: email.quickReplies as QuickReply[] | undefined,
+        calendarEvent: email.calendarEvent as CalendarEvent | undefined,
+        fromContact: email.fromContact ? {
+          _id: email.fromContact._id,
+          email: email.fromContact.email,
+          name: email.fromContact.name,
+          avatarUrl: email.fromContact.avatarUrl,
+        } : null,
+      }))
+    : gmailEmails.map(toInboxEmail);
+
+  // Don't filter by triagedIds - the server query handles this via sessionStart
+  // Recently triaged items will stay visible until tab switch
+  const emails = displayEmails;
   const isRecording = isConnecting || isConnected;
+
+  // Handle swipe left to mark as TODO
+  const handleSwipeToTodo = useCallback(async (email: InboxEmail) => {
+    // Optimistically update UI
+    setTriagedIds((prev) => new Set(prev).add(email._id));
+
+    try {
+      await triageEmail({
+        emailId: email._id as Id<"emails">,
+        action: "reply_needed",
+      });
+    } catch (error) {
+      console.error("Failed to triage email:", error);
+      // Revert on error
+      setTriagedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(email._id);
+        return next;
+      });
+    }
+  }, [triageEmail]);
+
+  // Handle auto-triage when items scroll off the top
+  const handleAutoTriage = useCallback(async (emailId: string) => {
+    console.log("[AutoTriage] Called for emailId:", emailId);
+
+    // Skip if already triaged
+    if (triagedIds.has(emailId) || scrolledPastTopRef.current.has(emailId)) {
+      console.log("[AutoTriage] Skipping - already triaged or scrolled past");
+      return;
+    }
+
+    // Haptic feedback for auto-triage
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+
+    // Mark as scrolled past to prevent duplicate calls
+    scrolledPastTopRef.current.add(emailId);
+    setTriagedIds((prev) => new Set(prev).add(emailId));
+
+    console.log("[AutoTriage] Triaging email to 'done':", emailId);
+    try {
+      await triageEmail({
+        emailId: emailId as Id<"emails">,
+        action: "done",
+      });
+      console.log("[AutoTriage] Successfully triaged:", emailId);
+    } catch (error) {
+      console.error("[AutoTriage] Failed to auto-triage email:", error);
+      // Revert on error
+      scrolledPastTopRef.current.delete(emailId);
+      setTriagedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(emailId);
+        return next;
+      });
+    }
+  }, [triageEmail, triagedIds]);
+
+  // Track viewable items for auto-triage
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 50,
+    minimumViewTime: 100, // Item must be visible for 100ms before counting
+  }).current;
+
+  // Use ref-based callback to avoid FlatList error about changing onViewableItemsChanged
+  const handleAutoTriageRef = useRef(handleAutoTriage);
+  handleAutoTriageRef.current = handleAutoTriage;
+
+  // Track the current email IDs for filtering out reactively-removed items
+  const emailIdsRef = useRef<Set<string>>(new Set());
+  emailIdsRef.current = new Set(emails.map((e) => e._id));
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const currentlyVisible = new Set(viewableItems.map((item) => item.key as string));
+
+    // Find items that were previously visible but are no longer visible
+    // AND are still in the data (not reactively removed by Convex)
+    const itemsLeft = Array.from(previouslyVisibleRef.current).filter(
+      (id) => !currentlyVisible.has(id) && emailIdsRef.current.has(id)
+    );
+
+    // If we're scrolling DOWN and items left visibility, they scrolled off the top
+    if (scrollDirectionRef.current === "down" && itemsLeft.length > 0) {
+      for (const id of itemsLeft) {
+        console.log("[Viewability] Item scrolled off top:", id);
+        handleAutoTriageRef.current(id);
+      }
+    }
+
+    // Update the set of visible items
+    previouslyVisibleRef.current = currentlyVisible;
+  }).current;
+
+  // Track scroll direction
+  const handleScroll = useCallback((event: any) => {
+    const currentOffset = event.nativeEvent.contentOffset.y;
+    const previousOffset = lastScrollOffsetRef.current;
+
+    if (currentOffset > previousOffset + 5) {
+      scrollDirectionRef.current = "down";
+    } else if (currentOffset < previousOffset - 5) {
+      scrollDirectionRef.current = "up";
+    }
+    // Small threshold to avoid noise
+
+    lastScrollOffsetRef.current = currentOffset;
+  }, []);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -381,176 +894,22 @@ export default function InboxScreen() {
     }
   }, [replyDraft, userEmail, sendEmailAction]);
 
-  const renderEmailItem = useCallback(({ item }: { item: InboxEmail }) => {
-    const fromName = item.fromContact?.name || item.fromContact?.email || "Unknown";
-    const initials = getInitials(fromName);
-    const timeAgo = formatTimeAgo(item.receivedAt);
-    const isSending = sendingReplyFor === item._id;
-    const isRecordingThis = recordingFor === item._id;
-
-    return (
-      <TouchableOpacity
-        style={[
-          styles.emailItem,
-          !item.isRead && styles.emailItemUnread,
-        ]}
-        onPress={() => router.push(`/email/${item._id}`)}
-        activeOpacity={0.7}
-      >
-        {/* Avatar */}
-        <View style={styles.avatarContainer}>
-          {item.fromContact?.avatarUrl ? (
-            <Image
-              source={{ uri: item.fromContact.avatarUrl }}
-              style={styles.avatar}
-            />
-          ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder]}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.emailContent}>
-          {/* Header row */}
-          <View style={styles.emailHeader}>
-            <View style={styles.senderRow}>
-              <Text style={[styles.senderName, !item.isRead && styles.textBold]} numberOfLines={1}>
-                {fromName}
-              </Text>
-              {item.threadCount && item.threadCount > 1 && (
-                <View style={styles.threadBadge}>
-                  <Text style={styles.threadBadgeText}>{item.threadCount}</Text>
-                </View>
-              )}
-              <Text style={styles.timeAgo}>{timeAgo}</Text>
-            </View>
-
-            <Text style={[styles.subject, !item.isRead && styles.textBold]} numberOfLines={1}>
-              {decodeHtmlEntities(item.subject)}
-            </Text>
-          </View>
-
-          {/* Summary or preview */}
-          {item.summary ? (
-            <View style={styles.summaryContainer}>
-              <Text style={styles.summaryLabel}>AI Summary</Text>
-              <Text style={styles.summaryText} numberOfLines={2}>
-                {item.summary}
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.preview} numberOfLines={2}>
-              {decodeHtmlEntities(item.bodyPreview)}
-            </Text>
-          )}
-
-          {/* Calendar event detected */}
-          {item.calendarEvent && (
-            <View style={styles.calendarRow}>
-              <View style={styles.calendarInfo}>
-                <Text style={styles.calendarIcon}>📅</Text>
-                <View style={styles.calendarDetails}>
-                  <Text style={styles.calendarTitle} numberOfLines={1}>
-                    {decodeHtmlEntities(item.calendarEvent.title)}
-                  </Text>
-                  {item.calendarEvent.startTime && (
-                    <Text style={styles.calendarTime} numberOfLines={1}>
-                      {formatEventTime(item.calendarEvent.startTime, item.calendarEvent.endTime)}
-                    </Text>
-                  )}
-                  {item.calendarEvent.location && (
-                    <Text style={styles.calendarLocation} numberOfLines={1}>
-                      📍 {decodeHtmlEntities(item.calendarEvent.location)}
-                    </Text>
-                  )}
-                </View>
-              </View>
-              {item.calendarEvent.calendarEventId ? (
-                <View style={styles.addedBadge}>
-                  <Text style={styles.addedBadgeText}>✓ Added</Text>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={[
-                    styles.addCalendarButton,
-                    addingCalendarFor === item._id && styles.addCalendarButtonDisabled,
-                  ]}
-                  onPress={() => handleAddToCalendar(item, item.calendarEvent!)}
-                  disabled={addingCalendarFor === item._id}
-                >
-                  {addingCalendarFor === item._id ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.addCalendarButtonText}>Add</Text>
-                  )}
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-
-          {/* Quick reply chips with mic button */}
-          <View style={styles.quickReplyRow}>
-            {item.quickReplies && item.quickReplies.slice(0, 3).map((reply, idx) => (
-              <TouchableOpacity
-                key={idx}
-                style={[
-                  styles.quickReplyChip,
-                  idx === 0 && styles.quickReplyChipPrimary,
-                  isSending && styles.quickReplyChipDisabled,
-                ]}
-                onPress={() => handleQuickReply(item, reply)}
-                disabled={isSending || isRecording}
-              >
-                {isSending ? (
-                  <ActivityIndicator size="small" color={idx === 0 ? "#fff" : "#6366F1"} />
-                ) : (
-                  <Text
-                    style={[
-                      styles.quickReplyText,
-                      idx === 0 && styles.quickReplyTextPrimary,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {reply.label}
-                  </Text>
-                )}
-              </TouchableOpacity>
-            ))}
-
-            {/* Mic button - always visible */}
-            <TouchableOpacity
-              style={[
-                styles.micButton,
-                isRecordingThis && styles.micButtonRecording,
-              ]}
-              onPressIn={() => handleMicPressIn(item._id)}
-              onPressOut={() => handleMicPressOut(item)}
-              disabled={isSending || (isRecording && !isRecordingThis)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.micIcon}>
-                {isRecordingThis ? "🔴" : "🎤"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Show recording status */}
-          {isRecordingThis && <TranscriptPreview transcript={transcript} />}
-        </View>
-
-        {/* Urgency indicator */}
-        {item.urgencyScore !== undefined && item.urgencyScore >= 50 && (
-          <View
-            style={[
-              styles.urgencyIndicator,
-              { backgroundColor: item.urgencyScore >= 80 ? "#FF4444" : "#FFAA00" },
-            ]}
-          />
-        )}
-      </TouchableOpacity>
-    );
-  }, [sendingReplyFor, recordingFor, addingCalendarFor, isRecording, handleQuickReply, handleMicPressIn, handleMicPressOut, handleAddToCalendar, transcript]);
+  // Memoized render function using EmailRow component
+  const renderEmailItem = useCallback(({ item }: { item: InboxEmail }) => (
+    <EmailRow
+      item={item}
+      onSwipeToTodo={handleSwipeToTodo}
+      onQuickReply={handleQuickReply}
+      onMicPressIn={handleMicPressIn}
+      onMicPressOut={handleMicPressOut}
+      onAddToCalendar={handleAddToCalendar}
+      sendingReplyFor={sendingReplyFor}
+      recordingFor={recordingFor}
+      addingCalendarFor={addingCalendarFor}
+      isRecording={isRecording}
+      transcript={transcript}
+    />
+  ), [handleSwipeToTodo, handleQuickReply, handleMicPressIn, handleMicPressOut, handleAddToCalendar, sendingReplyFor, recordingFor, addingCalendarFor, isRecording, transcript]);
 
   if (isLoading && emails.length === 0) {
     return (
@@ -561,7 +920,7 @@ export default function InboxScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       {/* Header with refresh button on web */}
       {Platform.OS === "web" && (
         <Stack.Screen
@@ -583,12 +942,40 @@ export default function InboxScreen() {
         />
       )}
 
+      {/* Swipe hint at top */}
+      <View style={styles.swipeHintContainer}>
+        <Text style={styles.swipeHintText}>← Swipe left to mark as TODO</Text>
+        <Text style={styles.swipeHintSubtext}>Emails mark as done when scrolled off top</Text>
+      </View>
+
+      {/* Search bar */}
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search emails..."
+          placeholderTextColor="#999"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          returnKeyType="search"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity
+            style={styles.searchClearButton}
+            onPress={() => setSearchQuery("")}
+          >
+            <Text style={styles.searchClearText}>✕</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       <FlatList
         ref={flatListRef}
         data={emails}
         keyExtractor={(item) => item._id}
         renderItem={renderEmailItem}
-        extraData={{ transcript, recordingFor }}
+        extraData={{ transcript, recordingFor, triagedIds }}
         contentContainerStyle={styles.listContent}
         refreshControl={
           Platform.OS !== "web" ? (
@@ -601,12 +988,22 @@ export default function InboxScreen() {
         }
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        viewabilityConfig={viewabilityConfig}
+        onViewableItemsChanged={onViewableItemsChanged}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>📭</Text>
-            <Text style={styles.emptyText}>No emails yet</Text>
+            <Text style={styles.emptyIcon}>{searchQuery ? "🔍" : "📭"}</Text>
+            <Text style={styles.emptyText}>
+              {searchQuery ? "No results found" : "No emails yet"}
+            </Text>
             <Text style={styles.emptySubtext}>
-              {Platform.OS === "web" ? "Click refresh to sync" : "Pull down to sync"}
+              {searchQuery
+                ? `No emails matching "${searchQuery}"`
+                : Platform.OS === "web"
+                  ? "Click refresh to sync"
+                  : "Pull down to sync"}
             </Text>
           </View>
         }
@@ -683,7 +1080,7 @@ export default function InboxScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -691,6 +1088,49 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
+  },
+  swipeHintContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#F8F9FF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8EAFF",
+  },
+  swipeHintText: {
+    fontSize: 13,
+    color: "#6366F1",
+    fontWeight: "500",
+  },
+  swipeHintSubtext: {
+    fontSize: 11,
+    color: "#999",
+    marginTop: 2,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    backgroundColor: "#fff",
+  },
+  searchInput: {
+    flex: 1,
+    height: 36,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: "#333",
+  },
+  searchClearButton: {
+    marginLeft: 8,
+    padding: 4,
+  },
+  searchClearText: {
+    fontSize: 16,
+    color: "#999",
   },
   headerRefreshButton: {
     paddingHorizontal: 12,
@@ -715,8 +1155,8 @@ const styles = StyleSheet.create({
   },
   emailItem: {
     flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
     backgroundColor: "#fff",
@@ -726,12 +1166,12 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     position: "relative",
-    marginRight: 12,
+    marginRight: 10,
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   avatarPlaceholder: {
     backgroundColor: "#6366F1",
@@ -740,7 +1180,7 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
   },
   emailContent: {
@@ -789,35 +1229,16 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 4,
   },
-  summaryContainer: {
-    backgroundColor: "#E8EAFF",
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 8,
-  },
-  summaryLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#6366F1",
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  summaryText: {
-    fontSize: 14,
-    color: "#333",
-    lineHeight: 20,
-  },
   quickReplyRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 10,
-    gap: 8,
+    marginTop: 8,
+    gap: 6,
   },
   quickReplyChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
     backgroundColor: "#F0F0F0",
     borderWidth: 1,
     borderColor: "#E0E0E0",
@@ -838,9 +1259,9 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   micButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#F0F0F0",
     justifyContent: "center",
     alignItems: "center",
@@ -850,7 +1271,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FEE2E2",
   },
   micIcon: {
-    fontSize: 18,
+    fontSize: 16,
   },
   urgencyIndicator: {
     position: "absolute",

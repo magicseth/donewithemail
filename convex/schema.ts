@@ -29,11 +29,16 @@ export default defineSchema({
     triagedAt: v.optional(v.number()),
   })
     .index("by_user", ["userId"])
-    .index("by_user_untriaged", ["userId", "isTriaged"])
+    .index("by_user_untriaged", ["userId", "isTriaged", "receivedAt"])
     .index("by_user_received", ["userId", "receivedAt"])
+    .index("by_user_triaged_at", ["userId", "triagedAt"])
     .index("by_external_id", ["externalId", "provider"])
     .index("by_from", ["from"])
-    .index("by_thread", ["userId", "threadId"]),
+    .index("by_thread", ["userId", "threadId"])
+    .searchIndex("search_content", {
+      searchField: "subject",
+      filterFields: ["userId"],
+    }),
 
   // AI-generated email summaries (separate table for cleaner data model)
   emailSummaries: defineTable({
@@ -103,9 +108,12 @@ export default defineSchema({
     name: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),
 
-    // Direct Gmail OAuth tokens
+    // WorkOS session tokens (used to refresh Google OAuth tokens)
+    workosRefreshToken: v.optional(v.string()),
+
+    // Direct Gmail OAuth tokens (obtained from WorkOS oauth_tokens)
     gmailAccessToken: v.optional(v.string()),
-    gmailRefreshToken: v.optional(v.string()),
+    gmailRefreshToken: v.optional(v.string()), // Legacy - now using WorkOS refresh
     gmailTokenExpiresAt: v.optional(v.number()),
 
     // Connected email providers (legacy/multi-provider)

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { action, internalMutation, internalQuery } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
@@ -543,7 +543,13 @@ export const fetchEmails = action({
     const uncachedIds = messageIds.filter(m => !cachedEmails[m.id]);
     console.log(`Fetching ${uncachedIds.length} emails from Gmail (${Object.keys(cachedEmails).length} cached)`);
 
-    // Fetch metadata only for uncached messages (much faster than format=full)
+    // Helper to add delay between requests to avoid rate limits
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // Process emails in batches to avoid Gmail rate limits (250 req/100s)
+    const BATCH_SIZE = 5;
+    const BATCH_DELAY_MS = 200; // 200ms between batches = ~25 req/s max
+
     const fetchedEmails: Array<{
       id: string;
       threadId: string;
@@ -555,8 +561,14 @@ export const fetchEmails = action({
       isRead: boolean;
       labels: string[];
       from: { name: string; email: string };
-    }> = (await Promise.all(
-      uncachedIds.map(async (msg: { id: string }) => {
+    }> = [];
+
+    // Process in batches
+    for (let i = 0; i < uncachedIds.length; i += BATCH_SIZE) {
+      const batch = uncachedIds.slice(i, i + BATCH_SIZE);
+
+      const batchResults = await Promise.all(
+        batch.map(async (msg: { id: string }) => {
         try {
           const msgResponse = await fetch(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
@@ -632,8 +644,16 @@ export const fetchEmails = action({
           console.error(`Error fetching message ${msg.id}:`, err);
           return null;
         }
-      })
-    )).filter((e): e is NonNullable<typeof e> => e !== null);
+      }));
+
+      // Add valid results from this batch
+      fetchedEmails.push(...batchResults.filter((e): e is NonNullable<typeof e> => e !== null));
+
+      // Delay between batches to respect rate limits
+      if (i + BATCH_SIZE < uncachedIds.length) {
+        await delay(BATCH_DELAY_MS);
+      }
+    }
 
     // Type for combined email data
     type EmailData = {
@@ -702,17 +722,41 @@ export const fetchEmails = action({
     });
     await Promise.all(photoPromises);
 
-    // Store emails in Convex database
+    // Step 1: Collect unique contacts with their info
+    const uniqueContactsMap = new Map<string, { name: string; avatarStorageId?: Id<"_storage"> }>();
     for (const email of emails) {
+      if (!uniqueContactsMap.has(email.from.email)) {
+        uniqueContactsMap.set(email.from.email, {
+          name: email.from.name !== email.from.email ? email.from.name : email.from.email,
+          avatarStorageId: storageIdCache[email.from.email],
+        });
+      }
+    }
+
+    // Step 2: Upsert contacts SEQUENTIALLY to avoid write conflicts
+    const contactIdCache = new Map<string, Id<"contacts">>();
+    for (const [email, info] of uniqueContactsMap) {
       try {
-        // Create/update contact for sender with cached photo
-        const avatarStorageId = storageIdCache[email.from.email];
         const result = await ctx.runMutation(internal.gmailSync.upsertContact, {
           userId: user._id,
-          email: email.from.email,
-          name: email.from.name !== email.from.email ? email.from.name : undefined,
-          avatarStorageId,
+          email,
+          name: info.name !== email ? info.name : undefined,
+          avatarStorageId: info.avatarStorageId,
         });
+        contactIdCache.set(email, result.contactId);
+      } catch (e) {
+        console.error("Failed to upsert contact:", email, e);
+      }
+    }
+
+    // Step 3: Store emails using cached contact IDs
+    for (const email of emails) {
+      try {
+        const contactId = contactIdCache.get(email.from.email);
+        if (!contactId) {
+          console.error("Missing contact ID for:", email.from.email);
+          continue;
+        }
 
         // Store the email (prefer HTML body, fall back to plain text)
         const bodyFull = email.bodyHtml || email.bodyPlain || email.snippet;
@@ -721,7 +765,7 @@ export const fetchEmails = action({
           threadId: email.threadId || undefined,
           provider: "gmail",
           userId: user._id,
-          from: result.contactId,
+          from: contactId,
           to: [], // We're not parsing recipients yet
           subject: email.subject,
           bodyPreview: email.snippet,
@@ -760,5 +804,167 @@ export const fetchEmails = action({
     });
 
     return { emails: emailsWithSummaries, nextPageToken };
+  },
+});
+
+// Internal action to fetch and store specific emails by ID (for workflow use)
+export const fetchAndStoreEmailsByIds = internalAction({
+  args: {
+    userEmail: v.string(),
+    messageIds: v.array(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ stored: string[]; failed: string[] }> => {
+    // Get user's Gmail tokens
+    const user = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+      email: args.userEmail,
+    });
+
+    if (!user?.gmailAccessToken) {
+      throw new Error("Gmail not connected");
+    }
+
+    let accessToken = user.gmailAccessToken;
+
+    // Helper for delays
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    const unfold = (s: string) => s.replace(/\r?\n\s+/g, "").trim();
+
+    const stored: string[] = [];
+    const failed: string[] = [];
+
+    // Step 1: Fetch all message metadata in parallel (just HTTP calls, no mutations)
+    interface MessageData {
+      msgId: string;
+      threadId?: string;
+      senderEmail: string;
+      senderName: string;
+      subject: string;
+      snippet: string;
+      receivedAt: number;
+      isRead: boolean;
+    }
+    const messageDataList: MessageData[] = [];
+
+    const BATCH_SIZE = 5;
+    const BATCH_DELAY_MS = 200;
+
+    for (let i = 0; i < args.messageIds.length; i += BATCH_SIZE) {
+      const batch = args.messageIds.slice(i, i + BATCH_SIZE);
+
+      const results = await Promise.all(batch.map(async (msgId): Promise<MessageData | null> => {
+        try {
+          const msgResponse = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+            { headers: { Authorization: `Bearer ${accessToken}` } }
+          );
+
+          if (!msgResponse.ok) {
+            console.error(`Failed to fetch message ${msgId}: ${msgResponse.status}`);
+            failed.push(msgId);
+            return null;
+          }
+
+          const msgData = await msgResponse.json();
+          const headers = msgData.payload?.headers || [];
+          const getHeader = (name: string) =>
+            headers.find((h: { name: string }) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
+
+          const from = unfold(getHeader("From"));
+          const subject = unfold(getHeader("Subject")) || "(No subject)";
+          const date = getHeader("Date");
+
+          // Parse sender
+          let senderName = "";
+          let senderEmail = "";
+          const fromMatch = from.match(/(?:"?([^"<]*)"?\s*)?<?([^\s<>]+@[^\s<>]+)>?/);
+          if (fromMatch) {
+            senderName = fromMatch[1]?.trim() || "";
+            senderEmail = fromMatch[2] || from;
+          } else {
+            senderEmail = from;
+          }
+          if (!senderName) senderName = senderEmail;
+
+          if (!senderEmail?.includes("@")) {
+            failed.push(msgId);
+            return null;
+          }
+
+          return {
+            msgId,
+            threadId: msgData.threadId || undefined,
+            senderEmail,
+            senderName: senderName !== senderEmail ? senderName : senderEmail,
+            subject,
+            snippet: msgData.snippet || "",
+            receivedAt: date ? new Date(date).getTime() : Date.now(),
+            isRead: !msgData.labelIds?.includes("UNREAD"),
+          };
+        } catch (e) {
+          console.error(`Error fetching message ${msgId}:`, e);
+          failed.push(msgId);
+          return null;
+        }
+      }));
+
+      messageDataList.push(...results.filter((r): r is MessageData => r !== null));
+
+      if (i + BATCH_SIZE < args.messageIds.length) {
+        await delay(BATCH_DELAY_MS);
+      }
+    }
+
+    // Step 2: Collect unique contacts and upsert them SEQUENTIALLY to avoid write conflicts
+    const uniqueContacts = new Map<string, string>(); // email -> name
+    for (const msg of messageDataList) {
+      if (!uniqueContacts.has(msg.senderEmail)) {
+        uniqueContacts.set(msg.senderEmail, msg.senderName);
+      }
+    }
+
+    const contactIdCache = new Map<string, Id<"contacts">>();
+    for (const [email, name] of uniqueContacts) {
+      try {
+        const result = await ctx.runMutation(internal.gmailSync.upsertContact, {
+          userId: user._id,
+          email,
+          name: name !== email ? name : undefined,
+        });
+        contactIdCache.set(email, result.contactId);
+      } catch (e) {
+        console.error(`Error upserting contact ${email}:`, e);
+      }
+    }
+
+    // Step 3: Store emails (can be done in parallel since each email is unique)
+    for (const msg of messageDataList) {
+      const contactId = contactIdCache.get(msg.senderEmail);
+      if (!contactId) {
+        failed.push(msg.msgId);
+        continue;
+      }
+
+      try {
+        await ctx.runMutation(internal.gmailSync.storeEmailInternal, {
+          externalId: msg.msgId,
+          threadId: msg.threadId,
+          provider: "gmail",
+          userId: user._id,
+          from: contactId,
+          to: [],
+          subject: msg.subject,
+          bodyPreview: msg.snippet,
+          bodyFull: msg.snippet,
+          receivedAt: msg.receivedAt,
+          isRead: msg.isRead,
+        });
+        stored.push(msg.msgId);
+      } catch (e) {
+        console.error(`Error storing email ${msg.msgId}:`, e);
+        failed.push(msg.msgId);
+      }
+    }
+
+    return { stored, failed };
   },
 });

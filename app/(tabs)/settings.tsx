@@ -69,7 +69,7 @@ export default function SettingsScreen() {
   if (!isAuthenticated) {
     return (
       <View style={styles.signInContainer}>
-        <Text style={styles.signInTitle}>Welcome to TokMail</Text>
+        <Text style={styles.signInTitle}>Welcome to sayless</Text>
         <Text style={styles.signInSubtitle}>
           Sign in to connect your email and start triaging
         </Text>

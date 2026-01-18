@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "TokMail",
-    "slug": "tokmail",
+    "name": "sayless",
+    "slug": "sayless",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/ios-light.png",
@@ -18,7 +18,7 @@
       "bundleIdentifier": "com.tokmail.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSMicrophoneUsageDescription": "TokMail needs microphone access to record voice replies to emails"
+        "NSMicrophoneUsageDescription": "sayless needs microphone access to record voice replies to emails"
       }
     },
     "android": {
@@ -42,13 +42,15 @@
       [
         "expo-av",
         {
-          "microphonePermission": "TokMail needs microphone access to record voice replies to emails"
+          "microphonePermission": "sayless needs microphone access to record voice replies to emails"
         }
       ],
       [
         "expo-notifications",
         {
-          "color": "#6366F1"
+          "icon": "./assets/icon.png",
+          "color": "#6366F1",
+          "mode": "development"
         }
       ]
     ],

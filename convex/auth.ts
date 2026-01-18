@@ -5,6 +5,14 @@ import { api } from "./_generated/api";
 const WORKOS_CLIENT_ID = process.env.WORKOS_CLIENT_ID!;
 const WORKOS_API_KEY = process.env.WORKOS_API_KEY!;
 
+// Gmail scopes needed for the app
+const GMAIL_SCOPES = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/gmail.modify",
+  "https://www.googleapis.com/auth/calendar.events",
+].join(" ");
+
 // Generate the WorkOS authorization URL
 export const getAuthUrl = query({
   args: { redirectUri: v.string() },
@@ -14,6 +22,7 @@ export const getAuthUrl = query({
       redirect_uri: args.redirectUri,
       response_type: "code",
       provider: "GoogleOAuth",
+      provider_scopes: GMAIL_SCOPES, // Request Gmail access + offline_access for refresh token
     });
 
     return `https://api.workos.com/user_management/authorize?${params.toString()}`;
@@ -73,8 +82,7 @@ export const authenticate = action({
         ? `${user.first_name} ${user.last_name || ""}`.trim()
         : undefined,
       avatarUrl: user.profile_picture_url,
-      accessToken: data.access_token, // WorkOS session token
-      refreshToken: data.refresh_token,
+      workosRefreshToken: data.refresh_token, // WorkOS refresh token for refreshing session
       googleAccessToken,
       googleRefreshToken,
     });
@@ -101,8 +109,7 @@ export const upsertUser = mutation({
     workosUserId: v.string(),
     name: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),
-    accessToken: v.optional(v.string()),
-    refreshToken: v.optional(v.string()),
+    workosRefreshToken: v.optional(v.string()),
     googleAccessToken: v.optional(v.string()),
     googleRefreshToken: v.optional(v.string()),
   },
@@ -117,6 +124,7 @@ export const upsertUser = mutation({
       workosId: args.workosUserId,
       name: args.name,
       avatarUrl: args.avatarUrl,
+      workosRefreshToken: args.workosRefreshToken,
       gmailAccessToken: args.googleAccessToken,
       gmailRefreshToken: args.googleRefreshToken,
       gmailTokenExpiresAt: args.googleAccessToken

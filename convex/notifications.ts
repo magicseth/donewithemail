@@ -33,7 +33,7 @@ export const registerPushToken = mutation({
   },
 });
 
-// Send notification for new emails
+// Send notification for new emails (legacy - use sendHighPriorityNotification instead)
 export const sendNewEmailNotification = internalMutation({
   args: {
     userId: v.id("users"),
@@ -56,6 +56,48 @@ export const sendNewEmailNotification = internalMutation({
         title,
         body,
         data: { type: "new_email" },
+      },
+    });
+  },
+});
+
+// Send notification only for high priority emails (after AI processing)
+export const sendHighPriorityNotification = internalMutation({
+  args: {
+    userId: v.id("users"),
+    highPriorityCount: v.number(),
+    totalCount: v.number(),
+    mostUrgentSubject: v.optional(v.string()),
+    mostUrgentSender: v.optional(v.string()),
+    mostUrgentEmailId: v.optional(v.id("emails")),
+    urgencyScore: v.number(),
+  },
+  handler: async (ctx, args) => {
+    // Build notification based on urgency and count
+    let title: string;
+    let body: string | undefined;
+
+    if (args.highPriorityCount === 1) {
+      title = `Urgent: ${args.mostUrgentSender || "New email"}`;
+      body = args.mostUrgentSubject;
+    } else {
+      title = `${args.highPriorityCount} urgent emails need attention`;
+      body = args.mostUrgentSubject
+        ? `Including: ${args.mostUrgentSubject}`
+        : undefined;
+    }
+
+    await pushNotifications.sendPushNotification(ctx, {
+      userId: args.userId,
+      notification: {
+        title,
+        body,
+        data: {
+          type: "high_priority_email",
+          urgencyScore: args.urgencyScore,
+          highPriorityCount: args.highPriorityCount,
+          emailId: args.mostUrgentEmailId,
+        },
       },
     });
   },
