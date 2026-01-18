@@ -27,6 +27,8 @@ import type * as missedTodos from "../missedTodos.js";
 import type * as missedTodosHelpers from "../missedTodosHelpers.js";
 import type * as missedTodosWorkflow from "../missedTodosWorkflow.js";
 import type * as notifications from "../notifications.js";
+import type * as subscriptions from "../subscriptions.js";
+import type * as subscriptionsHelpers from "../subscriptionsHelpers.js";
 import type * as summarize from "../summarize.js";
 import type * as summarizeActions from "../summarizeActions.js";
 import type * as sync from "../sync.js";
@@ -61,6 +63,8 @@ declare const fullApi: ApiFromModules<{
   missedTodosHelpers: typeof missedTodosHelpers;
   missedTodosWorkflow: typeof missedTodosWorkflow;
   notifications: typeof notifications;
+  subscriptions: typeof subscriptions;
+  subscriptionsHelpers: typeof subscriptionsHelpers;
   summarize: typeof summarize;
   summarizeActions: typeof summarizeActions;
   sync: typeof sync;

@@ -153,6 +153,25 @@ export default function SettingsScreen() {
         </View>
       </View>
 
+      {/* Subscriptions Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Email Management</Text>
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.aboutRow}
+            onPress={() => router.push("/subscriptions")}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Manage Subscriptions</Text>
+              <Text style={styles.settingDescription}>
+                Unsubscribe from newsletters and mailing lists
+              </Text>
+            </View>
+            <Text style={styles.aboutArrow}>→</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* AI Settings Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>AI Settings</Text>

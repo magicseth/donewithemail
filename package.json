@@ -7,6 +7,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "prebuild": "expo prebuild && ./scripts/copy-native-extensions.sh",
+    "prebuild:clean": "expo prebuild --clean && ./scripts/copy-native-extensions.sh",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

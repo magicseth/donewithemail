@@ -30,6 +30,11 @@ export default defineSchema({
 
     // Direction: incoming (received) or outgoing (sent)
     direction: v.optional(v.union(v.literal("incoming"), v.literal("outgoing"))),
+
+    // Subscription/newsletter detection
+    listUnsubscribe: v.optional(v.string()),
+    listUnsubscribePost: v.optional(v.boolean()),
+    isSubscription: v.optional(v.boolean()),
   })
     .index("by_user", ["userId"])
     .index("by_user_untriaged", ["userId", "isTriaged", "receivedAt"])
@@ -158,4 +163,37 @@ export default defineSchema({
   })
     .index("by_status", ["status"])
     .index("by_email", ["emailId"]),
+
+  // Subscriptions/newsletters grouped by sender
+  subscriptions: defineTable({
+    userId: v.id("users"),
+    senderEmail: v.string(),
+    senderDomain: v.string(),
+    senderName: v.optional(v.string()),
+    listUnsubscribe: v.optional(v.string()),
+    listUnsubscribePost: v.optional(v.boolean()),
+    unsubscribeMethod: v.optional(v.union(
+      v.literal("http_post"),
+      v.literal("http_get"),
+      v.literal("mailto"),
+      v.literal("none")
+    )),
+    emailCount: v.number(),
+    firstEmailAt: v.number(),
+    lastEmailAt: v.number(),
+    unsubscribeStatus: v.union(
+      v.literal("subscribed"),
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("unsubscribed"),
+      v.literal("failed"),
+      v.literal("manual_required")
+    ),
+    unsubscribedAt: v.optional(v.number()),
+    mostRecentEmailId: v.optional(v.id("emails")),
+    mostRecentSubject: v.optional(v.string()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_sender", ["userId", "senderEmail"])
+    .index("by_user_last_email", ["userId", "lastEmailAt"]),
 });

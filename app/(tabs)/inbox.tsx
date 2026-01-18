@@ -1156,7 +1156,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   listContent: {
-    paddingBottom: 100,
+    paddingBottom: 800,
   },
   emailItem: {
     flexDirection: "row",

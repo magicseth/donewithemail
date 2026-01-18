@@ -179,6 +179,10 @@ export const storeEmailInternal = internalMutation({
     receivedAt: v.number(),
     isRead: v.boolean(),
     direction: v.optional(v.union(v.literal("incoming"), v.literal("outgoing"))),
+    // Subscription fields
+    listUnsubscribe: v.optional(v.string()),
+    listUnsubscribePost: v.optional(v.boolean()),
+    isSubscription: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     // Check if email already exists
@@ -191,8 +195,18 @@ export const storeEmailInternal = internalMutation({
 
     if (existing) {
       // Update direction if it was previously missing
+      const updates: Record<string, unknown> = {};
       if (args.direction && !existing.direction) {
-        await ctx.db.patch(existing._id, { direction: args.direction });
+        updates.direction = args.direction;
+      }
+      // Update subscription fields if they were previously missing
+      if (args.listUnsubscribe !== undefined && existing.listUnsubscribe === undefined) {
+        updates.listUnsubscribe = args.listUnsubscribe;
+        updates.listUnsubscribePost = args.listUnsubscribePost;
+        updates.isSubscription = args.isSubscription;
+      }
+      if (Object.keys(updates).length > 0) {
+        await ctx.db.patch(existing._id, updates);
       }
       return { emailId: existing._id, isNew: false };
     }
@@ -877,6 +891,10 @@ export const fetchAndStoreEmailsByIds = internalAction({
       snippet: string;
       receivedAt: number;
       isRead: boolean;
+      // Subscription fields
+      listUnsubscribe?: string;
+      listUnsubscribePost: boolean;
+      isSubscription: boolean;
     }
     const messageDataList: MessageData[] = [];
 
@@ -889,7 +907,7 @@ export const fetchAndStoreEmailsByIds = internalAction({
       const results = await Promise.all(batch.map(async (msgId): Promise<MessageData | null> => {
         try {
           const msgResponse = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe&metadataHeaders=List-Unsubscribe-Post`,
             { headers: { Authorization: `Bearer ${accessToken}` } }
           );
 
@@ -925,6 +943,11 @@ export const fetchAndStoreEmailsByIds = internalAction({
             return null;
           }
 
+          // Extract subscription headers
+          const listUnsubscribe = getHeader("List-Unsubscribe") || undefined;
+          const listUnsubscribePost = !!getHeader("List-Unsubscribe-Post");
+          const isSubscription = !!listUnsubscribe;
+
           return {
             msgId,
             threadId: msgData.threadId || undefined,
@@ -934,6 +957,9 @@ export const fetchAndStoreEmailsByIds = internalAction({
             snippet: msgData.snippet || "",
             receivedAt: date ? new Date(date).getTime() : Date.now(),
             isRead: !msgData.labelIds?.includes("UNREAD"),
+            listUnsubscribe,
+            listUnsubscribePost,
+            isSubscription,
           };
         } catch (e) {
           console.error(`Error fetching message ${msgId}:`, e);
@@ -980,7 +1006,7 @@ export const fetchAndStoreEmailsByIds = internalAction({
       }
 
       try {
-        await ctx.runMutation(internal.gmailSync.storeEmailInternal, {
+        const { emailId, isNew } = await ctx.runMutation(internal.gmailSync.storeEmailInternal, {
           externalId: msg.msgId,
           threadId: msg.threadId,
           provider: "gmail",
@@ -992,8 +1018,29 @@ export const fetchAndStoreEmailsByIds = internalAction({
           bodyFull: msg.snippet,
           receivedAt: msg.receivedAt,
           isRead: msg.isRead,
+          listUnsubscribe: msg.listUnsubscribe,
+          listUnsubscribePost: msg.listUnsubscribePost,
+          isSubscription: msg.isSubscription,
         });
         stored.push(msg.msgId);
+
+        // If this is a subscription email, upsert the subscription record
+        if (msg.isSubscription && msg.listUnsubscribe) {
+          try {
+            await ctx.runMutation(internal.subscriptionsHelpers.upsertSubscription, {
+              userId: user._id,
+              senderEmail: msg.senderEmail,
+              senderName: msg.senderName !== msg.senderEmail ? msg.senderName : undefined,
+              listUnsubscribe: msg.listUnsubscribe,
+              listUnsubscribePost: msg.listUnsubscribePost,
+              emailId,
+              receivedAt: msg.receivedAt,
+              subject: msg.subject,
+            });
+          } catch (e) {
+            console.error(`Error upserting subscription for ${msg.senderEmail}:`, e);
+          }
+        }
       } catch (e) {
         console.error(`Error storing email ${msg.msgId}:`, e);
         failed.push(msg.msgId);
@@ -1003,3 +1050,4 @@ export const fetchAndStoreEmailsByIds = internalAction({
     return { stored, failed };
   },
 });
+
