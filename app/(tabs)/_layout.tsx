@@ -34,16 +34,16 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "TODOs",
-          headerTitle: "TODOs",
-          tabBarIcon: ({ focused }) => <TabIcon name="todos" focused={focused} />,
+          title: "Inbox",
+          tabBarIcon: ({ focused }) => <TabIcon name="inbox" focused={focused} />,
         }}
       />
       <Tabs.Screen
-        name="inbox"
+        name="todos"
         options={{
-          title: "Inbox",
-          tabBarIcon: ({ focused }) => <TabIcon name="inbox" focused={focused} />,
+          title: "TODOs",
+          headerTitle: "TODOs",
+          tabBarIcon: ({ focused }) => <TabIcon name="todos" focused={focused} />,
         }}
       />
       <Tabs.Screen
