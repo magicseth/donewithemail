@@ -132,6 +132,14 @@ export default defineSchema({
     )),
     // AI-generated relationship summary
     relationshipSummary: v.optional(v.string()),
+    // Dossier facts about this contact
+    facts: v.optional(v.array(v.object({
+      id: v.string(),           // UUID for editing/deleting
+      text: v.string(),         // "Seth is Leaf's father"
+      source: v.union(v.literal("manual"), v.literal("ai")),
+      createdAt: v.number(),
+      sourceEmailId: v.optional(v.id("emails")),
+    }))),
   })
     .index("by_user", ["userId"])
     .index("by_email", ["email"])

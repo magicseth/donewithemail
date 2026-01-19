@@ -101,3 +101,38 @@ export function useContactActions() {
     markAsRegular: (contactId: Id<"contacts">) => updateRelationship(contactId, "regular"),
   };
 }
+
+/**
+ * Hook for managing contact facts (dossier)
+ */
+export function useContactFacts(contactId: Id<"contacts"> | undefined) {
+  const addFactMutation = useMutation(api.contacts.addFact);
+  const updateFactMutation = useMutation(api.contacts.updateFact);
+  const deleteFactMutation = useMutation(api.contacts.deleteFact);
+
+  const addFact = useCallback(
+    async (text: string, source: "manual" | "ai" = "manual", sourceEmailId?: Id<"emails">) => {
+      if (!contactId) return;
+      return addFactMutation({ contactId, text, source, sourceEmailId });
+    },
+    [contactId, addFactMutation]
+  );
+
+  const updateFact = useCallback(
+    async (factId: string, text: string) => {
+      if (!contactId) return;
+      return updateFactMutation({ contactId, factId, text });
+    },
+    [contactId, updateFactMutation]
+  );
+
+  const deleteFact = useCallback(
+    async (factId: string) => {
+      if (!contactId) return;
+      return deleteFactMutation({ contactId, factId });
+    },
+    [contactId, deleteFactMutation]
+  );
+
+  return { addFact, updateFact, deleteFact };
+}

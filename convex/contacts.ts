@@ -186,6 +186,114 @@ export const updateMyContactRelationshipSummary = authedMutation({
 });
 
 /**
+ * Add a fact to a contact's dossier
+ */
+export const addFact = authedMutation({
+  args: {
+    contactId: v.id("contacts"),
+    text: v.string(),
+    source: v.union(v.literal("manual"), v.literal("ai")),
+    sourceEmailId: v.optional(v.id("emails")),
+  },
+  handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) {
+      throw new Error("Contact not found");
+    }
+
+    // Verify ownership
+    if (contact.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Contact does not belong to you");
+    }
+
+    const newFact = {
+      id: crypto.randomUUID(),
+      text: args.text,
+      source: args.source,
+      createdAt: Date.now(),
+      sourceEmailId: args.sourceEmailId,
+    };
+
+    const facts = contact.facts || [];
+    await ctx.db.patch(args.contactId, {
+      facts: [...facts, newFact],
+    });
+
+    return { success: true, factId: newFact.id };
+  },
+});
+
+/**
+ * Update an existing fact in a contact's dossier
+ */
+export const updateFact = authedMutation({
+  args: {
+    contactId: v.id("contacts"),
+    factId: v.string(),
+    text: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) {
+      throw new Error("Contact not found");
+    }
+
+    // Verify ownership
+    if (contact.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Contact does not belong to you");
+    }
+
+    const facts = contact.facts || [];
+    const factIndex = facts.findIndex((f) => f.id === args.factId);
+    if (factIndex === -1) {
+      throw new Error("Fact not found");
+    }
+
+    const updatedFacts = [...facts];
+    updatedFacts[factIndex] = {
+      ...updatedFacts[factIndex],
+      text: args.text,
+    };
+
+    await ctx.db.patch(args.contactId, {
+      facts: updatedFacts,
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Delete a fact from a contact's dossier
+ */
+export const deleteFact = authedMutation({
+  args: {
+    contactId: v.id("contacts"),
+    factId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) {
+      throw new Error("Contact not found");
+    }
+
+    // Verify ownership
+    if (contact.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Contact does not belong to you");
+    }
+
+    const facts = contact.facts || [];
+    const updatedFacts = facts.filter((f) => f.id !== args.factId);
+
+    await ctx.db.patch(args.contactId, {
+      facts: updatedFacts,
+    });
+
+    return { success: true };
+  },
+});
+
+/**
  * Get contact statistics for the current user
  */
 export const getMyContactStats = authedQuery({

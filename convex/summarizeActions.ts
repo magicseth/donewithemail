@@ -114,6 +114,8 @@ interface SummarizeResult {
   deadline?: Deadline;
   // AI prediction: should user accept this calendar invite?
   shouldAcceptCalendar?: boolean;
+  // NEW facts about the sender discovered from this email
+  suggestedFacts?: string[];
 }
 
 export const summarizeEmail = action({
@@ -367,9 +369,14 @@ export const summarizeByExternalIds = internalAction({
             ? `\nRecent emails from this sender: ${email.recentFromSender.slice(0, 3).map((e: { subject: string }) => e.subject).join("; ")}`
             : "";
 
+          // Build facts context for AI
+          const factsContext = email.contactFacts?.length > 0
+            ? `\nKnown facts about sender: ${email.contactFacts.map((f: { text: string }) => f.text).join("; ")}`
+            : "";
+
           const emailContent = `From: ${senderName} <${email.fromEmail}> (${senderRelationship})
 To: ${userName}${ccInfo}
-Subject: ${email.subject}${recentContext}
+Subject: ${email.subject}${recentContext}${factsContext}
 
 ${bodyText}`.trim();
 
@@ -424,6 +431,11 @@ FIELDS:
    - Spam calendar invites → likely decline
    - Events at inconvenient times or conflicting with work → likely decline
    Only include this field when calendarEvent is present.
+11. suggestedFacts: Array of NEW facts about the sender learned from this email. Focus on:
+   - Professional role/title (e.g., "Works at Acme Corp as VP of Sales")
+   - Personal relationships (e.g., "Has a daughter named Emma")
+   - Location/timezone (e.g., "Based in Seattle")
+   Only include clearly stated facts not already in "Known facts about sender". Return empty array if none.
 
 Email:
 ${emailContent}
@@ -492,6 +504,15 @@ Respond with only valid JSON, no markdown or explanation.`,
             deadline: sanitizedDeadline,
             deadlineDescription: sanitizedDeadlineDescription,
           });
+
+          // Save AI-suggested facts to contact's dossier
+          if (result.suggestedFacts && result.suggestedFacts.length > 0 && email.from) {
+            await ctx.runMutation(internal.summarize.saveAISuggestedFacts, {
+              contactId: email.from,
+              emailId: email._id,
+              facts: result.suggestedFacts,
+            });
+          }
 
           return { externalId, success: true, result };
         } catch (error) {

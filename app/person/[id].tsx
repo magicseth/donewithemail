@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -6,8 +6,9 @@ import {
   ScrollView,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
-import { PersonContext, ContactData, EmailPreview } from "../../components/PersonContext";
-import { useContactStats, useContactStatsByEmail, useContactActions } from "../../hooks/useContacts";
+import { PersonContext, ContactData, EmailPreview, ContactFact } from "../../components/PersonContext";
+import { FactEditModal } from "../../components/FactEditModal";
+import { useContactStats, useContactStatsByEmail, useContactActions, useContactFacts } from "../../hooks/useContacts";
 import { Id } from "../../convex/_generated/dataModel";
 
 // Check if the ID looks like an email address
@@ -26,12 +27,17 @@ export default function PersonScreen() {
   const contactStats = isEmailId ? contactStatsByEmail : contactStatsById;
   const { updateRelationship } = useContactActions();
 
+  // Get the actual Convex contact ID (from contactStats, not URL param)
+  const contactId = contactStats?.contact?._id;
+  const { addFact, updateFact, deleteFact } = useContactFacts(contactId);
+
+  // Fact editing modal state
+  const [factModalVisible, setFactModalVisible] = useState(false);
+  const [editingFact, setEditingFact] = useState<ContactFact | null>(null);
+
   const handleEmailPress = useCallback((emailId: string) => {
     router.push(`/email/${emailId}`);
   }, []);
-
-  // Get the actual Convex contact ID (from contactStats, not URL param)
-  const contactId = contactStats?.contact?._id;
 
   const handleRelationshipChange = useCallback(
     async (relationship: "vip" | "regular" | "unknown") => {
@@ -41,6 +47,41 @@ export default function PersonScreen() {
     },
     [contactId, updateRelationship]
   );
+
+  const handleAddFact = useCallback(() => {
+    setEditingFact(null);
+    setFactModalVisible(true);
+  }, []);
+
+  const handleEditFact = useCallback((fact: ContactFact) => {
+    setEditingFact(fact);
+    setFactModalVisible(true);
+  }, []);
+
+  const handleDeleteFact = useCallback(
+    async (factId: string) => {
+      await deleteFact(factId);
+    },
+    [deleteFact]
+  );
+
+  const handleSaveFact = useCallback(
+    async (text: string) => {
+      if (editingFact) {
+        await updateFact(editingFact.id, text);
+      } else {
+        await addFact(text, "manual");
+      }
+      setFactModalVisible(false);
+      setEditingFact(null);
+    },
+    [editingFact, addFact, updateFact]
+  );
+
+  const handleCancelFact = useCallback(() => {
+    setFactModalVisible(false);
+    setEditingFact(null);
+  }, []);
 
   // Mock data for development
   const mockContact: ContactData = {
@@ -107,6 +148,7 @@ export default function PersonScreen() {
         lastEmailAt: contactStats.contact.lastEmailAt,
         relationship: contactStats.contact.relationship,
         relationshipSummary: contactStats.contact.relationshipSummary,
+        facts: contactStats.contact.facts,
       }
     : mockContact;
 
@@ -143,8 +185,19 @@ export default function PersonScreen() {
           recentEmails={displayEmails}
           onEmailPress={handleEmailPress}
           onRelationshipChange={handleRelationshipChange}
+          onAddFact={handleAddFact}
+          onEditFact={handleEditFact}
+          onDeleteFact={handleDeleteFact}
         />
       </ScrollView>
+
+      <FactEditModal
+        visible={factModalVisible}
+        initialText={editingFact?.text || ""}
+        isEditing={!!editingFact}
+        onSave={handleSaveFact}
+        onCancel={handleCancelFact}
+      />
     </>
   );
 }

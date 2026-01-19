@@ -156,7 +156,35 @@ export const getEmailByExternalId = internalQuery({
       quickReplies: existingSummary?.quickReplies,
       calendarEvent: existingSummary?.calendarEvent,
       aiProcessedAt: existingSummary?.createdAt,
+      // Contact facts for AI context
+      contactFacts: fromContact?.facts || [],
     };
+  },
+});
+
+// Save AI-suggested facts to a contact's dossier
+export const saveAISuggestedFacts = internalMutation({
+  args: {
+    contactId: v.id("contacts"),
+    emailId: v.id("emails"),
+    facts: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) return;
+
+    const existingFacts = contact.facts || [];
+    const newFacts = args.facts.map((text) => ({
+      id: crypto.randomUUID(),
+      text,
+      source: "ai" as const,
+      createdAt: Date.now(),
+      sourceEmailId: args.emailId,
+    }));
+
+    await ctx.db.patch(args.contactId, {
+      facts: [...existingFacts, ...newFacts],
+    });
   },
 });
 
