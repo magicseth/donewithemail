@@ -33,6 +33,7 @@ export interface GmailEmail {
   receivedAt: number;
   isRead: boolean;
   isSubscription?: boolean;
+  fromName?: string; // Sender name as it appeared in this email's From header
   summary?: string;
   urgencyScore?: number;
   urgencyReason?: string;

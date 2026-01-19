@@ -291,3 +291,178 @@ export const addToCalendar = action({
     };
   },
 });
+
+/**
+ * Batch add multiple calendar events from emails
+ */
+export const batchAddToCalendar = action({
+  args: {
+    userEmail: v.string(),
+    emailIds: v.array(v.id("emails")),
+    timezone: v.string(),
+  },
+  handler: async (ctx, args): Promise<{
+    added: Array<{ emailId: string; eventId: string; htmlLink: string }>;
+    errors: Array<{ emailId: string; error: string }>;
+  }> => {
+    const added: Array<{ emailId: string; eventId: string; htmlLink: string }> = [];
+    const errors: Array<{ emailId: string; error: string }> = [];
+
+    // Get user's tokens
+    type UserWithTokens = {
+      _id: any;
+      gmailAccessToken?: string;
+      gmailRefreshToken?: string;
+      gmailTokenExpiresAt?: number;
+    };
+    const user: UserWithTokens | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+      email: args.userEmail,
+    });
+
+    if (!user?.gmailAccessToken) {
+      throw new Error("Google account not connected");
+    }
+
+    // Refresh token if needed
+    let accessToken: string = user.gmailAccessToken;
+    if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
+      const refreshed = await refreshTokenIfNeeded(
+        user.gmailAccessToken,
+        user.gmailRefreshToken,
+        user.gmailTokenExpiresAt
+      );
+      accessToken = refreshed.accessToken;
+
+      // Save refreshed token to database
+      if (refreshed.refreshed) {
+        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+          userId: user._id,
+          accessToken: refreshed.accessToken,
+          expiresAt: refreshed.expiresAt,
+        });
+      }
+    }
+
+    // Process each email
+    for (const emailId of args.emailIds) {
+      try {
+        // Get email summary with calendar event data
+        const summaryData = await ctx.runQuery(internal.summarize.getSummary, {
+          emailId,
+        });
+
+        if (!summaryData?.calendarEvent) {
+          errors.push({ emailId, error: "No calendar event found" });
+          continue;
+        }
+
+        // Skip if already added
+        if (summaryData.calendarEventId) {
+          added.push({
+            emailId,
+            eventId: summaryData.calendarEventId,
+            htmlLink: summaryData.calendarEventLink || "",
+          });
+          continue;
+        }
+
+        const event = summaryData.calendarEvent;
+
+        // Parse start and end times
+        let startDateTime = event.startTime ? parseRelativeTime(event.startTime) : null;
+        let endDateTime = event.endTime ? parseRelativeTime(event.endTime) : null;
+
+        // Default to tomorrow 9am if no start time
+        if (!startDateTime) {
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          tomorrow.setHours(9, 0, 0, 0);
+          startDateTime = formatLocalDateTime(tomorrow);
+        }
+
+        // Default to 1 hour after start if no end time
+        if (!endDateTime) {
+          const endDate = new Date(startDateTime);
+          endDate.setHours(endDate.getHours() + 1);
+          endDateTime = formatLocalDateTime(endDate);
+        }
+
+        // Fetch email details for attribution
+        const emailInfo = await ctx.runQuery(internal.summarize.getEmailBasicInfo, {
+          emailId,
+        });
+
+        // Build description with SayLess attribution
+        let description = event.description || "";
+        const saylessFooter = buildSayLessFooter(emailInfo);
+        if (saylessFooter) {
+          description = description ? `${description}\n\n${saylessFooter}` : saylessFooter;
+        }
+
+        // Build event object
+        const calendarEvent: Record<string, unknown> = {
+          summary: event.title,
+          description,
+          start: {
+            dateTime: startDateTime,
+            timeZone: args.timezone,
+          },
+          end: {
+            dateTime: endDateTime,
+            timeZone: args.timezone,
+          },
+        };
+
+        if (event.location) {
+          calendarEvent.location = event.location;
+        }
+
+        if (event.recurrence) {
+          calendarEvent.recurrence = [`RRULE:${event.recurrence}`];
+        }
+
+        // Create event via Google Calendar API
+        const response = await fetch(
+          "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(calendarEvent),
+          }
+        );
+
+        if (!response.ok) {
+          const error = await response.text();
+          errors.push({ emailId, error: `Failed to create event: ${error}` });
+          continue;
+        }
+
+        const result = await response.json();
+
+        // Save the calendar event ID to the email summary
+        await ctx.runMutation(internal.summarize.markCalendarEventAdded, {
+          emailId,
+          calendarEventId: result.id,
+          calendarEventLink: result.htmlLink,
+        });
+
+        added.push({
+          emailId,
+          eventId: result.id,
+          htmlLink: result.htmlLink,
+        });
+      } catch (err) {
+        errors.push({
+          emailId,
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
+      }
+    }
+
+    console.log(`[BatchCalendar] Added ${added.length} events, ${errors.length} errors`);
+    return { added, errors };
+  },
+});

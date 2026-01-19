@@ -24,7 +24,7 @@ export const TRIAGE_CONFIG = {
   ballTravelMultiplier: 1.5, // How much ball moves relative to finger
 
   // Targets
-  targetTopOffset: 30, // Y position of targets in overlay
+  targetTopOffset: 70, // Y position of targets in overlay
   targetCenterOffset: 20, // Offset to center of target button
   get targetYCenter() {
     return this.targetTopOffset + this.targetCenterOffset;

@@ -424,6 +424,211 @@ export const getMyThreadEmails = authedQuery({
   },
 });
 
+// =============================================================================
+// BATCH TRIAGE ENDPOINTS
+// =============================================================================
+
+/**
+ * Email preview for batch triage view
+ */
+interface BatchEmailPreview {
+  _id: Id<"emails">;
+  subject: string;
+  bodyPreview: string;
+  receivedAt: number;
+  summary?: string;
+  urgencyScore?: number;
+  actionRequired?: "reply" | "action" | "fyi" | "none";
+  calendarEvent?: {
+    title: string;
+    startTime?: string;
+    endTime?: string;
+    location?: string;
+    description?: string;
+    recurrence?: string;
+    recurrenceDescription?: string;
+  };
+  shouldAcceptCalendar?: boolean;
+  isSubscription?: boolean;
+  fromName?: string; // Sender name as it appeared in this email
+  fromContact?: {
+    _id: Id<"contacts">;
+    email: string;
+    name?: string;
+    avatarUrl?: string;
+  } | null;
+  aiProcessedAt?: number;
+}
+
+/**
+ * Get untriaged emails grouped by AI recommendation for batch triage
+ */
+export const getMyBatchTriagePreview = authedQuery({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<{
+    done: BatchEmailPreview[];
+    humanWaiting: BatchEmailPreview[];
+    actionNeeded: BatchEmailPreview[];
+    calendar: BatchEmailPreview[];
+    lowConfidence: BatchEmailPreview[];
+    pending: BatchEmailPreview[];
+    total: number;
+  }> => {
+    const limit = args.limit ?? 100;
+
+    // Get untriaged emails for authenticated user
+    const rawUntriagedEmails = await ctx.db
+      .query("emails")
+      .withIndex("by_user_untriaged", (q) =>
+        q.eq("userId", ctx.userId).eq("isTriaged", false)
+      )
+      .order("desc")
+      .take(limit);
+
+    // Filter out outgoing emails
+    const untriagedEmails = rawUntriagedEmails.filter(
+      (e) => e.direction !== "outgoing"
+    );
+
+    // Fetch contact and summary data for all emails
+    const emailsWithData = await Promise.all(
+      untriagedEmails.map(async (email) => {
+        const fromContact = await ctx.db.get(email.from);
+        const summaryData = await getSummaryForEmail(ctx.db, email._id);
+        return {
+          _id: email._id,
+          subject: email.subject,
+          bodyPreview: email.bodyPreview,
+          receivedAt: email.receivedAt,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          actionRequired: summaryData?.actionRequired,
+          calendarEvent: summaryData?.calendarEvent,
+          shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
+          isSubscription: email.isSubscription,
+          fromName: email.fromName,
+          fromContact: fromContact ? {
+            _id: fromContact._id,
+            email: fromContact.email,
+            name: fromContact.name,
+            avatarUrl: fromContact.avatarUrl,
+          } : null,
+          aiProcessedAt: summaryData?.createdAt,
+        } as BatchEmailPreview;
+      })
+    );
+
+    // Group emails by AI recommendation
+    const done: BatchEmailPreview[] = [];
+    const humanWaiting: BatchEmailPreview[] = [];
+    const actionNeeded: BatchEmailPreview[] = [];
+    const calendar: BatchEmailPreview[] = [];
+    const lowConfidence: BatchEmailPreview[] = [];
+    const pending: BatchEmailPreview[] = [];
+
+    for (const email of emailsWithData) {
+      // No AI summary yet - put in pending
+      if (!email.aiProcessedAt) {
+        pending.push(email);
+        continue;
+      }
+
+      // Low confidence (urgency score 40-60) - needs manual review
+      if (email.urgencyScore !== undefined &&
+          email.urgencyScore >= 40 &&
+          email.urgencyScore <= 60) {
+        lowConfidence.push(email);
+        continue;
+      }
+
+      // Calendar events AI recommends accepting
+      if (email.shouldAcceptCalendar && email.calendarEvent) {
+        calendar.push(email);
+        continue;
+      }
+
+      // Reply required - a human is waiting for response
+      if (email.actionRequired === "reply") {
+        humanWaiting.push(email);
+        continue;
+      }
+
+      // Action required (but not a direct reply)
+      if (email.actionRequired === "action") {
+        actionNeeded.push(email);
+        continue;
+      }
+
+      // FYI or no action - mark as done
+      done.push(email);
+    }
+
+    return {
+      done,
+      humanWaiting,
+      actionNeeded,
+      calendar,
+      lowConfidence,
+      pending,
+      total: emailsWithData.length,
+    };
+  },
+});
+
+/**
+ * Batch triage multiple emails at once
+ */
+export const batchTriageMyEmails = authedMutation({
+  args: {
+    triageActions: v.array(v.object({
+      emailId: v.id("emails"),
+      action: v.union(
+        v.literal("done"),
+        v.literal("reply_needed")
+      ),
+    })),
+  },
+  handler: async (ctx, args): Promise<{ triaged: number; errors: string[] }> => {
+    const errors: string[] = [];
+    let triaged = 0;
+
+    for (const { emailId, action } of args.triageActions) {
+      try {
+        const email = await ctx.db.get(emailId);
+        if (!email) {
+          errors.push(`Email ${emailId} not found`);
+          continue;
+        }
+
+        // Verify ownership
+        if (email.userId !== ctx.userId) {
+          errors.push(`Email ${emailId} does not belong to you`);
+          continue;
+        }
+
+        // Skip if already triaged
+        if (email.isTriaged) {
+          continue;
+        }
+
+        await ctx.db.patch(emailId, {
+          isTriaged: true,
+          triageAction: action,
+          triagedAt: Date.now(),
+        });
+        triaged++;
+      } catch (err) {
+        errors.push(`Failed to triage ${emailId}: ${err instanceof Error ? err.message : "Unknown error"}`);
+      }
+    }
+
+    console.log(`[BatchTriage] Triaged ${triaged} emails for user ${ctx.userId}`);
+    return { triaged, errors };
+  },
+});
+
 /**
  * Reset all triaged emails back to untriaged (for current user only)
  */

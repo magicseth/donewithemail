@@ -248,6 +248,7 @@ export default function EmailDetailScreen() {
           calendarEventId: (email as any).calendarEventId,
           calendarEventLink: (email as any).calendarEventLink,
         } : undefined,
+        fromName: email.fromName,
         fromContact: email.fromContact
           ? {
               _id: email.fromContact._id,
@@ -326,6 +327,7 @@ export default function EmailDetailScreen() {
                 calendarEventId: (threadEmail as any).calendarEventId,
                 calendarEventLink: (threadEmail as any).calendarEventLink,
               } : undefined,
+              fromName: threadEmail.fromName,
               fromContact: threadEmail.fromContact
                 ? {
                     _id: threadEmail.fromContact._id,
@@ -346,7 +348,7 @@ export default function EmailDetailScreen() {
                   >
                     <View style={styles.collapsedEmailContent}>
                       <Text style={styles.collapsedSender} numberOfLines={1}>
-                        {threadEmail.fromContact?.name || threadEmail.fromContact?.email || "Unknown"}
+                        {threadEmail.fromName || threadEmail.fromContact?.name || threadEmail.fromContact?.email || "Unknown"}
                       </Text>
                       <Text style={styles.collapsedPreview} numberOfLines={1}>
                         {threadEmail.bodyPreview}

@@ -93,6 +93,7 @@ export interface EmailCardData {
   urgencyReason?: string;
   suggestedReply?: string;
   calendarEvent?: CalendarEventData;
+  fromName?: string; // Sender name as it appeared in this email
   fromContact?: {
     _id: string;
     email: string;
@@ -121,7 +122,8 @@ export function EmailCard({
   showFullContent = false,
   isAddingToCalendar = false,
 }: EmailCardProps) {
-  const fromName = email.fromContact?.name || email.fromContact?.email || "Unknown";
+  // Prefer fromName (from email header) over contact name (may be stale for shared addresses)
+  const fromName = email.fromName || email.fromContact?.name || email.fromContact?.email || "Unknown";
   const initials = getInitials(fromName);
   const timeAgo = formatTimeAgo(email.receivedAt);
   const isVip = email.fromContact?.relationship === "vip";

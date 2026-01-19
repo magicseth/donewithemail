@@ -44,6 +44,7 @@ interface TodoEmail {
   isRead: boolean;
   urgencyScore?: number;
   summary?: string;
+  fromName?: string; // Sender name as it appeared in this email
   fromContact?: {
     _id: string;
     email: string;
@@ -196,7 +197,8 @@ const EmailRow = React.memo(function EmailRow({
   item,
   onSwipeToDone,
 }: EmailRowProps) {
-  const fromName = item.fromContact?.name || item.fromContact?.email || "Unknown";
+  // Prefer fromName (from email header) over contact name (may be stale for shared addresses)
+  const fromName = item.fromName || item.fromContact?.name || item.fromContact?.email || "Unknown";
   const initials = getInitials(fromName);
   const timeAgo = formatTimeAgo(item.receivedAt);
 
@@ -292,6 +294,7 @@ export default function TodosScreen() {
       isRead: email.isRead,
       urgencyScore: email.urgencyScore,
       summary: email.summary,
+      fromName: email.fromName,
       fromContact: email.fromContact ? {
         _id: email.fromContact._id,
         email: email.fromContact.email,

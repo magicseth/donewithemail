@@ -262,6 +262,7 @@ import { api } from "../../convex/_generated/api";
 import { useGmail, GmailEmail, QuickReply, CalendarEvent } from "../../hooks/useGmail";
 import { useVoiceRecording } from "../../hooks/useDailyVoice";
 import { Id } from "../../convex/_generated/dataModel";
+import { BatchTriageView } from "../../components/batch";
 
 // New triage module
 import {
@@ -352,6 +353,7 @@ interface InboxEmail {
   shouldAcceptCalendar?: boolean;
   threadCount?: number;
   isSubscription?: boolean;
+  fromName?: string; // Sender name as it appeared in this email
   fromContact?: {
     _id: string;
     email: string;
@@ -374,6 +376,7 @@ function toInboxEmail(email: GmailEmail): InboxEmail {
     shouldAcceptCalendar: email.shouldAcceptCalendar,
     threadCount: email.threadCount,
     isSubscription: email.isSubscription,
+    fromName: email.fromName, // Sender name from this specific email
     fromContact: email.fromContact ? {
       _id: email.fromContact._id,
       email: email.fromContact.email,
@@ -516,7 +519,8 @@ const EmailRow = React.memo(function EmailRow({
   isTriaged,
   triageAction,
 }: EmailRowProps) {
-  const fromName = item.fromContact?.name || item.fromContact?.email || "Unknown";
+  // Prefer fromName (from email header) over contact name (may be stale for shared addresses)
+  const fromName = item.fromName || item.fromContact?.name || item.fromContact?.email || "Unknown";
   const initials = getInitials(fromName);
   const timeAgo = formatTimeAgo(item.receivedAt);
   const isSending = sendingReplyFor === item._id;
@@ -833,11 +837,19 @@ const TriageListWrapper = React.memo(function TriageListWrapper({
   );
 });
 
+// Inbox mode type
+type InboxMode = "swipe" | "batch";
+
 export default function InboxScreen() {
   // ============================================================================
   // AUTH ERROR HANDLING
   // ============================================================================
   const { reportAuthError } = useAuthError();
+
+  // ============================================================================
+  // INBOX MODE STATE
+  // ============================================================================
+  const [inboxMode, setInboxMode] = useState<InboxMode>("swipe");
 
   // ============================================================================
   // EMAIL & SESSION STATE
@@ -1103,6 +1115,7 @@ export default function InboxScreen() {
         calendarEvent: email.calendarEvent as CalendarEvent | undefined,
         shouldAcceptCalendar: email.shouldAcceptCalendar,
         isSubscription: email.isSubscription,
+        fromName: email.fromName,
         fromContact: email.fromContact ? {
           _id: email.fromContact._id,
           email: email.fromContact.email,
@@ -1309,50 +1322,84 @@ export default function InboxScreen() {
           />
         )}
 
-        {/* Triage overlay - targets at top of screen */}
-        <NewTriageOverlay />
+        {/* Triage overlay - targets at top of screen (only in swipe mode) */}
+        {inboxMode === "swipe" && <NewTriageOverlay />}
 
-      {/* Swipe hint at top */}
+      {/* Mode toggle */}
+      <View style={styles.modeToggleContainer}>
+        <TouchableOpacity
+          style={[styles.modeToggleButton, inboxMode === "swipe" && styles.modeToggleButtonActive]}
+          onPress={() => setInboxMode("swipe")}
+        >
+          <Text style={[styles.modeToggleText, inboxMode === "swipe" && styles.modeToggleTextActive]}>
+            Swipe
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeToggleButton, inboxMode === "batch" && styles.modeToggleButtonActive]}
+          onPress={() => setInboxMode("batch")}
+        >
+          <Text style={[styles.modeToggleText, inboxMode === "batch" && styles.modeToggleTextActive]}>
+            AI Batch
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Swipe hint at top - only show in swipe mode */}
+      {inboxMode === "swipe" && (
       <View style={styles.swipeHintContainer}>
         <Text style={styles.swipeHintText}>Drag ball → Done, Reply, or Mic • Swipe left for TODO</Text>
       </View>
+      )}
 
-      {/* Search bar */}
-      <View style={styles.searchContainer}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search emails..."
-          placeholderTextColor="#999"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          returnKeyType="search"
-          autoCapitalize="none"
-          autoCorrect={false}
+      {/* Swipe mode content */}
+      {inboxMode === "swipe" ? (
+        <>
+          {/* Search bar */}
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search emails..."
+              placeholderTextColor="#999"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                style={styles.searchClearButton}
+                onPress={() => setSearchQuery("")}
+              >
+                <Text style={styles.searchClearText}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Email List - uses new triage context for gestures */}
+          <TriageListWrapper
+            flatListRef={flatListRef}
+            emails={emails}
+            renderItem={renderEmailItem}
+            extraData={{ transcript, recordingFor, triagedEmails }}
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            onEndReached={handleLoadMore}
+            searchQuery={searchQuery}
+            isSyncing={isSyncing}
+            isSummarizing={isSummarizing}
+            onTouchEnd={handleTouchEndWhileRecording}
+          />
+        </>
+      ) : (
+        /* Batch mode content */
+        <BatchTriageView
+          userEmail={userEmail}
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
         />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity
-            style={styles.searchClearButton}
-            onPress={() => setSearchQuery("")}
-          >
-            <Text style={styles.searchClearText}>✕</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Email List - uses new triage context for gestures */}
-      <TriageListWrapper
-        flatListRef={flatListRef}
-        emails={emails}
-        renderItem={renderEmailItem}
-        extraData={{ transcript, recordingFor, triagedEmails }}
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
-        onEndReached={handleLoadMore}
-        searchQuery={searchQuery}
-        isSyncing={isSyncing}
-        isSummarizing={isSummarizing}
-        onTouchEnd={handleTouchEndWhileRecording}
-      />
+      )}
 
       {/* Compose FAB */}
       <TouchableOpacity style={styles.fab} onPress={() => router.push("/compose")}>
@@ -1424,11 +1471,14 @@ export default function InboxScreen() {
 
       {/* Toast notification */}
       {toast && (
-        <View style={[
-          styles.toast,
-          toast.type === "success" && styles.toastSuccess,
-          toast.type === "error" && styles.toastError,
-        ]}>
+        <View
+          pointerEvents="none"
+          style={[
+            styles.toast,
+            toast.type === "success" && styles.toastSuccess,
+            toast.type === "error" && styles.toastError,
+          ]}
+        >
           <Text style={styles.toastText}>{toast.message}</Text>
         </View>
       )}
@@ -1442,6 +1492,37 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
+  },
+  modeToggleContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#F8F9FF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8EAFF",
+    gap: 8,
+  },
+  modeToggleButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#E8EAFF",
+  },
+  modeToggleButtonActive: {
+    backgroundColor: "#6366F1",
+    borderColor: "#6366F1",
+  },
+  modeToggleText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#666",
+  },
+  modeToggleTextActive: {
+    color: "#fff",
   },
   swipeHintContainer: {
     paddingHorizontal: 16,

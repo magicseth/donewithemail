@@ -11,6 +11,7 @@ export default defineSchema({
 
     // Email metadata
     from: v.id("contacts"),
+    fromName: v.optional(v.string()), // Sender name as it appeared in this email's From header
     to: v.array(v.id("contacts")),
     cc: v.optional(v.array(v.id("contacts"))),
     subject: v.string(),

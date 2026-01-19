@@ -195,6 +195,7 @@ export const storeEmailInternal = internalMutation({
     provider: v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap")),
     userId: v.id("users"),
     from: v.id("contacts"),
+    fromName: v.optional(v.string()), // Sender name as it appeared in this email
     to: v.array(v.id("contacts")),
     subject: v.string(),
     bodyPreview: v.string(),
@@ -861,6 +862,7 @@ export const fetchEmails = action({
           provider: "gmail",
           userId: user._id,
           from: contactId,
+          fromName: email.from.name || undefined, // Store sender name from this specific email
           to: [], // We're not parsing recipients yet
           subject: email.subject,
           bodyPreview: email.snippet,
@@ -1092,6 +1094,7 @@ export const fetchAndStoreEmailsByIds = internalAction({
           provider: "gmail",
           userId: user._id,
           from: contactId,
+          fromName: msg.senderName || undefined, // Store sender name from this specific email
           to: [],
           subject: msg.subject,
           bodyPreview: msg.snippet,
