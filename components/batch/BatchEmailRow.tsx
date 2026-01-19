@@ -7,9 +7,18 @@ import {
   Pressable,
   Image,
   ActivityIndicator,
+  Modal,
+  ScrollView,
+  Dimensions,
+  Platform,
 } from "react-native";
 import { router } from "expo-router";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { Id } from "../../convex/_generated/dataModel";
 import type { BatchEmailPreview } from "../../hooks/useBatchTriage";
+
+const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 // Get initials from name for avatar placeholder
 function getInitials(name: string): string {
@@ -32,6 +41,32 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&nbsp;/g, " ");
+}
+
+// Strip HTML tags and decode entities for plain text display
+function stripHtml(html: string): string {
+  if (!html) return html;
+  return html
+    // Remove style and script tags with their content
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    // Replace <br> and block elements with newlines
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, "\n")
+    // Remove all other HTML tags
+    .replace(/<[^>]+>/g, "")
+    // Decode HTML entities
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    // Collapse multiple newlines
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function formatTimeAgo(timestamp: number): string {
@@ -95,6 +130,13 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   isUnsubscribing,
 }: BatchEmailRowProps) {
   const [showReplyOptions, setShowReplyOptions] = useState(expandReplyByDefault);
+  const [showPreview, setShowPreview] = useState(false);
+
+  // Fetch full body only when preview is shown
+  const emailBody = useQuery(
+    api.emails.getMyEmailBody,
+    showPreview ? { emailId: email._id as Id<"emails"> } : "skip"
+  );
 
   // Prefer fromName (from email header) over contact name (may be stale for shared addresses)
   const fromName = email.fromName || email.fromContact?.name || email.fromContact?.email || "Unknown";
@@ -112,15 +154,27 @@ export const BatchEmailRow = memo(function BatchEmailRow({
     setShowReplyOptions(prev => !prev);
   }, []);
 
+  const handleLongPress = useCallback(() => {
+    setShowPreview(true);
+  }, []);
+
+  // We don't dismiss on press out of the row - only when finger lifts from overlay
+  const handleOverlayPressOut = useCallback(() => {
+    setShowPreview(false);
+  }, []);
+
   return (
-    <TouchableOpacity
-      style={[
+    <>
+    <Pressable
+      style={({ pressed }) => [
         styles.container,
         isPunted && styles.containerPunted,
         isRecording && styles.containerRecording,
+        pressed && !showPreview && styles.containerPressed,
       ]}
       onPress={handlePress}
-      activeOpacity={0.7}
+      onLongPress={handleLongPress}
+      delayLongPress={400}
     >
       {/* Top row: avatar, sender/subject, action buttons */}
       <View style={styles.topRow}>
@@ -276,7 +330,56 @@ export const BatchEmailRow = memo(function BatchEmailRow({
           )}
         </View>
       )}
-    </TouchableOpacity>
+    </Pressable>
+
+    {/* Full email preview modal - shown on long press, dismisses on any touch up */}
+    <Modal
+      visible={showPreview}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowPreview(false)}
+    >
+      <View
+        style={styles.previewOverlay}
+        onTouchEnd={handleOverlayPressOut}
+      >
+        <View style={styles.previewCard} onStartShouldSetResponder={() => true}>
+          <View style={styles.previewHeader}>
+            <Text style={styles.previewSender}>{fromName}</Text>
+            <Text style={styles.previewTime}>{timeAgo}</Text>
+          </View>
+          <Text style={styles.previewSubject}>{decodeHtmlEntities(email.subject)}</Text>
+          {emailBody === undefined ? (
+            <View style={styles.previewLoaderContainer}>
+              <ActivityIndicator size="small" color="#6366F1" />
+            </View>
+          ) : Platform.OS === "web" ? (
+            <div
+              style={{
+                width: "100%",
+                maxHeight: SCREEN_HEIGHT * 0.6,
+                overflow: "auto",
+                fontSize: 14,
+                lineHeight: 1.5,
+                color: "#333",
+              }}
+              dangerouslySetInnerHTML={{
+                __html: (emailBody?.bodyHtml || emailBody?.bodyFull || email.bodyPreview)
+                  .replace(/(\r?\n\s*){3,}/g, '\n\n')
+                  .replace(/<br\s*\/?>\s*(<br\s*\/?>)+/gi, '<br>')
+              }}
+            />
+          ) : (
+            <ScrollView style={styles.previewBody} showsVerticalScrollIndicator>
+              <Text style={styles.previewBodyText}>
+                {stripHtml(emailBody?.bodyHtml || emailBody?.bodyFull || email.bodyPreview)}
+              </Text>
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 });
 
@@ -478,5 +581,62 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "600",
+  },
+  containerPressed: {
+    opacity: 0.7,
+  },
+  // Preview modal styles
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  previewCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    width: "100%",
+    maxHeight: SCREEN_HEIGHT * 0.7,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  previewHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  previewSender: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+  },
+  previewTime: {
+    fontSize: 14,
+    color: "#999",
+  },
+  previewSubject: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    marginBottom: 16,
+  },
+  previewLoaderContainer: {
+    minHeight: 100,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  previewBody: {
+    maxHeight: SCREEN_HEIGHT * 0.6,
+  },
+  previewBodyText: {
+    fontSize: 15,
+    color: "#444",
+    lineHeight: 22,
   },
 });

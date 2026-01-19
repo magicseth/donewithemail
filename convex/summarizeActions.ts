@@ -369,10 +369,25 @@ export const summarizeByExternalIds = internalAction({
             ? `\nRecent emails from this sender: ${email.recentFromSender.slice(0, 3).map((e: { subject: string }) => e.subject).join("; ")}`
             : "";
 
-          // Build facts context for AI
-          const factsContext = email.contactFacts?.length > 0
-            ? `\nKnown facts about sender: ${email.contactFacts.map((f: { text: string }) => f.text).join("; ")}`
-            : "";
+          // Build facts context for AI, grouped by month/year
+          let factsContext = "";
+          if (email.contactFacts?.length > 0) {
+            const factsByMonth: Record<string, string[]> = {};
+            for (const f of email.contactFacts) {
+              const date = new Date(f.createdAt);
+              const key = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+              if (!factsByMonth[key]) factsByMonth[key] = [];
+              factsByMonth[key].push(f.text);
+            }
+            // Sort by date (most recent first)
+            const sortedMonths = Object.entries(factsByMonth).sort((a, b) => {
+              return new Date(b[0]).getTime() - new Date(a[0]).getTime();
+            });
+            const factsFormatted = sortedMonths
+              .map(([month, facts]) => `${month}: ${facts.join("; ")}`)
+              .join(" | ");
+            factsContext = `\nKnown facts about sender: ${factsFormatted}`;
+          }
 
           const emailContent = `From: ${senderName} <${email.fromEmail}> (${senderRelationship})
 To: ${userName}${ccInfo}

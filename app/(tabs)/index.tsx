@@ -1008,7 +1008,7 @@ export default function InboxScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
       setRecordingFor(email._id);
-      playStartSound();
+      // Sound plays via useEffect when isConnected becomes true
       startRecording();
       return false; // Don't advance - ball stays at mic
     }
@@ -1341,6 +1341,13 @@ export default function InboxScreen() {
     setReplyDraft({ email, body: reply.body, subject });
   }, [gmailEmails]);
 
+  // Play mic open sound when deepgram actually connects and starts streaming
+  useEffect(() => {
+    if (isConnected && recordingFor) {
+      playStartSound();
+    }
+  }, [isConnected, recordingFor, playStartSound]);
+
   // Handle mic press in from batch mode - start recording
   const handleBatchMicPressIn = useCallback((emailId: string) => {
     // If recording for a different email, cancel that first
@@ -1355,22 +1362,23 @@ export default function InboxScreen() {
       setPendingTranscriptFor(null);
     }
 
-    // Start recording for this email
-    playStartSound();
+    // Start recording for this email (sound plays when isConnected becomes true)
     setRecordingFor(emailId);
     setPendingTranscriptFor(null); // Clear pending while recording
     startRecording();
-  }, [recordingFor, pendingTranscriptFor, startRecording, cancelRecording, playStartSound]);
+  }, [recordingFor, pendingTranscriptFor, startRecording, cancelRecording]);
 
   // Handle mic press out from batch mode - stop recording
   const handleBatchMicPressOut = useCallback(async (emailId: string) => {
     if (recordingFor !== emailId) return;
 
+    // Play stop sound immediately on touch up (before async operations)
+    playStopSound();
+    setRecordingFor(null);
+
     // Capture current transcript before stopping (stopRecording may return stale data)
     const currentTranscript = transcript;
     const finalTranscript = await stopRecording();
-    setRecordingFor(null);
-    playStopSound();
 
     // Use whichever transcript has content - prefer finalTranscript but fallback to current
     const actualTranscript = (finalTranscript && finalTranscript.trim())

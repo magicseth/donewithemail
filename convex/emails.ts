@@ -260,6 +260,35 @@ export const getMyEmail = authedQuery({
 });
 
 /**
+ * Get the full body of an email (for preview)
+ */
+export const getMyEmailBody = authedQuery({
+  args: {
+    emailId: v.id("emails"),
+  },
+  handler: async (ctx, args) => {
+    const email = await ctx.db.get(args.emailId);
+    if (!email) return null;
+
+    // Verify ownership
+    if (email.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Email does not belong to you");
+    }
+
+    // Fetch body from emailBodies table
+    const body = await ctx.db
+      .query("emailBodies")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .first();
+
+    return {
+      bodyFull: body?.bodyFull || email.bodyPreview,
+      bodyHtml: body?.bodyHtml,
+    };
+  },
+});
+
+/**
  * Triage an email (with ownership check)
  */
 export const triageMyEmail = authedMutation({
