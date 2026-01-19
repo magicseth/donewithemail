@@ -65,7 +65,12 @@ interface BatchEmailRowProps {
   onPunt: () => void;
   onAccept?: () => void;
   onQuickReply?: (reply: QuickReplyOption) => void;
-  onMicReply?: () => void;
+  /** Called when mic button is pressed down (start recording) */
+  onMicPressIn?: () => void;
+  /** Called when mic button is released (stop recording) */
+  onMicPressOut?: () => void;
+  /** Called when send button is tapped after recording */
+  onSendTranscript?: () => void;
   onUnsubscribe?: () => void;
   isAccepting?: boolean;
   isUnsubscribing?: boolean;
@@ -81,7 +86,9 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   onPunt,
   onAccept,
   onQuickReply,
-  onMicReply,
+  onMicPressIn,
+  onMicPressOut,
+  onSendTranscript,
   onUnsubscribe,
   isAccepting,
   isUnsubscribing,
@@ -165,7 +172,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
         {/* Action buttons */}
         <View style={styles.actionButtons}>
           {/* Reply button - only if quick replies or mic available AND not expanded by default */}
-          {(hasQuickReplies || onMicReply) && !expandReplyByDefault && (
+          {(hasQuickReplies || onMicPressIn) && !expandReplyByDefault && (
             <TouchableOpacity
               style={[styles.actionButton, styles.replyButton, showReplyOptions && styles.replyButtonActive]}
               onPress={handleReplyToggle}
@@ -215,36 +222,50 @@ export const BatchEmailRow = memo(function BatchEmailRow({
 
       {/* Expanded reply options */}
       {showReplyOptions && (
-        <View style={styles.replyOptionsRow}>
-          {/* Show transcript when recording, otherwise show quick reply chips */}
-          {isRecording ? (
-            <View style={styles.transcriptContainer}>
-              <Text style={styles.transcriptText}>
-                {transcript || "Listening..."}
-              </Text>
-            </View>
-          ) : (
-            /* Quick reply chips */
-            email.quickReplies?.map((reply, idx) => (
-              <TouchableOpacity
-                key={idx}
-                style={styles.quickReplyChip}
-                onPress={() => onQuickReply?.(reply)}
-              >
-                <Text style={styles.quickReplyText} numberOfLines={1}>
-                  {reply.label}
+        <View style={styles.replyOptionsContainer}>
+          <View style={styles.replyOptionsRow}>
+            {/* Show transcript when recording or have pending transcript */}
+            {isRecording || transcript ? (
+              <View style={styles.transcriptContainer}>
+                <Text style={styles.transcriptText} numberOfLines={2}>
+                  {isRecording ? (transcript || "Listening...") : transcript}
                 </Text>
-              </TouchableOpacity>
-            ))
-          )}
+              </View>
+            ) : (
+              /* Quick reply chips - limit to 2 to fit on one line */
+              email.quickReplies?.slice(0, 2).map((reply, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.quickReplyChip}
+                  onPress={() => onQuickReply?.(reply)}
+                >
+                  <Text style={styles.quickReplyText} numberOfLines={1}>
+                    {reply.label}
+                  </Text>
+                </TouchableOpacity>
+              ))
+            )}
 
-          {/* Mic button */}
-          {onMicReply && (
+            {/* Mic button - always rightmost, press to talk */}
+            {onMicPressIn && (
+              <TouchableOpacity
+                style={[styles.micButton, isRecording && styles.micButtonRecording]}
+                onPressIn={onMicPressIn}
+                onPressOut={onMicPressOut}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.micButtonText}>{isRecording ? "🎙️" : "🎤"}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Send button - shown when we have transcript and not recording */}
+          {!isRecording && transcript && onSendTranscript && (
             <TouchableOpacity
-              style={[styles.micButton, isRecording && styles.micButtonRecording]}
-              onPress={onMicReply}
+              style={styles.sendButton}
+              onPress={onSendTranscript}
             >
-              <Text style={styles.micButtonText}>{isRecording ? "⏹️" : "🎤"}</Text>
+              <Text style={styles.sendButtonText}>Send Reply</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -386,22 +407,25 @@ const styles = StyleSheet.create({
   saveButtonTextActive: {
     color: "#fff",
   },
-  replyOptionsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  replyOptionsContainer: {
     paddingHorizontal: 12,
     paddingBottom: 10,
     paddingTop: 4,
+  },
+  replyOptionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   quickReplyChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     backgroundColor: "transparent",
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#6366F1",
-    maxWidth: 150,
+    flexShrink: 1,
+    maxWidth: 120,
   },
   quickReplyText: {
     fontSize: 12,
@@ -425,6 +449,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#EF4444",
     justifyContent: "center",
     alignItems: "center",
+    marginLeft: "auto",
   },
   micButtonRecording: {
     backgroundColor: "#DC2626",
@@ -432,5 +457,18 @@ const styles = StyleSheet.create({
   },
   micButtonText: {
     fontSize: 16,
+  },
+  sendButton: {
+    marginTop: 10,
+    backgroundColor: "#6366F1",
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  sendButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

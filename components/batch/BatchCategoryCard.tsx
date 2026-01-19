@@ -71,14 +71,18 @@ interface BatchCategoryCardProps {
   onMarkAllDone: () => void;
   onAcceptCalendar?: (emailId: string) => void;
   onQuickReply?: (emailId: string, reply: QuickReplyOption) => void;
-  onMicReply?: (emailId: string) => void;
+  onMicPressIn?: (emailId: string) => void;
+  onMicPressOut?: (emailId: string) => void;
+  onSendTranscript?: (emailId: string) => void;
   onUnsubscribe?: (emailId: string) => void;
   acceptingIds?: Set<string>;
   unsubscribingIds?: Set<string>;
   isProcessing?: boolean;
   /** ID of email currently being recorded for */
   recordingForId?: string | null;
-  /** Live transcript while recording */
+  /** ID of email that has a pending transcript to send */
+  pendingTranscriptForId?: string | null;
+  /** Live transcript while recording or pending */
   transcript?: string;
 }
 
@@ -90,12 +94,15 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
   onMarkAllDone,
   onAcceptCalendar,
   onQuickReply,
-  onMicReply,
+  onMicPressIn,
+  onMicPressOut,
+  onSendTranscript,
   onUnsubscribe,
   acceptingIds,
   unsubscribingIds,
   isProcessing,
   recordingForId,
+  pendingTranscriptForId,
   transcript,
 }: BatchCategoryCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -152,11 +159,13 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
               isSubscription={email.isSubscription}
               expandReplyByDefault={category === "humanWaiting"}
               isRecording={recordingForId === email._id}
-              transcript={recordingForId === email._id ? transcript : undefined}
+              transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
               onPunt={() => onPuntEmail(email._id)}
               onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
               onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
-              onMicReply={onMicReply ? () => onMicReply(email._id) : undefined}
+              onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id) : undefined}
+              onMicPressOut={onMicPressOut ? () => onMicPressOut(email._id) : undefined}
+              onSendTranscript={onSendTranscript ? () => onSendTranscript(email._id) : undefined}
               onUnsubscribe={onUnsubscribe ? () => onUnsubscribe(email._id) : undefined}
               isAccepting={acceptingIds?.has(email._id)}
               isUnsubscribing={unsubscribingIds?.has(email._id)}

@@ -859,6 +859,7 @@ export default function InboxScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [sendingReplyFor, setSendingReplyFor] = useState<string | null>(null);
   const [recordingFor, setRecordingFor] = useState<string | null>(null);
+  const [pendingTranscriptFor, setPendingTranscriptFor] = useState<string | null>(null);
   const [addingCalendarFor, setAddingCalendarFor] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState<ReplyDraft | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1297,42 +1298,73 @@ export default function InboxScreen() {
     setReplyDraft({ email, body: reply.body, subject });
   }, [gmailEmails]);
 
-  // Handle mic reply from batch mode - start/stop recording
-  const handleBatchMicReply = useCallback(async (emailId: string) => {
+  // Handle mic press in from batch mode - start recording
+  const handleBatchMicPressIn = useCallback((emailId: string) => {
+    // If recording for a different email, cancel that first
+    if (recordingFor && recordingFor !== emailId) {
+      cancelRecording();
+      setRecordingFor(null);
+      setPendingTranscriptFor(null);
+    }
+
+    // Clear any pending transcript from a different email
+    if (pendingTranscriptFor && pendingTranscriptFor !== emailId) {
+      setPendingTranscriptFor(null);
+    }
+
+    // Start recording for this email
+    playStartSound();
+    setRecordingFor(emailId);
+    setPendingTranscriptFor(null); // Clear pending while recording
+    startRecording();
+  }, [recordingFor, pendingTranscriptFor, startRecording, cancelRecording, playStartSound]);
+
+  // Handle mic press out from batch mode - stop recording
+  const handleBatchMicPressOut = useCallback(async (emailId: string) => {
+    if (recordingFor !== emailId) return;
+
+    // Capture current transcript before stopping (stopRecording may return stale data)
+    const currentTranscript = transcript;
+    const finalTranscript = await stopRecording();
+    setRecordingFor(null);
+    playStopSound();
+
+    // Use whichever transcript has content - prefer finalTranscript but fallback to current
+    const actualTranscript = (finalTranscript && finalTranscript.trim())
+      ? finalTranscript.trim()
+      : (currentTranscript && currentTranscript.trim())
+        ? currentTranscript.trim()
+        : null;
+
+    if (actualTranscript) {
+      // Keep the transcript pending for this email
+      setPendingTranscriptFor(emailId);
+    } else {
+      showToast("No speech detected", "error");
+      setPendingTranscriptFor(null);
+    }
+  }, [recordingFor, transcript, stopRecording, playStopSound, showToast]);
+
+  // Handle send transcript from batch mode - create draft and show modal
+  const handleBatchSendTranscript = useCallback((emailId: string) => {
     const email = gmailEmails.find(e => e._id === emailId);
     if (!email) {
       showAlert("Error", "Email not found");
       return;
     }
 
-    // If already recording for this email, stop and create draft
-    if (recordingFor === emailId) {
-      const finalTranscript = await stopRecording();
-      setRecordingFor(null);
-      playStopSound();
-
-      if (finalTranscript && finalTranscript.trim()) {
-        const subject = email.subject.startsWith("Re:")
-          ? email.subject
-          : `Re: ${email.subject}`;
-        setReplyDraft({ email, body: finalTranscript.trim(), subject });
-      } else {
-        showToast("No speech detected", "error");
-      }
+    if (!transcript || !transcript.trim()) {
+      showToast("No transcript to send", "error");
       return;
     }
 
-    // If recording for a different email, cancel that first
-    if (recordingFor) {
-      cancelRecording();
-      setRecordingFor(null);
-    }
+    const subject = email.subject.startsWith("Re:")
+      ? email.subject
+      : `Re: ${email.subject}`;
 
-    // Start recording for this email
-    playStartSound();
-    setRecordingFor(emailId);
-    startRecording();
-  }, [gmailEmails, recordingFor, startRecording, stopRecording, cancelRecording, playStartSound, playStopSound, showToast]);
+    setReplyDraft({ email, body: transcript.trim(), subject });
+    setPendingTranscriptFor(null); // Clear pending after creating draft
+  }, [gmailEmails, transcript, showToast]);
 
   // Memoized render function using EmailRow component
   const renderEmailItem = useCallback(({ item, index }: { item: InboxEmail; index: number }) => (
@@ -1461,8 +1493,11 @@ export default function InboxScreen() {
           onRefresh={handleRefresh}
           refreshing={refreshing}
           onQuickReply={handleBatchQuickReply}
-          onMicReply={handleBatchMicReply}
+          onMicPressIn={handleBatchMicPressIn}
+          onMicPressOut={handleBatchMicPressOut}
+          onSendTranscript={handleBatchSendTranscript}
           recordingForId={recordingFor}
+          pendingTranscriptForId={pendingTranscriptFor}
           transcript={transcript}
         />
       )}

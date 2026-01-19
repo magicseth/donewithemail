@@ -185,6 +185,7 @@ FIELDS:
    BAD: "A newsletter about sales"
    GOOD: "🛒 20% off camping gear + free shipping >$50, ends Sunday"
 2. urgencyScore: 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
+   IMPORTANT: Marketing emails, promotional offers, newsletters, and subscriptions should NEVER score above 30, even if they have "expiring" offers or time-sensitive language. Only personal emails from real individuals warrant high urgency.
 3. urgencyReason: Brief explanation
 4. actionRequired: "reply" | "action" | "fyi" | "none"
 5. actionDescription: Specific action needed if any
@@ -405,6 +406,7 @@ FIELDS:
    BAD: "A newsletter about sales"
    GOOD: "🛒 20% off camping gear + free shipping >$50, ends Sunday"
 2. urgencyScore: 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
+   IMPORTANT: Marketing emails, promotional offers, newsletters, and subscriptions should NEVER score above 30, even if they have "expiring" offers or time-sensitive language. Only personal emails from real individuals warrant high urgency.
 3. urgencyReason: Brief explanation
 4. actionRequired: "reply" | "action" | "fyi" | "none"
 5. actionDescription: Specific action needed if any

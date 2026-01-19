@@ -89,3 +89,24 @@ export const getMostUrgentEmailDetails = internalQuery({
     return mostUrgent;
   },
 });
+
+// Filter out subscription/newsletter emails from a list of external IDs
+export const filterOutSubscriptions = internalQuery({
+  args: { externalIds: v.array(v.string()) },
+  handler: async (ctx, args): Promise<string[]> => {
+    const nonSubscriptionIds: string[] = [];
+    for (const externalId of args.externalIds) {
+      const email = await ctx.db
+        .query("emails")
+        .withIndex("by_external_id", (q) =>
+          q.eq("externalId", externalId).eq("provider", "gmail")
+        )
+        .first();
+      // Keep email if it's not marked as a subscription
+      if (email && !email.isSubscription) {
+        nonSubscriptionIds.push(externalId);
+      }
+    }
+    return nonSubscriptionIds;
+  },
+});

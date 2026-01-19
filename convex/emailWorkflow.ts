@@ -51,14 +51,14 @@ export const processNewEmails = workflow.define({
     );
 
     // Step 3: Check if any email is high priority
-    let highPriorityCount = 0;
+    const highPriorityExternalIds: string[] = [];
     let highestUrgency = 0;
 
     for (const result of summarizeResults) {
       if (result.success && result.result) {
         const urgency = result.result.urgencyScore;
         if (urgency >= HIGH_PRIORITY_THRESHOLD) {
-          highPriorityCount++;
+          highPriorityExternalIds.push(result.externalId);
           if (urgency > highestUrgency) {
             highestUrgency = urgency;
           }
@@ -66,13 +66,24 @@ export const processNewEmails = workflow.define({
       }
     }
 
-    // Step 4: Send notification only if there are high priority emails
+    // Filter out subscription/newsletter emails from notifications
+    let filteredExternalIds = highPriorityExternalIds;
+    if (highPriorityExternalIds.length > 0) {
+      filteredExternalIds = await step.runQuery(
+        internal.emailWorkflowHelpers.filterOutSubscriptions,
+        { externalIds: highPriorityExternalIds }
+      );
+    }
+
+    const highPriorityCount = filteredExternalIds.length;
+
+    // Step 4: Send notification only if there are high priority non-subscription emails
     if (highPriorityCount > 0) {
       // Get details of the most urgent email for the notification
       const emailDetails = await step.runQuery(
         internal.emailWorkflowHelpers.getMostUrgentEmailDetails,
         {
-          externalIds: fetchResult.stored,
+          externalIds: filteredExternalIds,
           threshold: HIGH_PRIORITY_THRESHOLD,
         }
       );

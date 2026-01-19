@@ -16,10 +16,14 @@ interface BatchTriageViewProps {
   onRefresh?: () => void;
   refreshing?: boolean;
   onQuickReply?: (emailId: string, reply: QuickReplyOption) => void;
-  onMicReply?: (emailId: string) => void;
+  onMicPressIn?: (emailId: string) => void;
+  onMicPressOut?: (emailId: string) => void;
+  onSendTranscript?: (emailId: string) => void;
   /** ID of email currently being recorded for */
   recordingForId?: string | null;
-  /** Live transcript while recording */
+  /** ID of email that has a pending transcript to send */
+  pendingTranscriptForId?: string | null;
+  /** Live transcript while recording or pending */
   transcript?: string;
 }
 
@@ -28,8 +32,11 @@ export function BatchTriageView({
   onRefresh,
   refreshing = false,
   onQuickReply,
-  onMicReply,
+  onMicPressIn,
+  onMicPressOut,
+  onSendTranscript,
   recordingForId,
+  pendingTranscriptForId,
   transcript,
 }: BatchTriageViewProps) {
   const {
@@ -138,11 +145,14 @@ export function BatchTriageView({
             onPuntEmail={togglePuntEmail}
             onMarkAllDone={() => handleMarkCategoryDone("pending")}
             onQuickReply={onQuickReply}
-            onMicReply={onMicReply}
+            onMicPressIn={onMicPressIn}
+            onMicPressOut={onMicPressOut}
+            onSendTranscript={onSendTranscript}
             onUnsubscribe={handleUnsubscribe}
             unsubscribingIds={unsubscribingIds}
             isProcessing={processingCategory === "pending"}
             recordingForId={recordingForId}
+            pendingTranscriptForId={pendingTranscriptForId}
             transcript={transcript}
           />
         )}
@@ -155,11 +165,14 @@ export function BatchTriageView({
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("humanWaiting")}
           onQuickReply={onQuickReply}
-          onMicReply={onMicReply}
+          onMicPressIn={onMicPressIn}
+            onMicPressOut={onMicPressOut}
+            onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "humanWaiting"}
           recordingForId={recordingForId}
+            pendingTranscriptForId={pendingTranscriptForId}
             transcript={transcript}
         />
 
@@ -171,11 +184,14 @@ export function BatchTriageView({
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("actionNeeded")}
           onQuickReply={onQuickReply}
-          onMicReply={onMicReply}
+          onMicPressIn={onMicPressIn}
+            onMicPressOut={onMicPressOut}
+            onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "actionNeeded"}
           recordingForId={recordingForId}
+            pendingTranscriptForId={pendingTranscriptForId}
             transcript={transcript}
         />
 
@@ -188,12 +204,15 @@ export function BatchTriageView({
           onMarkAllDone={() => handleMarkCategoryDone("calendar")}
           onAcceptCalendar={handleAcceptCalendar}
           onQuickReply={onQuickReply}
-          onMicReply={onMicReply}
+          onMicPressIn={onMicPressIn}
+            onMicPressOut={onMicPressOut}
+            onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
           acceptingIds={acceptingIds}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "calendar"}
           recordingForId={recordingForId}
+            pendingTranscriptForId={pendingTranscriptForId}
             transcript={transcript}
         />
 
@@ -205,11 +224,14 @@ export function BatchTriageView({
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("done")}
           onQuickReply={onQuickReply}
-          onMicReply={onMicReply}
+          onMicPressIn={onMicPressIn}
+            onMicPressOut={onMicPressOut}
+            onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "done"}
           recordingForId={recordingForId}
+            pendingTranscriptForId={pendingTranscriptForId}
             transcript={transcript}
         />
 
@@ -221,11 +243,14 @@ export function BatchTriageView({
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("lowConfidence")}
           onQuickReply={onQuickReply}
-          onMicReply={onMicReply}
+          onMicPressIn={onMicPressIn}
+            onMicPressOut={onMicPressOut}
+            onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "lowConfidence"}
           recordingForId={recordingForId}
+            pendingTranscriptForId={pendingTranscriptForId}
             transcript={transcript}
         />
 
