@@ -362,6 +362,7 @@ const TARGETS: Target[] = [
 
 interface TriageState {
   scrollY: SharedValue<number>;
+  prevScrollY: SharedValue<number>;
   fingerX: SharedValue<number>;
   startX: SharedValue<number>;
   // Active triage index - which row the ball is pointing at
@@ -398,24 +399,52 @@ function useTriageState(): TriageState {
 
 // Hook to create all triage state - used once in InboxScreen
 function useCreateTriageState(): TriageState {
-  const { ballTravelMultiplier } = TRIAGE_CONFIG;
+  const { ballTravelMultiplier, rowHeight } = TRIAGE_CONFIG;
 
   // Primary state (set by event handlers)
   const scrollY = useSharedValue(0);
+  const prevScrollY = useSharedValue(0);
   const fingerX = useSharedValue(CENTER_X);
   const startX = useSharedValue(CENTER_X);
 
-  // Active triage index - increments when ball hits target
+  // Active triage index - can change via triage OR scroll navigation
   const activeIndex = useSharedValue(0);
 
   // Lock to prevent cascading triggers
   const isProcessing = useSharedValue(false);
 
-  // Require ball to return to center before next activation
+  // Require ball to leave all targets before next triage can trigger
   const needsReset = useSharedValue(false);
 
-  // Track what target was last triggered (to prevent re-triggering same target)
+  // Track what target was last triggered (legacy, kept for interface compatibility)
   const lastTriggeredTarget = useSharedValue<string | null>(null);
+
+  // Track scroll-based index changes to allow going back
+  // When user scrolls down significantly, decrease activeIndex
+  useAnimatedReaction(
+    () => scrollY.value,
+    (currentScrollY, previousScrollY) => {
+      if (previousScrollY === null) return;
+
+      const delta = currentScrollY - prevScrollY.value;
+      const threshold = rowHeight * 0.6; // 60% of row height to change index
+
+      if (delta < -threshold && activeIndex.value > 0) {
+        // Scrolling down (pulling content up) - go to previous email
+        activeIndex.value = activeIndex.value - 1;
+        prevScrollY.value = currentScrollY;
+        // Clear state machine so user can triage the previous email
+        needsReset.value = false;
+        isProcessing.value = false;
+        console.log(`[Triage:ScrollNav] Scrolled back, activeIndex now ${activeIndex.value}`);
+      } else if (delta > threshold) {
+        // Scrolling up (pulling content down) - update baseline but don't auto-advance
+        // (advancing is handled by triage actions, not scroll)
+        prevScrollY.value = currentScrollY;
+      }
+    },
+    [rowHeight]
+  );
 
   // Measured ball Y position - updated by the active row's RowBall component
   const measuredBallY = useSharedValue(0);
@@ -430,9 +459,9 @@ function useCreateTriageState(): TriageState {
   });
 
   // Ball Y position - use actual measured position from the ball element
-  const { ballSize, headerOffset } = TRIAGE_CONFIG;
-  // Target visual position within overlay + offset for headers above overlay
-  const TARGET_Y = 30 + headerOffset; // 30px in overlay + 86px header = ~116px screen position
+  const { ballSize } = TRIAGE_CONFIG;
+  // Target visual position - targets are at top:30 in the overlay which fills the screen
+  const TARGET_Y = 30; // Matches the top:30 in TargetView
 
   // ballY now directly uses the measured value from the active row's ball
   const ballY = useDerivedValue(() => {
@@ -506,6 +535,7 @@ function useCreateTriageState(): TriageState {
 
   return {
     scrollY,
+    prevScrollY,
     fingerX,
     startX,
     activeIndex,
@@ -525,6 +555,19 @@ import { api } from "../../convex/_generated/api";
 import { useGmail, GmailEmail, QuickReply, CalendarEvent } from "../../hooks/useGmail";
 import { useVoiceRecording } from "../../hooks/useDailyVoice";
 import { Id } from "../../convex/_generated/dataModel";
+
+// New triage module
+import {
+  TriageProvider,
+  useTriageContext,
+  TriageOverlay as NewTriageOverlay,
+  TriageRowWrapper,
+  useTriagePanGesture,
+  TRIAGE_TARGETS as NEW_TARGETS,
+  type TriageTargetId,
+  type TriageableEmail,
+  type TriageControlRef,
+} from "../../components/triage";
 
 // Sound feedback for mic actions
 const useMicSounds = () => {
@@ -736,9 +779,6 @@ const transcriptStyles = StyleSheet.create({
   },
 });
 
-// Swipe threshold for TODO action
-const SWIPE_THRESHOLD = 100;
-
 // ============================================================================
 // TRIAGE OVERLAY - Ball and targets, uses context for all state
 // ============================================================================
@@ -842,6 +882,83 @@ const TargetView = React.memo(function TargetView({ target }: TargetViewProps) {
   );
 });
 
+// Debug component to show detection hitboxes
+const DEBUG_HITBOXES = true; // Toggle this to show/hide debug visualization
+
+const DebugHitbox = React.memo(function DebugHitbox({ target }: { target: typeof TARGETS[0] }) {
+  const targetX = CENTER_X + target.position;
+  const TARGET_Y = 30;
+  const targetYCenter = TARGET_Y + 20;
+
+  return (
+    <>
+      {/* Detection center point */}
+      <View
+        style={{
+          position: "absolute",
+          left: targetX - 4,
+          top: targetYCenter - 4,
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          backgroundColor: "red",
+          zIndex: 2000,
+        }}
+      />
+      {/* Activation radius circle */}
+      <View
+        style={{
+          position: "absolute",
+          left: targetX - target.activationRadius,
+          top: targetYCenter - target.activationRadius,
+          width: target.activationRadius * 2,
+          height: target.activationRadius * 2,
+          borderRadius: target.activationRadius,
+          borderWidth: 2,
+          borderColor: "red",
+          borderStyle: "dashed",
+          zIndex: 1999,
+        }}
+      />
+    </>
+  );
+});
+
+const DebugBallPosition = React.memo(function DebugBallPosition() {
+  const triage = useTriageState();
+  const { headerOffset, listTopPadding, rowHeight, ballSize } = TRIAGE_CONFIG;
+  const BALL_TOP_IN_ROW = 4;
+
+  const debugStyle = useAnimatedStyle(() => {
+    // Calculate ball Y from scroll position (same formula as computeActiveTarget)
+    const activeIdx = triage.topRowIndex.value;
+    const scrollY = triage.scrollY.value;
+    const rowScreenY = headerOffset + listTopPadding + (activeIdx * rowHeight) - scrollY;
+    const ballScreenY = rowScreenY + BALL_TOP_IN_ROW + ballSize / 2;
+
+    return {
+      left: triage.ballX.value - 6,
+      top: ballScreenY - 6,
+    };
+  });
+
+  return (
+    <Animated.View
+      style={[
+        {
+          position: "absolute",
+          width: 12,
+          height: 12,
+          borderRadius: 6,
+          backgroundColor: "blue",
+          zIndex: 2001,
+        },
+        debugStyle,
+      ]}
+    />
+  );
+});
+
 const TriageOverlay = React.memo(function TriageOverlay({ showUnsubscribe }: { showUnsubscribe: boolean }) {
   const { rowHeight, headerOffset, listTopPadding, ballSize } = TRIAGE_CONFIG;
   const overlayRef = React.useRef<any>(null);
@@ -867,6 +984,12 @@ const TriageOverlay = React.memo(function TriageOverlay({ showUnsubscribe }: { s
 
   return (
     <View ref={overlayRef} style={triageStyles.overlay} pointerEvents="none" onLayout={handleOverlayLayout} collapsable={false}>
+      {/* Debug hitboxes showing where detection looks */}
+      {DEBUG_HITBOXES && visibleTargets.map(target => (
+        <DebugHitbox key={`debug-${target.id}`} target={target} />
+      ))}
+      {/* Debug ball position indicator */}
+      {DEBUG_HITBOXES && <DebugBallPosition />}
       {/* Render all targets dynamically - ball is now rendered in each row */}
       {visibleTargets.map(target => (
         <TargetView key={target.id} target={target} />
@@ -923,11 +1046,12 @@ const RowBall = React.memo(function RowBall({ index }: { index: number }) {
   const ballRef = useAnimatedRef<Animated.View>();
 
   // Measure and update ball Y position when this row is active
-  // Uses useAnimatedReaction to trigger measurement on scroll or activeIndex change
+  // Uses useAnimatedReaction to trigger measurement on scroll, activeIndex, or finger movement
   useAnimatedReaction(
     () => ({
       isActive: triage.activeIndex.value === index,
       scrollY: triage.scrollY.value, // Re-measure when scroll changes
+      fingerX: triage.fingerX.value, // Re-measure during horizontal drags
     }),
     (current) => {
       if (current.isActive) {
@@ -1066,112 +1190,10 @@ const AnimatedRowWrapper = React.memo(function AnimatedRowWrapper({ index, child
   );
 });
 
-// Swipeable email row component - memoized for performance
-interface SwipeableEmailRowProps {
-  children: React.ReactNode;
-  onSwipeLeft: () => void;
-  disabled?: boolean;
-}
-
-const SwipeableEmailRow = React.memo(function SwipeableEmailRow({
-  children,
-  onSwipeLeft,
-  disabled
-}: SwipeableEmailRowProps) {
-  const translateX = useSharedValue(0);
-  const onSwipeLeftRef = useRef(onSwipeLeft);
-  onSwipeLeftRef.current = onSwipeLeft;
-
-  const handleSwipeComplete = useCallback(() => {
-    if (Platform.OS !== "web") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-    onSwipeLeftRef.current();
-  }, []);
-
-  const panGesture = Gesture.Pan()
-    .enableTrackpadTwoFingerGesture(true)
-    .mouseButton(MouseButton.LEFT)
-    .minDistance(10)
-    .enabled(!disabled)
-    .activeOffsetX([-20, -10]) // Only activate when swiping left (negative X)
-    .failOffsetY([-10, 10]) // Fail if vertical movement detected first
-    .failOffsetX([10, 10000]) // Fail if swiping right
-    .onUpdate((event) => {
-      // Only allow swiping left (negative values)
-      if (event.translationX < 0) {
-        translateX.value = event.translationX;
-      }
-    })
-    .onEnd((event) => {
-      const swipedLeft = event.translationX < -SWIPE_THRESHOLD ||
-        (event.translationX < -50 && event.velocityX < -500);
-
-      if (swipedLeft) {
-        translateX.value = withTiming(-400, { duration: 200 }, () => {
-          runOnJS(handleSwipeComplete)();
-        });
-      } else {
-        translateX.value = withSpring(0);
-      }
-    });
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
-
-  const todoIndicatorStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(
-      translateX.value,
-      [-SWIPE_THRESHOLD, 0],
-      [1, 0],
-      Extrapolation.CLAMP
-    ),
-  }));
-
-  return (
-    <View style={swipeRowStyles.container}>
-      {/* Background indicator */}
-      <Animated.View style={[swipeRowStyles.todoIndicator, todoIndicatorStyle]}>
-        <Text style={swipeRowStyles.todoIndicatorText}>TODO</Text>
-      </Animated.View>
-
-      <GestureDetector gesture={panGesture}>
-        <Animated.View style={animatedStyle}>
-          {children}
-        </Animated.View>
-      </GestureDetector>
-    </View>
-  );
-});
-
-const swipeRowStyles = StyleSheet.create({
-  container: {
-    position: "relative",
-    overflow: "hidden",
-  },
-  todoIndicator: {
-    position: "absolute",
-    right: 20,
-    top: 0,
-    bottom: 0,
-    justifyContent: "center",
-    alignItems: "flex-end",
-    paddingRight: 20,
-  },
-  todoIndicatorText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#F59E0B",
-    letterSpacing: 1,
-  },
-});
-
 // Memoized email row component for FlatList performance
 interface EmailRowProps {
   item: InboxEmail;
   index: number;
-  onSwipeToTodo: (email: InboxEmail) => void;
   onQuickReply: (email: InboxEmail, reply: QuickReply) => void;
   onAddToCalendar: (email: InboxEmail, event: CalendarEvent) => void;
   sendingReplyFor: string | null;
@@ -1186,7 +1208,6 @@ interface EmailRowProps {
 const EmailRow = React.memo(function EmailRow({
   item,
   index,
-  onSwipeToTodo,
   onQuickReply,
   onAddToCalendar,
   sendingReplyFor,
@@ -1208,21 +1229,13 @@ const EmailRow = React.memo(function EmailRow({
     console.log(`[EmailRow] ${item._id} isRecordingThis=true, transcript="${transcript}"`);
   }
 
-  const handleSwipeLeft = useCallback(() => {
-    onSwipeToTodo(item);
-  }, [item, onSwipeToTodo]);
-
   const handlePress = useCallback(() => {
     router.push(`/email/${item._id}`);
   }, [item._id]);
 
   return (
-    <AnimatedRowWrapper index={index}>
-      <SwipeableEmailRow
-        onSwipeLeft={handleSwipeLeft}
-        disabled={isSending || isRecording || isTriaged}
-      >
-        <TouchableOpacity
+    <TriageRowWrapper index={index}>
+      <TouchableOpacity
           style={[
             styles.emailItem,
             !item.isRead && styles.emailItemUnread,
@@ -1362,15 +1375,138 @@ const EmailRow = React.memo(function EmailRow({
               ]}
             />
           )}
-        </TouchableOpacity>
-      </SwipeableEmailRow>
-    </AnimatedRowWrapper>
+      </TouchableOpacity>
+    </TriageRowWrapper>
+  );
+});
+
+// ============================================================================
+// TRIAGE LIST WRAPPER - Uses new context for gesture/scroll handling
+// ============================================================================
+interface TriageListWrapperProps {
+  flatListRef: React.RefObject<FlatList | null>;
+  emails: InboxEmail[];
+  renderItem: ({ item, index }: { item: InboxEmail; index: number }) => React.ReactElement;
+  extraData: any;
+  refreshing: boolean;
+  onRefresh: () => void;
+  onEndReached: () => void;
+  searchQuery: string;
+  isSyncing: boolean;
+  isSummarizing: boolean;
+  onTouchEnd?: () => void;
+}
+
+const TriageListWrapper = React.memo(function TriageListWrapper({
+  flatListRef,
+  emails,
+  renderItem,
+  extraData,
+  refreshing,
+  onRefresh,
+  onEndReached,
+  searchQuery,
+  isSyncing,
+  isSummarizing,
+  onTouchEnd,
+}: TriageListWrapperProps) {
+  const triage = useTriageContext();
+  const panGesture = useTriagePanGesture();
+
+  // Update scroll position in new context
+  const handleScroll = useCallback((event: any) => {
+    const y = event.nativeEvent.contentOffset.y;
+    triage.setScrollY(y);
+  }, [triage]);
+
+  // Handle touch end - reset phase to idle
+  const handleTouchEnd = useCallback(() => {
+    if (triage.phase.value === "dragging") {
+      triage.phase.value = "idle";
+    }
+    onTouchEnd?.();
+  }, [triage.phase, onTouchEnd]);
+
+  return (
+    <View
+      style={{ flex: 1 }}
+      onStartShouldSetResponderCapture={(e) => {
+        // Capture phase - fires before scroll takes over
+        const x = e.nativeEvent.pageX;
+        triage.fingerX.value = x;
+        triage.startX.value = x;
+        // Start dragging phase
+        if (triage.phase.value === "idle") {
+          triage.phase.value = "dragging";
+        }
+        return false; // Don't claim responder - let scroll work
+      }}
+      onMoveShouldSetResponderCapture={(e) => {
+        // Capture phase for moves - fires at full frequency!
+        triage.fingerX.value = e.nativeEvent.pageX;
+        return false; // Don't claim responder - let scroll work
+      }}
+    >
+      <GestureDetector gesture={panGesture}>
+        <Animated.View
+          style={{ flex: 1 }}
+          onTouchEnd={handleTouchEnd}
+        >
+          <FlatList
+            ref={flatListRef}
+            data={emails}
+            keyExtractor={(item) => item._id}
+            renderItem={renderItem}
+            extraData={extraData}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              Platform.OS !== "web" ? (
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor="#6366F1"
+                />
+              ) : undefined
+            }
+            onEndReached={onEndReached}
+            onEndReachedThreshold={0.5}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyIcon}>{searchQuery ? "🔍" : "📭"}</Text>
+                <Text style={styles.emptyText}>
+                  {searchQuery ? "No results found" : "No emails yet"}
+                </Text>
+                <Text style={styles.emptySubtext}>
+                  {searchQuery
+                    ? `No emails matching "${searchQuery}"`
+                    : Platform.OS === "web"
+                      ? "Click refresh to sync"
+                      : "Pull down to sync"}
+                </Text>
+              </View>
+            }
+            ListFooterComponent={
+              isSyncing || isSummarizing ? (
+                <View style={styles.loadingMore}>
+                  <ActivityIndicator size="small" color="#6366F1" />
+                  <Text style={styles.loadingMoreText}>
+                    {isSyncing ? "Syncing..." : "Summarizing with AI..."}
+                  </Text>
+                </View>
+              ) : null
+            }
+          />
+        </Animated.View>
+      </GestureDetector>
+    </View>
   );
 });
 
 export default function InboxScreen() {
   // ============================================================================
-  // TRIAGE STATE - Single source of truth via context
+  // TRIAGE STATE - Old context (being replaced by TriageProvider)
   // ============================================================================
   const triageState = useCreateTriageState();
 
@@ -1402,6 +1538,7 @@ export default function InboxScreen() {
   const flatListRef = useRef<FlatList>(null);
   const triageInProgressRef = useRef<Set<string>>(new Set());
   const componentIdRef = useRef(Math.random().toString(36).slice(2, 8));
+  const triageRef = useRef<TriageControlRef>(null);
 
   // Debug: Log when component mounts and when gmailEmails changes
   useEffect(() => {
@@ -1432,10 +1569,11 @@ export default function InboxScreen() {
       // Clear local triage tracking
       setTriagedEmails(new Map());
       triageInProgressRef.current = new Set();
-      // Reset triage state
+      // Reset triage state (both old and new)
       triageState.activeIndex.value = 0;
       triageState.isProcessing.value = false;
       triageState.needsReset.value = false;
+      triageRef.current?.reset(); // Reset new triage context
       // Scroll to top
       flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
     }, [])
@@ -1588,17 +1726,16 @@ export default function InboxScreen() {
         triageState.activeIndex.value = triageState.activeIndex.value + 1;
       }
 
-      // Reset ball to center - set lastTriggeredTarget to "done" since ball lands at center
-      // where the "done" target is, preventing immediate re-trigger
+      // Reset ball to center, require ball to leave targets before next triage
       triageState.startX.value = triageState.fingerX.value;
-      triageState.lastTriggeredTarget.value = "done";
+      triageState.needsReset.value = true;
       triageState.isProcessing.value = false;
       return;
     }
 
     // Check if already triaged
     if (triageInProgressRef.current.has(email._id) || triagedEmails.has(email._id)) {
-      triageState.lastTriggeredTarget.value = "done"; // Ball at center = done target
+      triageState.needsReset.value = true;
       triageState.isProcessing.value = false;
       return;
     }
@@ -1628,9 +1765,8 @@ export default function InboxScreen() {
     // This makes delta = 0, so ballX = CENTER_X
     triageState.startX.value = triageState.fingerX.value;
 
-    // Set lastTriggeredTarget to "done" since ball lands at center where "done" target is
-    // This prevents immediately triggering "done" after any other action
-    triageState.lastTriggeredTarget.value = "done";
+    // Require ball to leave all targets before next triage can trigger
+    triageState.needsReset.value = true;
     triageState.isProcessing.value = false;
 
     try {
@@ -1651,6 +1787,123 @@ export default function InboxScreen() {
       triageInProgressRef.current.delete(email._id);
     }
   }, [triageEmail, triagedEmails, playStartSound, startRecording, triageState, subscriptions, batchUnsubscribeAction, userEmail, showToast]);
+
+  // ============================================================================
+  // NEW TRIAGE HANDLER - For use with new TriageProvider
+  // Returns false to prevent auto-advance (used for mic recording)
+  // ============================================================================
+  const handleTriage = useCallback(async (
+    email: TriageableEmail,
+    targetId: TriageTargetId,
+    _index: number
+  ): Promise<boolean> => {
+    console.log(`[NewTriage] targetId=${targetId}, email="${email.subject}"`);
+
+    // --- MIC TARGET: Start recording, don't advance ---
+    if (targetId === "mic") {
+      console.log(`[NewTriage:Mic] Starting recording for: ${email._id}`);
+      if (Platform.OS !== "web") {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+      setRecordingFor(email._id);
+      playStartSound();
+      startRecording();
+      return false; // Don't advance - ball stays at mic
+    }
+
+    // --- UNSUBSCRIBE TARGET ---
+    if (targetId === "unsubscribe") {
+      if (!email.isSubscription) {
+        console.log(`[NewTriage:Unsub] Skipping - not a subscription`);
+        return false; // Don't advance for non-subscriptions
+      }
+
+      if (Platform.OS !== "web") {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+
+      // Find and call unsubscribe
+      const senderEmail = email.fromContact?.email;
+      const subscription = senderEmail && subscriptions?.find(s => s.senderEmail === senderEmail);
+
+      if (subscription && userEmail) {
+        batchUnsubscribeAction({
+          userEmail,
+          subscriptionIds: [subscription._id as any],
+        }).then(result => {
+          if (result.completed.length > 0) {
+            showToast(`Unsubscribed from ${senderEmail}`, "success");
+          } else if (result.manualRequired.length > 0) {
+            showToast("Manual unsubscribe required - check email", "info");
+          } else {
+            showToast("Unsubscribe failed", "error");
+          }
+        }).catch(err => {
+          console.error(`[NewTriage:Unsub] Error:`, err);
+          showToast("Failed to unsubscribe", "error");
+        });
+      } else {
+        showToast("No unsubscribe option available", "info");
+      }
+
+      // Mark as done and advance
+      if (!triageInProgressRef.current.has(email._id) && !triagedEmails.has(email._id)) {
+        triageInProgressRef.current.add(email._id);
+        setTriagedEmails(prev => new Map(prev).set(email._id, "done"));
+        triageEmail({ emailId: email._id as Id<"emails">, action: "done" })
+          .finally(() => triageInProgressRef.current.delete(email._id));
+      }
+      return true; // Advance to next
+    }
+
+    // --- DONE / REPLY TARGETS ---
+    // Skip if already triaged
+    if (triageInProgressRef.current.has(email._id) || triagedEmails.has(email._id)) {
+      console.log(`[NewTriage] Already triaged: ${email._id}`);
+      return false; // Don't advance
+    }
+
+    const action: "done" | "reply_needed" = targetId === "done" ? "done" : "reply_needed";
+    triageInProgressRef.current.add(email._id);
+
+    // Haptic feedback
+    if (Platform.OS !== "web") {
+      if (targetId === "done") {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    }
+
+    // Optimistic update
+    setTriagedEmails(prev => new Map(prev).set(email._id, action));
+
+    try {
+      await triageEmail({ emailId: email._id as Id<"emails">, action });
+      console.log(`[NewTriage] Success: "${email.subject}" -> ${action}`);
+    } catch (error) {
+      console.error(`[NewTriage] Failed:`, error);
+      // Revert on error
+      setTriagedEmails(prev => {
+        const next = new Map(prev);
+        next.delete(email._id);
+        return next;
+      });
+    } finally {
+      triageInProgressRef.current.delete(email._id);
+    }
+
+    return true; // Advance to next
+  }, [
+    triageEmail,
+    triagedEmails,
+    playStartSound,
+    startRecording,
+    subscriptions,
+    batchUnsubscribeAction,
+    userEmail,
+    showToast,
+  ]);
 
   // Keep ref to latest callback for use in worklet (runOnJS captures at creation time)
   const handleTargetActivationRef = useRef(handleTargetActivation);
@@ -1688,8 +1941,8 @@ export default function InboxScreen() {
   );
 
   // Logging helpers for worklets
-  const logActiveTarget = useCallback((from: string | null, to: string | null, isProcessing: boolean, needsReset: boolean) => {
-    console.log(`[Triage:ActiveTarget] changed from ${from ?? 'null'} to ${to}, isProcessing=${isProcessing}, needsReset=${needsReset}`);
+  const logActiveTarget = useCallback((from: string | null, to: string | null, isProcessing: boolean, needsReset: boolean, lastTriggered: string | null) => {
+    console.log(`[Triage:ActiveTarget] changed from ${from ?? 'null'} to ${to}, isProcessing=${isProcessing}, needsReset=${needsReset}, lastTriggeredTarget=${lastTriggered ?? 'null'}`);
   }, []);
   const logTrigger = useCallback((target: string, row: number, ballX: number, scrollY: number) => {
     const targetConfig = TARGETS.find(t => t.id === target);
@@ -1705,42 +1958,81 @@ export default function InboxScreen() {
     console.log(`[Triage:Trigger] Target: expectedCenterX=${targetX}, distance=${Math.abs(ballX - targetX).toFixed(0)}`);
   }, []);
 
+  // Helper to compute active target inline with 2D distance
+  // Ball Y is calculated from scroll position, not measured
+  const { headerOffset, listTopPadding, rowHeight, ballSize } = TRIAGE_CONFIG;
+  const BALL_TOP_IN_ROW = 4; // from rowBallStyles.ballContainer.top
+  const TARGET_Y_CENTER = 30 + 20; // targets at top:30, center offset ~20
+
+  const computeActiveTarget = (bx: number, scrollY: number, activeIdx: number): string | null => {
+    'worklet';
+    // Calculate ball's screen Y from scroll position
+    // Row screen Y = headerOffset + listTopPadding + (activeIdx * rowHeight) - scrollY
+    // Ball Y in row = BALL_TOP_IN_ROW + ballSize/2 (center)
+    const rowScreenY = headerOffset + listTopPadding + (activeIdx * rowHeight) - scrollY;
+    const ballScreenY = rowScreenY + BALL_TOP_IN_ROW + ballSize / 2;
+
+    for (const target of TARGETS) {
+      const targetX = CENTER_X + target.position;
+      const dx = bx - targetX;
+      const dy = ballScreenY - TARGET_Y_CENTER;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance <= target.activationRadius) {
+        return target.id;
+      }
+    }
+    return null;
+  };
+
   // Watch for ball activation and trigger triage
   useAnimatedReaction(
     () => ({
-      activeTarget: triageState.activeTarget.value,
+      ballX: triageState.ballX.value,
       isProcessing: triageState.isProcessing.value,
       needsReset: triageState.needsReset.value,
-      lastTriggeredTarget: triageState.lastTriggeredTarget.value,
       topRowIndex: triageState.topRowIndex.value,
-      ballX: triageState.ballX.value,
       scrollY: triageState.scrollY.value,
     }),
     (current, previous) => {
-      // Log state changes
-      if (current.activeTarget !== (previous?.activeTarget ?? null)) {
-        runOnJS(logActiveTarget)(previous?.activeTarget ?? null, current.activeTarget, current.isProcessing, current.needsReset);
+      // Compute active target inline - calculate ball Y from scroll position
+      const activeTarget = computeActiveTarget(current.ballX, current.scrollY, current.topRowIndex);
+      const prevActiveTarget = previous ? computeActiveTarget(previous.ballX, previous.scrollY, previous.topRowIndex) : null;
+
+      // Log state changes when activeTarget changes
+      if (activeTarget !== prevActiveTarget) {
+        runOnJS(logActiveTarget)(prevActiveTarget, activeTarget, current.isProcessing, current.needsReset, null);
       }
 
-      // Clear lastTriggeredTarget when ball leaves a target (allows re-triggering after moving away)
-      if (current.activeTarget === null && current.lastTriggeredTarget !== null) {
-        triageState.lastTriggeredTarget.value = null;
+      // Clear needsReset when ball leaves ALL targets
+      if (activeTarget === null && current.needsReset) {
+        triageState.needsReset.value = false;
+        console.log('[Triage:Reset] Ball left all targets, needsReset cleared');
       }
 
       // Trigger when:
       // - Ball is at a target (activeTarget !== null)
       // - Not already processing
-      // - Not the same target we just triggered (prevents double-trigger)
-      if (
-        current.activeTarget !== null &&
-        !current.isProcessing &&
-        current.activeTarget !== current.lastTriggeredTarget
-      ) {
-        runOnJS(logTrigger)(current.activeTarget, current.topRowIndex, current.ballX, current.scrollY);
-        // Set locks immediately in worklet to prevent cascade
-        triageState.isProcessing.value = true;
-        triageState.lastTriggeredTarget.value = current.activeTarget;
-        runOnJS(handleTargetActivationStable)(current.topRowIndex, current.activeTarget);
+      // - needsReset is false (ball has left targets since last triage)
+      if (activeTarget !== null) {
+        if (current.isProcessing) {
+          // Log once per change
+          if (previous && previous.isProcessing !== current.isProcessing) {
+            console.log(`[Triage:Blocked] isProcessing=true, target=${activeTarget}`);
+          }
+        } else if (current.needsReset) {
+          // Log once per target change
+          if (activeTarget !== prevActiveTarget) {
+            console.log(`[Triage:Blocked] needsReset=true, target=${activeTarget}, must leave all targets first`);
+          }
+        } else {
+          runOnJS(logTrigger)(activeTarget, current.topRowIndex, current.ballX, current.scrollY);
+          // Set locks immediately in worklet to prevent cascade
+          triageState.isProcessing.value = true;
+          triageState.needsReset.value = true;
+          // Reset scroll baseline so scroll-back detection works after triage
+          triageState.prevScrollY.value = current.scrollY;
+          runOnJS(handleTargetActivationStable)(current.topRowIndex, activeTarget);
+        }
       }
     }
   );
@@ -1778,27 +2070,6 @@ export default function InboxScreen() {
   console.log(`[Triage:RefSync] Setting moduleEmails, length=${emails.length}`);
 
   const isRecording = isConnecting || isConnected;
-
-  // Handle swipe left to mark as TODO
-  const handleSwipeToTodo = useCallback(async (email: InboxEmail) => {
-    // Optimistically update UI
-    setTriagedEmails((prev) => new Map(prev).set(email._id, "reply_needed"));
-
-    try {
-      await triageEmail({
-        emailId: email._id as Id<"emails">,
-        action: "reply_needed",
-      });
-    } catch (error) {
-      console.error("Failed to triage email:", error);
-      // Revert on error
-      setTriagedEmails((prev) => {
-        const next = new Map(prev);
-        next.delete(email._id);
-        return next;
-      });
-    }
-  }, [triageEmail]);
 
   // Track scroll position for ball Y calculation
   const handleScroll = useCallback((event: any) => {
@@ -1862,8 +2133,7 @@ export default function InboxScreen() {
   const handleNativeTouchEnd = useCallback(() => {
     console.log("[Triage:NativeTouchEnd] touch ended");
     // Log all target positions and ball position for debugging
-    const { headerOffset } = TRIAGE_CONFIG;
-    const targetYBase = 30 + headerOffset; // Same calculation as TARGET_Y in useCreateTriageState
+    const targetYBase = 30; // Matches TARGET_Y in useCreateTriageState and top:30 in TargetView
     const ballX = triageState.ballX.value;
     const ballY = triageState.ballY.value;
     const scrollY = triageState.scrollY.value;
@@ -1890,8 +2160,6 @@ export default function InboxScreen() {
       console.log(`[Triage:PointerDown] clientX=${e.clientX}, clientY=${e.clientY}`);
       triageState.startX.value = e.clientX;
       triageState.fingerX.value = e.clientX;
-      // Clear lastTriggeredTarget on new drag to allow fresh detection
-      triageState.lastTriggeredTarget.value = null;
     };
 
     const handlePointerMove = (e: PointerEvent) => {
@@ -1937,8 +2205,6 @@ export default function InboxScreen() {
         runOnJS(logTouchDown)(touch.absoluteX, touch.absoluteY);
         triageState.startX.value = touch.absoluteX;
         triageState.fingerX.value = touch.absoluteX;
-        // Clear lastTriggeredTarget on new drag to allow fresh detection
-        triageState.lastTriggeredTarget.value = null;
       }
     })
     .onTouchesMove((e) => {
@@ -2045,7 +2311,6 @@ export default function InboxScreen() {
     <EmailRow
       item={item}
       index={index}
-      onSwipeToTodo={handleSwipeToTodo}
       onQuickReply={handleQuickReply}
       onAddToCalendar={handleAddToCalendar}
       sendingReplyFor={sendingReplyFor}
@@ -2056,7 +2321,7 @@ export default function InboxScreen() {
       isTriaged={triagedEmails.has(item._id)}
       triageAction={triagedEmails.get(item._id)}
     />
-  ), [handleSwipeToTodo, handleQuickReply, handleAddToCalendar, sendingReplyFor, recordingFor, addingCalendarFor, isRecording, transcript, triagedEmails]);
+  ), [handleQuickReply, handleAddToCalendar, sendingReplyFor, recordingFor, addingCalendarFor, isRecording, transcript, triagedEmails]);
 
   if (isLoading && emails.length === 0) {
     return (
@@ -2068,7 +2333,7 @@ export default function InboxScreen() {
 
   return (
     <ErrorBoundary>
-    <TriageContext.Provider value={triageState}>
+    <TriageProvider emails={emails} onTriage={handleTriage} triageRef={triageRef}>
       <GestureHandlerRootView style={styles.container}>
         {/* Header with refresh button on web */}
         {Platform.OS === "web" && (
@@ -2091,8 +2356,8 @@ export default function InboxScreen() {
           />
         )}
 
-        {/* Triage overlay - ball moves toward targets */}
-        <TriageOverlay showUnsubscribe={activeEmailIsSubscription} />
+        {/* Triage overlay - targets at top of screen */}
+        <NewTriageOverlay />
 
       {/* Swipe hint at top */}
       <View style={styles.swipeHintContainer}>
@@ -2121,78 +2386,20 @@ export default function InboxScreen() {
         )}
       </View>
 
-      <View
-        style={{ flex: 1 }}
-        onStartShouldSetResponderCapture={(e) => {
-          // Capture phase - fires before scroll takes over
-          const x = e.nativeEvent.pageX;
-          triageState.startX.value = x;
-          triageState.fingerX.value = x;
-          // Clear lastTriggeredTarget on new drag to allow fresh detection
-          triageState.lastTriggeredTarget.value = null;
-          return false; // Don't claim responder - let scroll work
-        }}
-        onMoveShouldSetResponderCapture={(e) => {
-          // Capture phase for moves - fires at full frequency!
-          triageState.fingerX.value = e.nativeEvent.pageX;
-          return false; // Don't claim responder - let scroll work
-        }}
-      >
-        <GestureDetector gesture={trackingGesture}>
-          <Animated.View
-            style={{ flex: 1 }}
-            onTouchEnd={handleNativeTouchEnd}
-          >
-            <FlatList
-            ref={flatListRef}
-            data={emails}
-            keyExtractor={(item) => item._id}
-            renderItem={renderEmailItem}
-            extraData={{ transcript, recordingFor, triagedEmails }}
-            // Note: getItemLayout removed to support variable height rows
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            Platform.OS !== "web" ? (
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={handleRefresh}
-                tintColor="#6366F1"
-              />
-            ) : undefined
-          }
-          onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.5}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>{searchQuery ? "🔍" : "📭"}</Text>
-              <Text style={styles.emptyText}>
-                {searchQuery ? "No results found" : "No emails yet"}
-              </Text>
-              <Text style={styles.emptySubtext}>
-                {searchQuery
-                  ? `No emails matching "${searchQuery}"`
-                  : Platform.OS === "web"
-                    ? "Click refresh to sync"
-                    : "Pull down to sync"}
-              </Text>
-            </View>
-          }
-          ListFooterComponent={
-            isSyncing || isSummarizing ? (
-              <View style={styles.loadingMore}>
-                <ActivityIndicator size="small" color="#6366F1" />
-                <Text style={styles.loadingMoreText}>
-                  {isSyncing ? "Syncing..." : "Summarizing with AI..."}
-                </Text>
-              </View>
-            ) : null
-          }
-            />
-          </Animated.View>
-        </GestureDetector>
-      </View>
+      {/* Email List - uses new triage context for gestures */}
+      <TriageListWrapper
+        flatListRef={flatListRef}
+        emails={emails}
+        renderItem={renderEmailItem}
+        extraData={{ transcript, recordingFor, triagedEmails }}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        onEndReached={handleLoadMore}
+        searchQuery={searchQuery}
+        isSyncing={isSyncing}
+        isSummarizing={isSummarizing}
+        onTouchEnd={handleNativeTouchEnd}
+      />
 
       {/* Compose FAB */}
       <TouchableOpacity style={styles.fab} onPress={() => router.push("/compose")}>
@@ -2212,13 +2419,19 @@ export default function InboxScreen() {
         >
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setReplyDraft(null)}>
+              <TouchableOpacity
+                onPress={() => setReplyDraft(null)}
+                style={styles.modalCancelButton}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
                 <Text style={styles.modalCancel}>Cancel</Text>
               </TouchableOpacity>
               <Text style={styles.modalTitle}>Review Reply</Text>
               <TouchableOpacity
                 onPress={handleSendReply}
                 disabled={sendingReplyFor !== null}
+                style={styles.modalSendButton}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 {sendingReplyFor ? (
                   <ActivityIndicator size="small" color="#6366F1" />
@@ -2267,7 +2480,7 @@ export default function InboxScreen() {
         </View>
       )}
       </GestureHandlerRootView>
-    </TriageContext.Provider>
+    </TriageProvider>
     </ErrorBoundary>
   );
 }
@@ -2607,9 +2820,17 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#1a1a1a",
   },
+  modalCancelButton: {
+    padding: 8,
+    marginLeft: -8,
+  },
   modalCancel: {
     fontSize: 16,
     color: "#666",
+  },
+  modalSendButton: {
+    padding: 8,
+    marginRight: -8,
   },
   modalSend: {
     fontSize: 16,
