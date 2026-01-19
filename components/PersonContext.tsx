@@ -22,6 +22,14 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
+export interface ContactFact {
+  id: string;
+  text: string;
+  source: "manual" | "ai";
+  createdAt: number;
+  sourceEmailId?: string;
+}
+
 export interface ContactData {
   _id: string;
   email: string;
@@ -31,6 +39,7 @@ export interface ContactData {
   lastEmailAt: number;
   relationship?: "vip" | "regular" | "unknown";
   relationshipSummary?: string;
+  facts?: ContactFact[];
 }
 
 export interface EmailPreview {
@@ -47,6 +56,9 @@ interface PersonContextProps {
   recentEmails: EmailPreview[];
   onEmailPress?: (emailId: string) => void;
   onRelationshipChange?: (relationship: "vip" | "regular" | "unknown") => void;
+  onAddFact?: () => void;
+  onEditFact?: (fact: ContactFact) => void;
+  onDeleteFact?: (factId: string) => void;
 }
 
 export function PersonContext({
@@ -54,6 +66,9 @@ export function PersonContext({
   recentEmails,
   onEmailPress,
   onRelationshipChange,
+  onAddFact,
+  onEditFact,
+  onDeleteFact,
 }: PersonContextProps) {
   const displayName = contact.name || contact.email;
   const initials = getInitials(displayName);
@@ -135,6 +150,48 @@ export function PersonContext({
           <Text style={styles.summaryText}>{contact.relationshipSummary}</Text>
         </View>
       )}
+
+      {/* Dossier facts */}
+      <View style={styles.dossierSection}>
+        <View style={styles.dossierHeader}>
+          <Text style={styles.sectionLabel}>Dossier</Text>
+          <TouchableOpacity style={styles.addButton} onPress={onAddFact}>
+            <Text style={styles.addButtonText}>+ Add</Text>
+          </TouchableOpacity>
+        </View>
+        {contact.facts && contact.facts.length > 0 ? (
+          contact.facts.map((fact) => (
+            <View key={fact.id} style={styles.factItem}>
+              <View style={styles.factContent}>
+                {fact.source === "ai" && (
+                  <View style={styles.aiBadge}>
+                    <Text style={styles.aiBadgeText}>AI</Text>
+                  </View>
+                )}
+                <Text style={styles.factText}>{fact.text}</Text>
+              </View>
+              <View style={styles.factActions}>
+                <TouchableOpacity
+                  style={styles.factActionButton}
+                  onPress={() => onEditFact?.(fact)}
+                >
+                  <Text style={styles.factActionText}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.factActionButton}
+                  onPress={() => onDeleteFact?.(fact.id)}
+                >
+                  <Text style={[styles.factActionText, styles.deleteText]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        ) : (
+          <Text style={styles.emptyText}>
+            No facts yet. Add facts to help the AI understand your relationship.
+          </Text>
+        )}
+      </View>
 
       {/* Recent emails */}
       <View style={styles.emailsSection}>
@@ -381,5 +438,75 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#999",
     marginTop: 4,
+  },
+  dossierSection: {
+    marginBottom: 24,
+  },
+  dossierHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  addButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "#6366F1",
+    borderRadius: 6,
+  },
+  addButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  factItem: {
+    backgroundColor: "#F8F9FA",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  factContent: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  aiBadge: {
+    backgroundColor: "#E0E4FF",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  aiBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#6366F1",
+  },
+  factText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#1a1a1a",
+    lineHeight: 20,
+  },
+  factActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 8,
+    gap: 12,
+  },
+  factActionButton: {
+    padding: 4,
+  },
+  factActionText: {
+    fontSize: 13,
+    color: "#6366F1",
+    fontWeight: "500",
+  },
+  deleteText: {
+    color: "#FF4444",
+  },
+  emptyText: {
+    fontSize: 14,
+    color: "#999",
+    fontStyle: "italic",
   },
 });
