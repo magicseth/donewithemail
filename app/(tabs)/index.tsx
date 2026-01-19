@@ -19,7 +19,7 @@ import {
 import { router, Stack, useFocusEffect } from "expo-router";
 import { useAction, useQuery, useMutation } from "convex/react";
 import { isAuthError, useAuthError } from "../../lib/AuthErrorBoundary";
-import { Audio } from "expo-av";
+import { useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
 import {
   GestureHandlerRootView,
@@ -278,42 +278,25 @@ import {
 
 // Sound feedback for mic actions
 const useMicSounds = () => {
-  const startSoundRef = useRef<Audio.Sound | null>(null);
-  const stopSoundRef = useRef<Audio.Sound | null>(null);
   const webStartAudioRef = useRef<HTMLAudioElement | null>(null);
   const webStopAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  useEffect(() => {
-    // Preload sounds
-    const loadSounds = async () => {
-      if (Platform.OS === "web") {
-        // Preload web audio
-        webStartAudioRef.current = new window.Audio(require("../../assets/sounds/micopen.wav"));
-        webStartAudioRef.current.load();
-        webStopAudioRef.current = new window.Audio(require("../../assets/sounds/micclose.wav"));
-        webStopAudioRef.current.load();
-      } else {
-        // Preload native sounds
-        try {
-          const { sound: startSound } = await Audio.Sound.createAsync(
-            require("../../assets/sounds/micopen.wav")
-          );
-          startSoundRef.current = startSound;
-          const { sound: stopSound } = await Audio.Sound.createAsync(
-            require("../../assets/sounds/micclose.wav")
-          );
-          stopSoundRef.current = stopSound;
-        } catch (e) {
-          console.log("Sound loading error:", e);
-        }
-      }
-    };
-    loadSounds();
+  // Use expo-audio players for native
+  const startPlayer = useAudioPlayer(
+    Platform.OS !== "web" ? require("../../assets/sounds/micopen.wav") : null
+  );
+  const stopPlayer = useAudioPlayer(
+    Platform.OS !== "web" ? require("../../assets/sounds/micclose.wav") : null
+  );
 
-    return () => {
-      startSoundRef.current?.unloadAsync();
-      stopSoundRef.current?.unloadAsync();
-    };
+  useEffect(() => {
+    // Preload web audio only
+    if (Platform.OS === "web") {
+      webStartAudioRef.current = new window.Audio(require("../../assets/sounds/micopen.wav"));
+      webStartAudioRef.current.load();
+      webStopAudioRef.current = new window.Audio(require("../../assets/sounds/micclose.wav"));
+      webStopAudioRef.current.load();
+    }
   }, []);
 
   const playStartSound = useCallback(async () => {
@@ -331,15 +314,13 @@ const useMicSounds = () => {
 
     try {
       // Play sound + haptic feedback
-      if (startSoundRef.current) {
-        await startSoundRef.current.setPositionAsync(0);
-        await startSoundRef.current.playAsync();
-      }
+      startPlayer.seekTo(0);
+      startPlayer.play();
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch (e) {
       console.log("Sound/haptic error:", e);
     }
-  }, []);
+  }, [startPlayer]);
 
   const playStopSound = useCallback(async () => {
     if (Platform.OS === "web") {
@@ -356,15 +337,13 @@ const useMicSounds = () => {
 
     try {
       // Play sound + haptic feedback
-      if (stopSoundRef.current) {
-        await stopSoundRef.current.setPositionAsync(0);
-        await stopSoundRef.current.playAsync();
-      }
+      stopPlayer.seekTo(0);
+      stopPlayer.play();
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
       console.log("Sound/haptic error:", e);
     }
-  }, []);
+  }, [stopPlayer]);
 
   return { playStartSound, playStopSound };
 };
