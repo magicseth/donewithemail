@@ -37,7 +37,7 @@ export default function ComposeScreen() {
 
   // Get AI suggested reply if available (only if no body was passed)
   const originalEmail = useQuery(
-    api.emails.getEmail,
+    api.emails.getMyEmail,
     emailId ? { emailId: emailId as Id<"emails"> } : "skip"
   );
 

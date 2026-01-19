@@ -30,16 +30,20 @@ interface User {
 interface StoredAuth {
   user: User;
   accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number; // Unix timestamp when access token expires
 }
 
 interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   user: User | null;
+  accessToken: string | null;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
   handleCallback: (code: string) => Promise<{ success: boolean; hasGmailAccess: boolean }>;
   redirectUri: string;
+  refreshAccessToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -78,16 +82,23 @@ const storage = {
   },
 };
 
+// Refresh buffer - refresh token 60 seconds before expiration
+const REFRESH_BUFFER_MS = 60 * 1000;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Get auth URL from Convex - pass the Expo-generated redirect URI
   const authUrl = useQuery(api.auth.getAuthUrl, { redirectUri: REDIRECT_URI });
 
-  // Authenticate action
+  // Auth actions
   const authenticate = useAction(api.auth.authenticate);
+  const refreshTokenAction = useAction(api.auth.refreshToken);
 
   // Load stored auth on mount
   useEffect(() => {
@@ -98,6 +109,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const parsed: StoredAuth = JSON.parse(stored);
           setUser(parsed.user);
           setAccessToken(parsed.accessToken);
+          setRefreshToken(parsed.refreshToken || null);
+          setExpiresAt(parsed.expiresAt || null);
         }
       } catch (e) {
         console.error("Failed to load stored auth:", e);
@@ -107,11 +120,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loadAuth();
   }, []);
 
-  // Save auth to storage
-  const saveAuth = useCallback(async (userData: User, token: string) => {
-    await storage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ user: userData, accessToken: token }));
+  // Save auth to storage (with refresh token and expiration)
+  const saveAuth = useCallback(async (
+    userData: User,
+    token: string,
+    refresh?: string,
+    expiresIn?: number
+  ) => {
+    const expTime = expiresIn ? Date.now() + (expiresIn * 1000) : undefined;
+    await storage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+      user: userData,
+      accessToken: token,
+      refreshToken: refresh,
+      expiresAt: expTime,
+    }));
     setUser(userData);
     setAccessToken(token);
+    setRefreshToken(refresh || null);
+    setExpiresAt(expTime || null);
   }, []);
 
   // Clear auth
@@ -169,7 +195,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const result = await authenticate({ code });
 
         if (result.success && result.user) {
-          await saveAuth(result.user, result.accessToken);
+          await saveAuth(
+            result.user,
+            result.accessToken,
+            result.refreshToken,
+            result.expiresIn
+          );
           return { success: true, hasGmailAccess: result.hasGmailAccess };
         }
 
@@ -184,16 +215,83 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [authenticate, saveAuth]
   );
 
+  // Refresh access token using refresh token
+  const refreshAccessToken = useCallback(async (): Promise<string | null> => {
+    if (!refreshToken || isRefreshing) {
+      console.log("[Auth] Cannot refresh: no refresh token or already refreshing");
+      return accessToken;
+    }
+
+    console.log("[Auth] Refreshing access token...");
+    setIsRefreshing(true);
+
+    try {
+      const result = await refreshTokenAction({ refreshToken });
+
+      if (result.success) {
+        // Update stored auth with new tokens
+        const stored = await storage.getItem(AUTH_STORAGE_KEY);
+        if (stored) {
+          const parsed: StoredAuth = JSON.parse(stored);
+          const newExpiresAt = Date.now() + (result.expiresIn * 1000);
+          await storage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+            ...parsed,
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken,
+            expiresAt: newExpiresAt,
+          }));
+          setAccessToken(result.accessToken);
+          setRefreshToken(result.refreshToken);
+          setExpiresAt(newExpiresAt);
+          console.log("[Auth] Token refreshed successfully, expires at:", new Date(newExpiresAt).toISOString());
+          return result.accessToken;
+        }
+      }
+      return null;
+    } catch (e) {
+      console.error("[Auth] Token refresh failed:", e);
+      // If refresh fails, sign out
+      await clearAuth();
+      return null;
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refreshToken, isRefreshing, accessToken, refreshTokenAction, clearAuth]);
+
+  // Auto-refresh token before expiration
+  useEffect(() => {
+    if (!expiresAt || !refreshToken || !user) return;
+
+    const timeUntilExpiry = expiresAt - Date.now();
+    const timeUntilRefresh = timeUntilExpiry - REFRESH_BUFFER_MS;
+
+    if (timeUntilRefresh <= 0) {
+      // Token is expired or about to expire, refresh now
+      console.log("[Auth] Token expired or expiring soon, refreshing...");
+      refreshAccessToken();
+      return;
+    }
+
+    console.log(`[Auth] Scheduling token refresh in ${Math.round(timeUntilRefresh / 1000)}s`);
+    const timer = setTimeout(() => {
+      refreshAccessToken();
+    }, timeUntilRefresh);
+
+    return () => clearTimeout(timer);
+  }, [expiresAt, refreshToken, user, refreshAccessToken]);
+
   return (
     <AuthContext.Provider
       value={{
         isLoading,
         isAuthenticated: !!user,
         user,
+        accessToken,
         signIn,
         signOut,
         handleCallback,
         redirectUri: REDIRECT_URI,
+        refreshAccessToken,
       }}
     >
       {children}

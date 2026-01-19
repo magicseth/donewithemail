@@ -1,73 +1,59 @@
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { useCallback } from "react";
 
 /**
- * Hook for fetching untriaged emails for the feed view
+ * Hook for fetching untriaged emails for the feed view (authenticated)
  */
-export function useUntriagedEmails(userId: Id<"users"> | undefined) {
+export function useUntriagedEmails() {
+  const { isAuthenticated, isLoading } = useConvexAuth();
+  // Skip query until Convex auth is ready
   return useQuery(
-    api.emails.getUntriagedEmails,
-    userId ? { userId, limit: 20 } : "skip"
+    api.emails.getMyUntriagedEmails,
+    isAuthenticated && !isLoading ? { limit: 20 } : "skip"
   );
 }
 
 /**
- * Hook for fetching inbox emails
+ * Hook for fetching TODO emails (reply_needed) (authenticated)
  */
-export function useInboxEmails(userId: Id<"users"> | undefined) {
+export function useTodoEmails() {
+  const { isAuthenticated, isLoading } = useConvexAuth();
+  // Skip query until Convex auth is ready
   return useQuery(
-    api.emails.getInboxEmails,
-    userId ? { userId, limit: 50 } : "skip"
+    api.emails.getMyTodoEmails,
+    isAuthenticated && !isLoading ? { limit: 50 } : "skip"
   );
 }
 
 /**
- * Hook for fetching a single email by Convex ID
+ * Hook for fetching a single email by Convex ID (authenticated)
  */
 export function useEmail(emailId: Id<"emails"> | undefined) {
+  const { isAuthenticated, isLoading } = useConvexAuth();
   return useQuery(
-    api.emails.getEmail,
-    emailId ? { emailId } : "skip"
+    api.emails.getMyEmail,
+    emailId && isAuthenticated && !isLoading ? { emailId } : "skip"
   );
 }
 
 /**
- * Hook for fetching a single email by external ID (Gmail ID)
- */
-export function useEmailByExternalId(externalId: string | undefined) {
-  return useQuery(
-    api.emails.getEmailByExternalId,
-    externalId ? { externalId, provider: "gmail" } : "skip"
-  );
-}
-
-/**
- * Hook for fetching emails from a specific contact
- */
-export function useEmailsByContact(contactId: Id<"contacts"> | undefined) {
-  return useQuery(
-    api.emails.getEmailsByContact,
-    contactId ? { contactId, limit: 50 } : "skip"
-  );
-}
-
-/**
- * Hook for fetching all emails in a thread
+ * Hook for fetching all emails in a thread (authenticated)
  */
 export function useThreadEmails(emailId: Id<"emails"> | undefined) {
+  const { isAuthenticated, isLoading } = useConvexAuth();
   return useQuery(
-    api.emails.getThreadEmails,
-    emailId ? { emailId } : "skip"
+    api.emails.getMyThreadEmails,
+    emailId && isAuthenticated && !isLoading ? { emailId } : "skip"
   );
 }
 
 /**
- * Hook for email triage actions
+ * Hook for email triage actions (authenticated)
  */
 export function useTriageEmail() {
-  const triageMutation = useMutation(api.emails.triageEmail);
+  const triageMutation = useMutation(api.emails.triageMyEmail);
 
   const triageEmail = useCallback(
     async (
@@ -83,10 +69,10 @@ export function useTriageEmail() {
 }
 
 /**
- * Hook for marking email as read
+ * Hook for marking email as read (authenticated)
  */
 export function useMarkAsRead() {
-  const markAsReadMutation = useMutation(api.emails.markAsRead);
+  const markAsReadMutation = useMutation(api.emails.markMyEmailAsRead);
 
   const markAsRead = useCallback(
     async (emailId: Id<"emails">) => {
@@ -99,42 +85,32 @@ export function useMarkAsRead() {
 }
 
 /**
- * Hook for triaging by external ID (Gmail ID)
+ * Hook for searching emails (authenticated)
  */
-export function useTriageByExternalId() {
-  const triageMutation = useMutation(api.emails.triageEmailByExternalId);
-
-  const triageByExternalId = useCallback(
-    async (
-      externalId: string,
-      action: "done" | "reply_needed" | "delegated"
-    ) => {
-      return triageMutation({ externalId, action });
+export function useSearchEmails() {
+  // Note: This returns a mutation-like function that can be called with search query
+  // For actual search results, use useQuery with api.emails.searchMyEmails
+  return {
+    searchEmails: async (searchQuery: string, limit?: number) => {
+      // This is a placeholder - actual implementation would use the query
+      return [];
     },
-    [triageMutation]
-  );
-
-  return { triageByExternalId };
+  };
 }
 
 /**
- * Combined hook for email actions
+ * Combined hook for email actions (authenticated)
  */
 export function useEmailActions() {
   const { triageEmail } = useTriageEmail();
-  const { triageByExternalId } = useTriageByExternalId();
   const { markAsRead } = useMarkAsRead();
 
   return {
     triageEmail,
-    triageByExternalId,
     markAsRead,
     // Convenience methods for swipe actions
     archiveEmail: (emailId: Id<"emails">) => triageEmail(emailId, "done"),
     markReplyNeeded: (emailId: Id<"emails">) => triageEmail(emailId, "reply_needed"),
     delegateEmail: (emailId: Id<"emails">) => triageEmail(emailId, "delegated"),
-    // External ID versions
-    archiveByExternalId: (externalId: string) => triageByExternalId(externalId, "done"),
-    markReplyNeededByExternalId: (externalId: string) => triageByExternalId(externalId, "reply_needed"),
   };
 }

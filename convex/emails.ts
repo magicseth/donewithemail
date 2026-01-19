@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { mutation, query, internalQuery, DatabaseReader } from "./_generated/server";
+import { mutation, internalQuery, DatabaseReader } from "./_generated/server";
+import { authedQuery, authedMutation } from "./functions";
 import { Id } from "./_generated/dataModel";
 
 // Helper to fetch summary for an email
@@ -11,563 +12,25 @@ async function getSummaryForEmail(db: DatabaseReader, emailId: Id<"emails">) {
   return summary;
 }
 
-/**
- * Get untriaged emails for the inbox view - ordered newest first
- */
-export const getUntriagedEmails = query({
-  args: {
-    userId: v.id("users"),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const limit = args.limit ?? 50;
-
-    const rawEmails = await ctx.db
-      .query("emails")
-      .withIndex("by_user_untriaged", (q) =>
-        q.eq("userId", args.userId).eq("isTriaged", false)
-      )
-      .order("desc") // Newest first
-      .take(limit * 2); // Fetch extra to account for filtering
-
-    // Filter out outgoing emails - no need to triage emails you sent
-    const emails = rawEmails
-      .filter((e) => e.direction !== "outgoing")
-      .slice(0, limit);
-
-    // Fetch contact info and summary for each email
-    const emailsWithData = await Promise.all(
-      emails.map(async (email) => {
-        const fromContact = await ctx.db.get(email.from);
-        const summaryData = await getSummaryForEmail(ctx.db, email._id);
-        return {
-          ...email,
-          fromContact,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          urgencyReason: summaryData?.urgencyReason,
-          suggestedReply: summaryData?.suggestedReply,
-          actionRequired: summaryData?.actionRequired,
-          actionDescription: summaryData?.actionDescription,
-          quickReplies: summaryData?.quickReplies,
-          calendarEvent: summaryData?.calendarEvent,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-          aiProcessedAt: summaryData?.createdAt,
-        };
-      })
-    );
-
-    return emailsWithData;
-  },
-});
+// =============================================================================
+// INTERNAL FUNCTIONS (used by workflows, sync, etc.)
+// =============================================================================
 
 /**
- * Get untriaged emails by user email - ordered newest first
- *
- * sessionStart: If provided, also includes emails that were triaged AFTER this timestamp.
- * This allows items triaged during the current session to stay visible until tab switch.
+ * Get a single email by ID (internal, for actions)
  */
-export const getUntriagedByEmail = query({
+export const getEmailById = internalQuery({
   args: {
-    email: v.string(),
-    limit: v.optional(v.number()),
-    sessionStart: v.optional(v.number()),
+    emailId: v.string(),
   },
   handler: async (ctx, args) => {
-    // Find user by email
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
-      .first();
-
-    if (!user) {
-      return [];
+    try {
+      const id = args.emailId as Id<"emails">;
+      const email = await ctx.db.get(id);
+      return email;
+    } catch {
+      return null;
     }
-
-    const limit = args.limit ?? 50;
-
-    // Get untriaged emails (fetch extra to account for filtering)
-    const rawUntriagedEmails = await ctx.db
-      .query("emails")
-      .withIndex("by_user_untriaged", (q) =>
-        q.eq("userId", user._id).eq("isTriaged", false)
-      )
-      .order("desc")
-      .take(limit * 2);
-
-    // Filter out outgoing emails - no need to triage emails you sent
-    const untriagedEmails = rawUntriagedEmails.filter(
-      (e) => e.direction !== "outgoing"
-    );
-
-    // If sessionStart provided, also get emails triaged after that time
-    let recentlyTriagedEmails: typeof untriagedEmails = [];
-    if (args.sessionStart) {
-      const rawRecentlyTriaged = await ctx.db
-        .query("emails")
-        .withIndex("by_user_triaged_at", (q) =>
-          q.eq("userId", user._id).gt("triagedAt", args.sessionStart)
-        )
-        .collect();
-      // Also filter out outgoing from recently triaged
-      recentlyTriagedEmails = rawRecentlyTriaged.filter(
-        (e) => e.direction !== "outgoing"
-      );
-    }
-
-    // Merge and dedupe (in case of race conditions)
-    const emailMap = new Map<string, typeof untriagedEmails[0]>();
-    for (const email of untriagedEmails) {
-      emailMap.set(email._id, email);
-    }
-    for (const email of recentlyTriagedEmails) {
-      if (!emailMap.has(email._id)) {
-        emailMap.set(email._id, email);
-      }
-    }
-
-    // Sort by receivedAt descending (newest first)
-    const emails = Array.from(emailMap.values()).sort(
-      (a, b) => b.receivedAt - a.receivedAt
-    );
-
-    // Apply limit after merge
-    const limitedEmails = emails.slice(0, limit);
-
-    const emailsWithData = await Promise.all(
-      limitedEmails.map(async (email) => {
-        const fromContact = await ctx.db.get(email.from);
-        const summaryData = await getSummaryForEmail(ctx.db, email._id);
-        return {
-          ...email,
-          fromContact,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          urgencyReason: summaryData?.urgencyReason,
-          suggestedReply: summaryData?.suggestedReply,
-          actionRequired: summaryData?.actionRequired,
-          actionDescription: summaryData?.actionDescription,
-          quickReplies: summaryData?.quickReplies,
-          calendarEvent: summaryData?.calendarEvent,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-          aiProcessedAt: summaryData?.createdAt,
-        };
-      })
-    );
-
-    return emailsWithData;
-  },
-});
-
-/**
- * Get all emails for traditional inbox view
- */
-export const getInboxEmails = query({
-  args: {
-    userId: v.id("users"),
-    limit: v.optional(v.number()),
-    cursor: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const limit = args.limit ?? 50;
-
-    const emails = await ctx.db
-      .query("emails")
-      .withIndex("by_user_received", (q) => q.eq("userId", args.userId))
-      .order("desc")
-      .take(limit);
-
-    const emailsWithData = await Promise.all(
-      emails.map(async (email) => {
-        const fromContact = await ctx.db.get(email.from);
-        const summaryData = await getSummaryForEmail(ctx.db, email._id);
-        return {
-          ...email,
-          fromContact,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          urgencyReason: summaryData?.urgencyReason,
-          suggestedReply: summaryData?.suggestedReply,
-          actionRequired: summaryData?.actionRequired,
-          actionDescription: summaryData?.actionDescription,
-          quickReplies: summaryData?.quickReplies,
-          calendarEvent: summaryData?.calendarEvent,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-          aiProcessedAt: summaryData?.createdAt,
-        };
-      })
-    );
-
-    return emailsWithData;
-  },
-});
-
-/**
- * Get inbox emails by user email (for fast cache-first loading)
- * Groups emails by thread and returns the most recent email per thread
- */
-export const getInboxByEmail = query({
-  args: {
-    email: v.string(),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    // Find user by email
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
-      .first();
-
-    if (!user) {
-      return [];
-    }
-
-    const limit = args.limit ?? 50;
-
-    // Fetch more emails to account for thread grouping
-    const emails = await ctx.db
-      .query("emails")
-      .withIndex("by_user_received", (q) => q.eq("userId", user._id))
-      .order("desc")
-      .take(limit * 3); // Fetch extra to ensure enough unique threads
-
-    // Group emails by threadId (or use email._id if no threadId)
-    const threadMap = new Map<string, typeof emails>();
-    for (const email of emails) {
-      const threadKey = email.threadId || email._id;
-      if (!threadMap.has(threadKey)) {
-        threadMap.set(threadKey, []);
-      }
-      threadMap.get(threadKey)!.push(email);
-    }
-
-    // Get the most recent email per thread (first in each group since sorted desc)
-    const latestPerThread = Array.from(threadMap.values())
-      .map(threadEmails => ({
-        email: threadEmails[0], // Most recent
-        threadCount: threadEmails.length,
-      }))
-      .slice(0, limit); // Apply limit after grouping
-
-    const emailsWithData = await Promise.all(
-      latestPerThread.map(async ({ email, threadCount }) => {
-        const fromContact = await ctx.db.get(email.from);
-        const summaryData = await getSummaryForEmail(ctx.db, email._id);
-        return {
-          ...email,
-          threadCount,
-          fromContact,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          urgencyReason: summaryData?.urgencyReason,
-          suggestedReply: summaryData?.suggestedReply,
-          actionRequired: summaryData?.actionRequired,
-          actionDescription: summaryData?.actionDescription,
-          quickReplies: summaryData?.quickReplies,
-          calendarEvent: summaryData?.calendarEvent,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-          aiProcessedAt: summaryData?.createdAt,
-        };
-      })
-    );
-
-    return emailsWithData;
-  },
-});
-
-/**
- * Get a single email by ID
- */
-export const getEmail = query({
-  args: {
-    emailId: v.id("emails"),
-  },
-  handler: async (ctx, args) => {
-    const email = await ctx.db.get(args.emailId);
-    if (!email) return null;
-
-    const fromContact = await ctx.db.get(email.from);
-    const toContacts = await Promise.all(
-      email.to.map((id) => ctx.db.get(id))
-    );
-    const summaryData = await getSummaryForEmail(ctx.db, email._id);
-
-    return {
-      ...email,
-      fromContact,
-      toContacts: toContacts.filter(Boolean),
-      summary: summaryData?.summary,
-      urgencyScore: summaryData?.urgencyScore,
-      urgencyReason: summaryData?.urgencyReason,
-      suggestedReply: summaryData?.suggestedReply,
-      calendarEvent: summaryData?.calendarEvent,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-      aiProcessedAt: summaryData?.createdAt,
-    };
-  },
-});
-
-/**
- * Get all emails in a thread
- */
-export const getThreadEmails = query({
-  args: {
-    emailId: v.id("emails"),
-  },
-  handler: async (ctx, args) => {
-    const email = await ctx.db.get(args.emailId);
-    if (!email) return [];
-
-    // If no threadId, just return this email
-    if (!email.threadId) {
-      const fromContact = await ctx.db.get(email.from);
-      const summaryData = await getSummaryForEmail(ctx.db, email._id);
-      return [{
-        ...email,
-        fromContact,
-        summary: summaryData?.summary,
-        urgencyScore: summaryData?.urgencyScore,
-        urgencyReason: summaryData?.urgencyReason,
-        suggestedReply: summaryData?.suggestedReply,
-        calendarEvent: summaryData?.calendarEvent,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-        aiProcessedAt: summaryData?.createdAt,
-      }];
-    }
-
-    // Get all emails in this thread
-    const threadEmails = await ctx.db
-      .query("emails")
-      .withIndex("by_thread", (q) => q.eq("userId", email.userId).eq("threadId", email.threadId))
-      .order("asc") // Oldest first for thread view
-      .collect();
-
-    const emailsWithData = await Promise.all(
-      threadEmails.map(async (e) => {
-        const fromContact = await ctx.db.get(e.from);
-        const summaryData = await getSummaryForEmail(ctx.db, e._id);
-        return {
-          ...e,
-          fromContact,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          urgencyReason: summaryData?.urgencyReason,
-          suggestedReply: summaryData?.suggestedReply,
-          calendarEvent: summaryData?.calendarEvent,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-          aiProcessedAt: summaryData?.createdAt,
-        };
-      })
-    );
-
-    return emailsWithData;
-  },
-});
-
-/**
- * Get a single email by external ID (e.g., Gmail message ID)
- */
-export const getEmailByExternalId = query({
-  args: {
-    externalId: v.string(),
-    provider: v.optional(v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap"))),
-  },
-  handler: async (ctx, args) => {
-    const provider = args.provider ?? "gmail";
-
-    const email = await ctx.db
-      .query("emails")
-      .withIndex("by_external_id", (q) =>
-        q.eq("externalId", args.externalId).eq("provider", provider)
-      )
-      .first();
-
-    if (!email) return null;
-
-    const fromContact = await ctx.db.get(email.from);
-    const toContacts = await Promise.all(
-      email.to.map((id) => ctx.db.get(id))
-    );
-    const summaryData = await getSummaryForEmail(ctx.db, email._id);
-
-    return {
-      ...email,
-      fromContact,
-      toContacts: toContacts.filter(Boolean),
-      summary: summaryData?.summary,
-      urgencyScore: summaryData?.urgencyScore,
-      urgencyReason: summaryData?.urgencyReason,
-      suggestedReply: summaryData?.suggestedReply,
-      calendarEvent: summaryData?.calendarEvent,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-      aiProcessedAt: summaryData?.createdAt,
-    };
-  },
-});
-
-/**
- * Get emails from a specific contact
- */
-export const getEmailsByContact = query({
-  args: {
-    contactId: v.id("contacts"),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const limit = args.limit ?? 50;
-
-    const emails = await ctx.db
-      .query("emails")
-      .withIndex("by_from", (q) => q.eq("from", args.contactId))
-      .order("desc")
-      .take(limit);
-
-    // Add summary data to each email
-    const emailsWithData = await Promise.all(
-      emails.map(async (email) => {
-        const summaryData = await getSummaryForEmail(ctx.db, email._id);
-        return {
-          ...email,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          urgencyReason: summaryData?.urgencyReason,
-          suggestedReply: summaryData?.suggestedReply,
-          aiProcessedAt: summaryData?.createdAt,
-        };
-      })
-    );
-
-    return emailsWithData;
-  },
-});
-
-/**
- * Triage an email (swipe action)
- */
-export const triageEmail = mutation({
-  args: {
-    emailId: v.id("emails"),
-    action: v.union(
-      v.literal("done"),
-      v.literal("reply_needed"),
-      v.literal("delegated")
-    ),
-  },
-  handler: async (ctx, args) => {
-    // Fetch email to log subject
-    const email = await ctx.db.get(args.emailId);
-    if (email) {
-      console.log(`[Triage] Action: ${args.action} | Subject: "${email.subject}" | ID: ${args.emailId}`);
-    }
-
-    await ctx.db.patch(args.emailId, {
-      isTriaged: true,
-      triageAction: args.action,
-      triagedAt: Date.now(),
-    });
-
-    return { success: true };
-  },
-});
-
-/**
- * Reset all triaged emails back to untriaged (for testing)
- */
-export const untriagedAllEmails = mutation({
-  args: {
-    userEmail: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    // Get all triaged emails for this user
-    const triagedEmails = await ctx.db
-      .query("emails")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .filter((q) => q.eq(q.field("isTriaged"), true))
-      .collect();
-
-    // Reset each one
-    let count = 0;
-    for (const email of triagedEmails) {
-      await ctx.db.patch(email._id, {
-        isTriaged: false,
-        triageAction: undefined,
-        triagedAt: undefined,
-      });
-      count++;
-    }
-
-    console.log(`[Untriage] Reset ${count} emails for ${args.userEmail}`);
-    return { success: true, count };
-  },
-});
-
-/**
- * Triage an email by external ID (Gmail ID)
- */
-export const triageEmailByExternalId = mutation({
-  args: {
-    externalId: v.string(),
-    provider: v.optional(v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap"))),
-    action: v.union(
-      v.literal("done"),
-      v.literal("reply_needed"),
-      v.literal("delegated")
-    ),
-  },
-  handler: async (ctx, args) => {
-    const provider = args.provider ?? "gmail";
-
-    const email = await ctx.db
-      .query("emails")
-      .withIndex("by_external_id", (q) =>
-        q.eq("externalId", args.externalId).eq("provider", provider)
-      )
-      .first();
-
-    if (!email) {
-      throw new Error(`Email not found: ${args.externalId}`);
-    }
-
-    await ctx.db.patch(email._id, {
-      isTriaged: true,
-      triageAction: args.action,
-      triagedAt: Date.now(),
-    });
-
-    return { success: true, emailId: email._id };
-  },
-});
-
-/**
- * Mark email as read
- */
-export const markAsRead = mutation({
-  args: {
-    emailId: v.id("emails"),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.emailId, {
-      isRead: true,
-    });
-
-    return { success: true };
   },
 });
 
@@ -618,30 +81,96 @@ export const storeEmail = mutation({
   },
 });
 
+// =============================================================================
+// AUTHENTICATED ENDPOINTS (require valid JWT)
+// =============================================================================
+
 /**
- * Get a single email by ID (internal, for actions)
+ * Get untriaged emails for the current user's inbox
  */
-export const getEmailById = internalQuery({
+export const getMyUntriagedEmails = authedQuery({
   args: {
-    emailId: v.string(),
+    limit: v.optional(v.number()),
+    sessionStart: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    try {
-      const id = args.emailId as Id<"emails">;
-      const email = await ctx.db.get(id);
-      return email;
-    } catch {
-      return null;
+    const limit = args.limit ?? 50;
+
+    // Get untriaged emails for authenticated user
+    const rawUntriagedEmails = await ctx.db
+      .query("emails")
+      .withIndex("by_user_untriaged", (q) =>
+        q.eq("userId", ctx.userId).eq("isTriaged", false)
+      )
+      .order("desc")
+      .take(limit * 2);
+
+    // Filter out outgoing emails
+    const untriagedEmails = rawUntriagedEmails.filter(
+      (e) => e.direction !== "outgoing"
+    );
+
+    // If sessionStart provided, also get recently triaged emails
+    let recentlyTriagedEmails: typeof untriagedEmails = [];
+    if (args.sessionStart) {
+      const rawRecentlyTriaged = await ctx.db
+        .query("emails")
+        .withIndex("by_user_triaged_at", (q) =>
+          q.eq("userId", ctx.userId).gt("triagedAt", args.sessionStart)
+        )
+        .collect();
+      recentlyTriagedEmails = rawRecentlyTriaged.filter(
+        (e) => e.direction !== "outgoing"
+      );
     }
+
+    // Merge and dedupe
+    const emailMap = new Map<string, (typeof untriagedEmails)[0]>();
+    for (const email of untriagedEmails) {
+      emailMap.set(email._id, email);
+    }
+    for (const email of recentlyTriagedEmails) {
+      if (!emailMap.has(email._id)) {
+        emailMap.set(email._id, email);
+      }
+    }
+
+    const emails = Array.from(emailMap.values())
+      .sort((a, b) => b.receivedAt - a.receivedAt)
+      .slice(0, limit);
+
+    // Fetch contact and summary data
+    const emailsWithData = await Promise.all(
+      emails.map(async (email) => {
+        const fromContact = await ctx.db.get(email.from);
+        const summaryData = await getSummaryForEmail(ctx.db, email._id);
+        return {
+          ...email,
+          fromContact,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: summaryData?.urgencyReason,
+          suggestedReply: summaryData?.suggestedReply,
+          actionRequired: summaryData?.actionRequired,
+          actionDescription: summaryData?.actionDescription,
+          quickReplies: summaryData?.quickReplies,
+          calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
+          aiProcessedAt: summaryData?.createdAt,
+        };
+      })
+    );
+
+    return emailsWithData;
   },
 });
 
 /**
- * Get TODO emails (triaged with reply_needed action) - ordered newest first
+ * Get TODO emails (reply_needed) for current user
  */
-export const getTodoEmails = query({
+export const getMyTodoEmails = authedQuery({
   args: {
-    userId: v.id("users"),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -649,8 +178,8 @@ export const getTodoEmails = query({
 
     const emails = await ctx.db
       .query("emails")
-      .withIndex("by_user_received", (q) => q.eq("userId", args.userId))
-      .order("desc") // Newest first
+      .withIndex("by_user_received", (q) => q.eq("userId", ctx.userId))
+      .order("desc")
       .filter((q) => q.eq(q.field("triageAction"), "reply_needed"))
       .take(limit);
 
@@ -681,65 +210,109 @@ export const getTodoEmails = query({
 });
 
 /**
- * Get TODO emails by user email - ordered newest first
+ * Get a single email by ID (with ownership check)
  */
-export const getTodosByEmail = query({
+export const getMyEmail = authedQuery({
   args: {
-    email: v.string(),
-    limit: v.optional(v.number()),
+    emailId: v.id("emails"),
   },
   handler: async (ctx, args) => {
-    // Find user by email
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
-      .first();
+    const email = await ctx.db.get(args.emailId);
+    if (!email) return null;
 
-    if (!user) {
-      return [];
+    // Verify ownership
+    if (email.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Email does not belong to you");
     }
 
-    const limit = args.limit ?? 50;
-
-    const emails = await ctx.db
-      .query("emails")
-      .withIndex("by_user_received", (q) => q.eq("userId", user._id))
-      .order("desc") // Newest first
-      .filter((q) => q.eq(q.field("triageAction"), "reply_needed"))
-      .take(limit);
-
-    const emailsWithData = await Promise.all(
-      emails.map(async (email) => {
-        const fromContact = await ctx.db.get(email.from);
-        const summaryData = await getSummaryForEmail(ctx.db, email._id);
-        return {
-          ...email,
-          fromContact,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          urgencyReason: summaryData?.urgencyReason,
-          suggestedReply: summaryData?.suggestedReply,
-          actionRequired: summaryData?.actionRequired,
-          actionDescription: summaryData?.actionDescription,
-          quickReplies: summaryData?.quickReplies,
-          calendarEvent: summaryData?.calendarEvent,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-          aiProcessedAt: summaryData?.createdAt,
-        };
-      })
+    const fromContact = await ctx.db.get(email.from);
+    const toContacts = await Promise.all(
+      email.to.map((id) => ctx.db.get(id))
     );
+    const summaryData = await getSummaryForEmail(ctx.db, email._id);
 
-    return emailsWithData;
+    return {
+      ...email,
+      fromContact,
+      toContacts: toContacts.filter(Boolean),
+      summary: summaryData?.summary,
+      urgencyScore: summaryData?.urgencyScore,
+      urgencyReason: summaryData?.urgencyReason,
+      suggestedReply: summaryData?.suggestedReply,
+      calendarEvent: summaryData?.calendarEvent,
+      calendarEventId: summaryData?.calendarEventId,
+      calendarEventLink: summaryData?.calendarEventLink,
+      aiProcessedAt: summaryData?.createdAt,
+    };
   },
 });
 
 /**
- * Search emails by subject
+ * Triage an email (with ownership check)
  */
-export const searchEmails = query({
+export const triageMyEmail = authedMutation({
   args: {
-    email: v.string(),
+    emailId: v.id("emails"),
+    action: v.union(
+      v.literal("done"),
+      v.literal("reply_needed"),
+      v.literal("delegated")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const email = await ctx.db.get(args.emailId);
+    if (!email) {
+      throw new Error("Email not found");
+    }
+
+    // Verify ownership
+    if (email.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Email does not belong to you");
+    }
+
+    console.log(`[Triage] Action: ${args.action} | Subject: "${email.subject}" | ID: ${args.emailId}`);
+
+    await ctx.db.patch(args.emailId, {
+      isTriaged: true,
+      triageAction: args.action,
+      triagedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Mark email as read (with ownership check)
+ */
+export const markMyEmailAsRead = authedMutation({
+  args: {
+    emailId: v.id("emails"),
+  },
+  handler: async (ctx, args) => {
+    const email = await ctx.db.get(args.emailId);
+    if (!email) {
+      throw new Error("Email not found");
+    }
+
+    // Verify ownership
+    if (email.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Email does not belong to you");
+    }
+
+    await ctx.db.patch(args.emailId, {
+      isRead: true,
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Search emails for current user
+ */
+export const searchMyEmails = authedQuery({
+  args: {
     searchQuery: v.string(),
     limit: v.optional(v.number()),
   },
@@ -748,27 +321,15 @@ export const searchEmails = query({
       return [];
     }
 
-    // Find user by email
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
-      .first();
-
-    if (!user) {
-      return [];
-    }
-
     const limit = args.limit ?? 20;
 
-    // Search using the search index
     const emails = await ctx.db
       .query("emails")
       .withSearchIndex("search_content", (q) =>
-        q.search("subject", args.searchQuery).eq("userId", user._id)
+        q.search("subject", args.searchQuery).eq("userId", ctx.userId)
       )
       .take(limit);
 
-    // Fetch contact info and summary for each email
     const emailsWithData = await Promise.all(
       emails.map(async (email) => {
         const fromContact = await ctx.db.get(email.from);
@@ -796,32 +357,83 @@ export const searchEmails = query({
 });
 
 /**
- * DEBUG: Reset all emails to untriaged state
+ * Get all emails in a thread (with ownership check)
  */
-export const resetAllToUntriaged = mutation({
+export const getMyThreadEmails = authedQuery({
   args: {
-    userEmail: v.string(),
+    emailId: v.id("emails"),
   },
   handler: async (ctx, args) => {
-    // Find user by email
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
-      .first();
+    const email = await ctx.db.get(args.emailId);
+    if (!email) return [];
 
-    if (!user) {
-      throw new Error("User not found");
+    // Verify ownership
+    if (email.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Email does not belong to you");
     }
 
-    // Get all triaged emails for this user
-    const triagedEmails = await ctx.db
+    // If no threadId, just return this email
+    if (!email.threadId) {
+      const fromContact = await ctx.db.get(email.from);
+      const summaryData = await getSummaryForEmail(ctx.db, email._id);
+      return [{
+        ...email,
+        fromContact,
+        summary: summaryData?.summary,
+        urgencyScore: summaryData?.urgencyScore,
+        urgencyReason: summaryData?.urgencyReason,
+        suggestedReply: summaryData?.suggestedReply,
+        calendarEvent: summaryData?.calendarEvent,
+        calendarEventId: summaryData?.calendarEventId,
+        calendarEventLink: summaryData?.calendarEventLink,
+        aiProcessedAt: summaryData?.createdAt,
+      }];
+    }
+
+    // Get all emails in this thread (already scoped to user via index)
+    const threadEmails = await ctx.db
       .query("emails")
-      .withIndex("by_user_untriaged", (q) =>
-        q.eq("userId", user._id).eq("isTriaged", true)
-      )
+      .withIndex("by_thread", (q) => q.eq("userId", ctx.userId).eq("threadId", email.threadId))
+      .order("asc")
       .collect();
 
-    // Reset each email
+    const emailsWithData = await Promise.all(
+      threadEmails.map(async (e) => {
+        const fromContact = await ctx.db.get(e.from);
+        const summaryData = await getSummaryForEmail(ctx.db, e._id);
+        return {
+          ...e,
+          fromContact,
+          summary: summaryData?.summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: summaryData?.urgencyReason,
+          suggestedReply: summaryData?.suggestedReply,
+          calendarEvent: summaryData?.calendarEvent,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
+          aiProcessedAt: summaryData?.createdAt,
+        };
+      })
+    );
+
+    return emailsWithData;
+  },
+});
+
+/**
+ * Reset all triaged emails back to untriaged (for current user only)
+ */
+export const resetMyTriagedEmails = authedMutation({
+  args: {},
+  handler: async (ctx) => {
+    // Get all triaged emails for current user
+    const triagedEmails = await ctx.db
+      .query("emails")
+      .withIndex("by_user", (q) => q.eq("userId", ctx.userId))
+      .filter((q) => q.eq(q.field("isTriaged"), true))
+      .collect();
+
+    // Reset each one
     let count = 0;
     for (const email of triagedEmails) {
       await ctx.db.patch(email._id, {
@@ -832,7 +444,7 @@ export const resetAllToUntriaged = mutation({
       count++;
     }
 
-    return { reset: count };
+    console.log(`[Untriage] Reset ${count} emails for user ${ctx.userId}`);
+    return { success: true, count };
   },
 });
-

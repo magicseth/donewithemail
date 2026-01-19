@@ -135,6 +135,32 @@ export const getSummary = internalQuery({
   },
 });
 
+// Delete summary for a single email (for reprocessing)
+export const deleteSummaryForEmail = internalMutation({
+  args: { emailId: v.id("emails") },
+  handler: async (ctx, args) => {
+    const summary = await ctx.db
+      .query("emailSummaries")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .first();
+
+    if (summary) {
+      await ctx.db.delete(summary._id);
+      return true;
+    }
+    return false;
+  },
+});
+
+// Get email's externalId by Convex ID
+export const getExternalIdForEmail = internalQuery({
+  args: { emailId: v.id("emails") },
+  handler: async (ctx, args) => {
+    const email = await ctx.db.get(args.emailId);
+    return email?.externalId;
+  },
+});
+
 // Delete all summaries for a user's emails (for debug reset)
 export const deleteAllSummariesForUser = internalMutation({
   args: { userId: v.id("users") },
@@ -199,6 +225,8 @@ export const updateEmailSummary = internalMutation({
       endTime: v.optional(v.string()),
       location: v.optional(v.string()),
       description: v.optional(v.string()),
+      recurrence: v.optional(v.string()),
+      recurrenceDescription: v.optional(v.string()),
     })),
     deadline: v.optional(v.string()),
     deadlineDescription: v.optional(v.string()),

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import {
@@ -96,18 +96,23 @@ export function useAuth() {
 }
 
 /**
- * Hook for getting current user data from Convex
+ * Hook for getting current user data from Convex (authenticated)
  */
-export function useCurrentUser(userId: Id<"users"> | null) {
-  return useQuery(api.users.getUser, userId ? { userId } : "skip");
+export function useCurrentUser() {
+  const { isAuthenticated, isLoading } = useConvexAuth();
+  return useQuery(
+    api.users.getMe,
+    isAuthenticated && !isLoading ? {} : "skip"
+  );
 }
 
 /**
- * Hook for getting connected providers
+ * Hook for getting connected providers (authenticated)
  */
-export function useConnectedProviders(userId: Id<"users"> | null) {
+export function useConnectedProviders() {
+  const { isAuthenticated, isLoading } = useConvexAuth();
   return useQuery(
-    api.users.getConnectedProviders,
-    userId ? { userId } : "skip"
+    api.users.getMyConnectedProviders,
+    isAuthenticated && !isLoading ? {} : "skip"
   );
 }

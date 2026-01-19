@@ -66,12 +66,17 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
+
 export interface CalendarEventData {
   title: string;
   startTime?: string;
   endTime?: string;
   location?: string;
   description?: string;
+  // Recurrence rule in RRULE format (for Google Calendar API)
+  recurrence?: string;
+  // Human-readable description of recurrence (e.g., "Every other Tuesday")
+  recurrenceDescription?: string;
   // Set when event has been added to calendar
   calendarEventId?: string;
   calendarEventLink?: string;
@@ -186,6 +191,11 @@ export function EmailCard({
           {email.calendarEvent.startTime && (
             <Text style={styles.calendarTime}>
               {formatEventTime(email.calendarEvent.startTime, email.calendarEvent.endTime)}
+            </Text>
+          )}
+          {email.calendarEvent.recurrenceDescription && (
+            <Text style={styles.calendarRecurrence}>
+              🔄 {email.calendarEvent.recurrenceDescription}
             </Text>
           )}
           {email.calendarEvent.location && (
@@ -424,6 +434,12 @@ const styles = StyleSheet.create({
   calendarTime: {
     fontSize: 14,
     color: "#92400E",
+    marginBottom: 4,
+  },
+  calendarRecurrence: {
+    fontSize: 13,
+    color: "#6366F1",
+    fontWeight: "500",
     marginBottom: 4,
   },
   calendarLocation: {

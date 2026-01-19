@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { useQuery, useAction } from "convex/react";
+import { useQuery, useAction, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../lib/authContext";
 
@@ -14,6 +14,10 @@ export interface CalendarEvent {
   endTime?: string;
   location?: string;
   description?: string;
+  // Recurrence rule in RRULE format (for Google Calendar API)
+  recurrence?: string;
+  // Human-readable description of recurrence (e.g., "Every other Tuesday")
+  recurrenceDescription?: string;
   // Set when event has been added to calendar
   calendarEventId?: string;
   calendarEventLink?: string;
@@ -48,18 +52,21 @@ export interface GmailEmail {
 
 export function useGmail(sessionStart?: number) {
   const { user, isAuthenticated } = useAuth();
+  // Use Convex auth state for query timing (ensures token is ready)
+  const { isAuthenticated: convexAuthenticated, isLoading: convexLoading } = useConvexAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nextPageTokenRef = useRef<string | undefined>(undefined);
 
   // Query for cached untriaged emails - this is INSTANT from Convex
-  // Now using getUntriagedByEmail to only show emails that haven't been triaged
+  // Now using getMyUntriagedEmails (authenticated) to only show emails that haven't been triaged
   // If sessionStart is provided, also includes emails triaged after that time
+  // Use convexAuthenticated to ensure Convex client has the token ready
   const cachedEmails = useQuery(
-    api.emails.getUntriagedByEmail,
-    isAuthenticated && user?.email
-      ? { email: user.email, limit: 50, sessionStart }
+    api.emails.getMyUntriagedEmails,
+    convexAuthenticated && !convexLoading
+      ? { limit: 50, sessionStart }
       : "skip"
   );
 

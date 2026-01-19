@@ -1,76 +1,79 @@
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { useCallback } from "react";
 
 /**
- * Hook for fetching a single contact
+ * Hook for fetching a single contact (authenticated)
  */
 export function useContact(contactId: Id<"contacts"> | undefined) {
+  const { isAuthenticated, isLoading } = useConvexAuth();
   return useQuery(
-    api.contacts.getContact,
-    contactId ? { contactId } : "skip"
+    api.contacts.getMyContact,
+    contactId && isAuthenticated && !isLoading ? { contactId } : "skip"
   );
 }
 
 /**
- * Hook for fetching contact by email
+ * Hook for fetching contact by email (authenticated)
  */
-export function useContactByEmail(
-  userId: Id<"users"> | undefined,
-  email: string | undefined
-) {
+export function useContactByEmail(email: string | undefined) {
+  const { isAuthenticated, isLoading } = useConvexAuth();
   return useQuery(
-    api.contacts.getContactByEmail,
-    userId && email ? { userId, email } : "skip"
+    api.contacts.getMyContactByEmail,
+    email && isAuthenticated && !isLoading ? { email } : "skip"
   );
 }
 
 /**
- * Hook for fetching all contacts
+ * Hook for fetching all contacts (authenticated)
  */
-export function useContacts(userId: Id<"users"> | undefined) {
+export function useContacts() {
+  const { isAuthenticated, isLoading } = useConvexAuth();
   return useQuery(
-    api.contacts.getContacts,
-    userId ? { userId, limit: 100 } : "skip"
+    api.contacts.getMyContacts,
+    isAuthenticated && !isLoading ? { limit: 100 } : "skip"
   );
 }
 
 /**
- * Hook for fetching VIP contacts
+ * Hook for fetching VIP contacts (authenticated)
  */
-export function useVIPContacts(userId: Id<"users"> | undefined) {
+export function useVIPContacts() {
+  const { isAuthenticated, isLoading } = useConvexAuth();
   return useQuery(
-    api.contacts.getVIPContacts,
-    userId ? { userId } : "skip"
+    api.contacts.getMyVIPContacts,
+    isAuthenticated && !isLoading ? {} : "skip"
   );
 }
 
 /**
- * Hook for fetching contact stats by ID
+ * Hook for fetching contact stats by ID (authenticated)
  */
 export function useContactStats(contactId: Id<"contacts"> | undefined) {
+  const { isAuthenticated, isLoading } = useConvexAuth();
   return useQuery(
-    api.contacts.getContactStats,
-    contactId ? { contactId } : "skip"
+    api.contacts.getMyContactStats,
+    contactId && isAuthenticated && !isLoading ? { contactId } : "skip"
   );
 }
 
 /**
- * Hook for fetching contact stats by email
+ * Hook for fetching contact stats by email (authenticated)
  */
 export function useContactStatsByEmail(email: string | undefined) {
+  const { isAuthenticated, isLoading } = useConvexAuth();
   return useQuery(
-    api.contacts.getContactStatsByEmail,
-    email ? { email } : "skip"
+    api.contacts.getMyContactStatsByEmail,
+    email && isAuthenticated && !isLoading ? { email } : "skip"
   );
 }
 
 /**
- * Hook for updating contact relationship
+ * Hook for updating contact relationship (authenticated)
  */
 export function useUpdateRelationship() {
-  const updateMutation = useMutation(api.contacts.updateRelationship);
+  const updateMutation = useMutation(api.contacts.updateMyContactRelationship);
 
   const updateRelationship = useCallback(
     async (

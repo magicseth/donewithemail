@@ -179,6 +179,25 @@ export const getUserByEmailInternal = internalQuery({
   },
 });
 
+// Internal query to get user by WorkOS ID
+export const getUserByWorkosId = internalQuery({
+  args: { workosId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("by_workos_id", (q) => q.eq("workosId", args.workosId))
+      .first();
+  },
+});
+
+// Internal query to get user by ID
+export const getUserByIdInternal = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.userId);
+  },
+});
+
 // Internal query to get subscription by ID
 export const getSubscriptionById = internalQuery({
   args: { subscriptionId: v.id("subscriptions") },

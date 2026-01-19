@@ -1,37 +1,15 @@
 import { v } from "convex/values";
-import { mutation, internalMutation } from "./_generated/server";
+import { internalMutation } from "./_generated/server";
 import { components } from "./_generated/api";
 import { PushNotifications } from "@convex-dev/expo-push-notifications";
+import { authedMutation } from "./functions";
 
 // Initialize push notifications client
 const pushNotifications = new PushNotifications(components.pushNotifications);
 
-// Register a push token for a user
-export const registerPushToken = mutation({
-  args: {
-    pushToken: v.string(),
-    userEmail: v.string(),
-  },
-  handler: async (ctx, args) => {
-    // Find user by email
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
-    // Record the token using the component
-    await pushNotifications.recordToken(ctx, {
-      userId: user._id,
-      pushToken: args.pushToken,
-    });
-
-    return { success: true };
-  },
-});
+// =============================================================================
+// Internal Mutations (called by workflows, crons, etc.)
+// =============================================================================
 
 // Send notification for new emails (legacy - use sendHighPriorityNotification instead)
 export const sendNewEmailNotification = internalMutation({
@@ -144,23 +122,36 @@ export const sendHighPriorityNotification = internalMutation({
   },
 });
 
-// DEBUG: Send a test notification with avatar to verify the pipeline
-export const sendTestNotificationWithAvatar = mutation({
+// =============================================================================
+// Authenticated Mutations (require valid JWT)
+// =============================================================================
+
+/**
+ * Register a push token for the current authenticated user
+ */
+export const registerMyPushToken = authedMutation({
   args: {
-    userEmail: v.string(),
+    pushToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Record the token using the component
+    await pushNotifications.recordToken(ctx, {
+      userId: ctx.userId,
+      pushToken: args.pushToken,
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Send a test notification with avatar for the current authenticated user
+ */
+export const sendMyTestNotificationWithAvatar = authedMutation({
+  args: {
     testContactEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Find user by email
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
     let avatarUrl: string;
     let contactName = "Test User";
 
@@ -169,7 +160,7 @@ export const sendTestNotificationWithAvatar = mutation({
       const contact = await ctx.db
         .query("contacts")
         .withIndex("by_user_email", (q) =>
-          q.eq("userId", user._id).eq("email", args.testContactEmail!)
+          q.eq("userId", ctx.userId).eq("email", args.testContactEmail!)
         )
         .first();
 
@@ -200,7 +191,7 @@ export const sendTestNotificationWithAvatar = mutation({
     }
 
     const notificationPayload = {
-      userId: user._id,
+      userId: ctx.userId,
       notification: {
         title: `Test: ${contactName}`,
         body: "This is a test notification with an avatar",
@@ -221,23 +212,14 @@ export const sendTestNotificationWithAvatar = mutation({
   },
 });
 
-// DEBUG: Send a test notification using Communication style (circular avatar on left)
-export const sendTestCommunicationNotification = mutation({
+/**
+ * Send a test communication notification for the current authenticated user
+ */
+export const sendMyTestCommunicationNotification = authedMutation({
   args: {
-    userEmail: v.string(),
     testContactEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Find user by email
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
-      .first();
-
-    if (!user) {
-      throw new Error("User not found");
-    }
-
     let avatarUrl: string;
     let contactName = "Test User";
 
@@ -246,7 +228,7 @@ export const sendTestCommunicationNotification = mutation({
       const contact = await ctx.db
         .query("contacts")
         .withIndex("by_user_email", (q) =>
-          q.eq("userId", user._id).eq("email", args.testContactEmail!)
+          q.eq("userId", ctx.userId).eq("email", args.testContactEmail!)
         )
         .first();
 
@@ -275,7 +257,7 @@ export const sendTestCommunicationNotification = mutation({
     }
 
     const notificationPayload = {
-      userId: user._id,
+      userId: ctx.userId,
       notification: {
         title: `Comm: ${contactName}`,
         body: "Testing Communication Notification (circular avatar)",

@@ -23,10 +23,10 @@ export default function SettingsScreen() {
   const [isSendingTestNotification, setIsSendingTestNotification] = useState(false);
 
   const resetAndResummarize = useAction(api.summarizeActions.resetAndResummarizeAll);
-  const sendTestNotification = useMutation(api.notifications.sendTestNotificationWithAvatar);
-  const sendTestCommunicationNotification = useMutation(api.notifications.sendTestCommunicationNotification);
-  const resetAllToUntriaged = useMutation(api.emails.resetAllToUntriaged);
-  const scanExistingEmailsAction = useAction(api.subscriptions.scanExistingEmails);
+  const sendTestNotification = useMutation(api.notifications.sendMyTestNotificationWithAvatar);
+  const sendTestCommunicationNotification = useMutation(api.notifications.sendMyTestCommunicationNotification);
+  const resetAllToUntriaged = useMutation(api.emails.resetMyTriagedEmails);
+  const scanExistingEmailsAction = useAction(api.subscriptions.scanMyExistingEmails);
   const [isResettingTriage, setIsResettingTriage] = useState(false);
   const [isSendingCommNotification, setIsSendingCommNotification] = useState(false);
   const [isScanningSubscriptions, setIsScanningSubscriptions] = useState(false);
@@ -38,12 +38,10 @@ export default function SettingsScreen() {
   );
 
   const handleResetTriage = async () => {
-    if (!user?.email) return;
-
     setIsResettingTriage(true);
     try {
-      const result = await resetAllToUntriaged({ userEmail: user.email });
-      const message = `Reset ${result.reset} emails to untriaged`;
+      const result = await resetAllToUntriaged({});
+      const message = `Reset ${result.count} emails to untriaged`;
       if (Platform.OS === "web") {
         window.alert(message);
       } else {
@@ -63,12 +61,9 @@ export default function SettingsScreen() {
   };
 
   const handleTestNotification = async (testContactEmail?: string) => {
-    if (!user?.email) return;
-
     setIsSendingTestNotification(true);
     try {
       const result = await sendTestNotification({
-        userEmail: user.email,
         testContactEmail,
       });
       const message = `Test notification sent!\nContact: ${result.contactName}\nAvatar URL: ${result.avatarUrl.substring(0, 80)}...`;
@@ -91,13 +86,9 @@ export default function SettingsScreen() {
   };
 
   const handleTestCommunicationNotification = async () => {
-    if (!user?.email) return;
-
     setIsSendingCommNotification(true);
     try {
-      const result = await sendTestCommunicationNotification({
-        userEmail: user.email,
-      });
+      const result = await sendTestCommunicationNotification({});
       const message = `Communication notification sent!\nStyle: ${result.style}\nContact: ${result.contactName}`;
       if (Platform.OS === "web") {
         window.alert(message);
@@ -118,11 +109,9 @@ export default function SettingsScreen() {
   };
 
   const handleScanSubscriptions = async () => {
-    if (!user?.email) return;
-
     setIsScanningSubscriptions(true);
     try {
-      const result = await scanExistingEmailsAction({ userEmail: user.email });
+      const result = await scanExistingEmailsAction({});
       const message = `Scanned ${result.scanned} emails.\nFound ${result.found} subscription(s).`;
       if (Platform.OS === "web") {
         window.alert(message);

@@ -179,9 +179,9 @@ export default function SubscriptionsScreen() {
   );
 
   // Actions
-  const batchUnsubscribe = useAction(api.subscriptions.batchUnsubscribe);
-  const scanExistingEmails = useAction(api.subscriptions.scanExistingEmails);
-  const forceRescan = useAction(api.subscriptions.forceRescan);
+  const batchUnsubscribe = useAction(api.subscriptions.batchUnsubscribeMy);
+  const scanExistingEmails = useAction(api.subscriptions.scanMyExistingEmails);
+  const forceRescan = useAction(api.subscriptions.forceMyRescan);
 
   // Filter to only actionable subscriptions for selection
   const actionableSubscriptions = useMemo(() => {
@@ -235,7 +235,6 @@ export default function SubscriptionsScreen() {
             setIsUnsubscribing(true);
             try {
               const result = await batchUnsubscribe({
-                userEmail: user.email,
                 subscriptionIds: selectedArray,
               });
 
@@ -288,11 +287,9 @@ export default function SubscriptionsScreen() {
 
   // Handle scan inbox
   const handleScanInbox = useCallback(async () => {
-    if (!user?.email) return;
-
     setIsScanning(true);
     try {
-      const result = await scanExistingEmails({ userEmail: user.email });
+      const result = await scanExistingEmails({});
       showAlert(
         "Scan Complete",
         `Scanned ${result.scanned} emails, found ${result.found} subscriptions`
@@ -307,8 +304,6 @@ export default function SubscriptionsScreen() {
 
   // Handle force rescan (resets all subscription data first)
   const handleForceRescan = useCallback(async () => {
-    if (!user?.email) return;
-
     showAlert(
       "Force Rescan",
       "This will delete all subscription data and rescan your entire inbox. Continue?",
@@ -320,7 +315,7 @@ export default function SubscriptionsScreen() {
           onPress: async () => {
             setIsScanning(true);
             try {
-              const result = await forceRescan({ userEmail: user.email });
+              const result = await forceRescan({});
               showAlert(
                 "Rescan Complete",
                 `Reset ${result.reset.deletedSubscriptions} subscriptions.\nScanned ${result.scan.scanned} emails, found ${result.scan.found} subscriptions.`

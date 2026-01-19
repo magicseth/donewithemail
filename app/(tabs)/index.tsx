@@ -1302,7 +1302,7 @@ const EmailRow = React.memo(function EmailRow({
           {/* Calendar event detected - compact single-line display */}
           {item.calendarEvent && (
             <View style={styles.calendarRow}>
-              <Text style={styles.calendarIcon}>📅</Text>
+              <Text style={styles.calendarIcon}>{item.calendarEvent.recurrenceDescription ? "🔄" : "📅"}</Text>
               <Text style={styles.calendarText} numberOfLines={1}>
                 {item.calendarEvent.startTime ? formatEventTime(item.calendarEvent.startTime, item.calendarEvent.endTime) + " · " : ""}
                 {decodeHtmlEntities(item.calendarEvent.title)}
@@ -1532,7 +1532,7 @@ export default function InboxScreen() {
 
   // Triage state for optimistic updates - maps email ID to action taken
   const [triagedEmails, setTriagedEmails] = useState<Map<string, "done" | "reply_needed">>(new Map());
-  const triageEmail = useMutation(api.emails.triageEmail);
+  const triageEmail = useMutation(api.emails.triageMyEmail);
 
   // Refs for triage logic
   const flatListRef = useRef<FlatList>(null);
@@ -1581,9 +1581,9 @@ export default function InboxScreen() {
 
   // Search query with debounce effect
   const searchResults = useQuery(
-    api.emails.searchEmails,
-    searchQuery.trim().length > 0 && userEmail
-      ? { email: userEmail, searchQuery: searchQuery.trim() }
+    api.emails.searchMyEmails,
+    searchQuery.trim().length > 0
+      ? { searchQuery: searchQuery.trim() }
       : "skip"
   );
 
@@ -1599,7 +1599,7 @@ export default function InboxScreen() {
   const { playStartSound, playStopSound } = useMicSounds();
 
   // Unsubscribe action and subscriptions query - needed for handleTargetActivation
-  const batchUnsubscribeAction = useAction(api.subscriptions.batchUnsubscribe);
+  const batchUnsubscribeAction = useAction(api.subscriptions.batchUnsubscribeMy);
   const subscriptions = useQuery(
     api.subscriptionsHelpers.getSubscriptions,
     userEmail ? { userEmail } : "skip"
@@ -1694,10 +1694,9 @@ export default function InboxScreen() {
       const subscription = senderEmail && subscriptions?.find(s => s.senderEmail === senderEmail);
       console.log(`[Triage:Unsub] Found subscription: ${subscription ? subscription._id : "none"}`);
 
-      if (subscription && userEmail) {
-        // Call unsubscribe action
+      if (subscription) {
+        // Call unsubscribe action (authenticated - no userEmail needed)
         batchUnsubscribeAction({
-          userEmail,
           subscriptionIds: [subscription._id as any], // Cast needed for Id type
         }).then(result => {
           console.log(`[Triage:Unsub] Result:`, result);
@@ -1826,9 +1825,8 @@ export default function InboxScreen() {
       const senderEmail = email.fromContact?.email;
       const subscription = senderEmail && subscriptions?.find(s => s.senderEmail === senderEmail);
 
-      if (subscription && userEmail) {
+      if (subscription) {
         batchUnsubscribeAction({
-          userEmail,
           subscriptionIds: [subscription._id as any],
         }).then(result => {
           if (result.completed.length > 0) {
@@ -2262,6 +2260,7 @@ export default function InboxScreen() {
         description: event.description,
         timezone,
         emailId: email._id as any, // Pass email ID to track added events
+        recurrence: event.recurrence,
       });
       // Open the calendar link on web
       if (Platform.OS === "web" && result.htmlLink) {

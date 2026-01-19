@@ -3,10 +3,9 @@ import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
-import { useMutation } from "convex/react";
+import { useMutation, useConvexAuth } from "convex/react";
 import { useRouter } from "expo-router";
 import { api } from "../convex/_generated/api";
-import { useAuth } from "../lib/authContext";
 
 // Configure how notifications are handled when app is in foreground
 Notifications.setNotificationHandler({
@@ -26,8 +25,8 @@ export function usePushNotifications() {
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
   const router = useRouter();
-  const { user, isAuthenticated } = useAuth();
-  const registerToken = useMutation(api.notifications.registerPushToken);
+  const { isAuthenticated, isLoading } = useConvexAuth();
+  const registerToken = useMutation(api.notifications.registerMyPushToken);
 
   useEffect(() => {
     // Only run on native platforms
@@ -90,17 +89,17 @@ export function usePushNotifications() {
     };
   }, [router]);
 
-  // Register token with backend when user is authenticated
+  // Register token with backend when Convex auth is ready
   useEffect(() => {
-    if (expoPushToken && isAuthenticated && user?.email) {
+    // Only register when we have both the push token and Convex auth is ready
+    if (expoPushToken && isAuthenticated && !isLoading) {
       registerToken({
         pushToken: expoPushToken,
-        userEmail: user.email,
       }).catch((err) => {
         console.error("Failed to register push token:", err);
       });
     }
-  }, [expoPushToken, isAuthenticated, user?.email, registerToken]);
+  }, [expoPushToken, isAuthenticated, isLoading, registerToken]);
 
   return {
     expoPushToken,

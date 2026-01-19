@@ -100,6 +100,9 @@ export const authenticate = action({
         avatarUrl: user.profile_picture_url,
       },
       accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      // Access tokens expire in 5 minutes (300 seconds)
+      expiresIn: 300,
       hasGmailAccess: !!googleAccessToken,
     };
   },
@@ -165,5 +168,74 @@ export const hasGmailAccess = query({
       .first();
 
     return !!(user?.gmailAccessToken);
+  },
+});
+
+// Refresh access token using WorkOS refresh token
+export const refreshToken = action({
+  args: {
+    refreshToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Call WorkOS authenticate API with refresh_token grant
+    const response = await fetch(
+      "https://api.workos.com/user_management/authenticate",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          client_id: WORKOS_CLIENT_ID,
+          client_secret: WORKOS_API_KEY,
+          grant_type: "refresh_token",
+          refresh_token: args.refreshToken,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("WorkOS refresh token error:", error);
+      throw new Error(`Token refresh failed: ${error}`);
+    }
+
+    const data = await response.json();
+
+    // Update user's WorkOS refresh token if a new one was provided
+    if (data.refresh_token && data.user?.id) {
+      await ctx.runMutation(api.auth.updateWorkosRefreshToken, {
+        workosUserId: data.user.id,
+        workosRefreshToken: data.refresh_token,
+      });
+    }
+
+    return {
+      success: true,
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || args.refreshToken,
+      // Access tokens typically expire in 5 minutes (300 seconds)
+      expiresIn: 300,
+    };
+  },
+});
+
+// Update WorkOS refresh token for a user
+export const updateWorkosRefreshToken = mutation({
+  args: {
+    workosUserId: v.string(),
+    workosRefreshToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_id", (q) => q.eq("workosId", args.workosUserId))
+      .first();
+
+    if (user) {
+      await ctx.db.patch(user._id, {
+        workosRefreshToken: args.workosRefreshToken,
+      });
+    }
   },
 });

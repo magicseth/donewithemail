@@ -13,7 +13,7 @@ import { useLocalSearchParams, router, Stack } from "expo-router";
 import { useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { EmailCard, EmailCardData, CalendarEventData } from "../../components/EmailCard";
-import { useEmail, useEmailByExternalId, useEmailActions, useThreadEmails } from "../../hooks/useEmails";
+import { useEmail, useEmailActions, useThreadEmails } from "../../hooks/useEmails";
 import { useAuth } from "../../lib/authContext";
 import { Id } from "../../convex/_generated/dataModel";
 
@@ -49,17 +49,16 @@ export default function EmailDetailScreen() {
   const [fullBodies, setFullBodies] = useState<Record<string, string>>({});
   const [loadingBodies, setLoadingBodies] = useState<Set<string>>(new Set());
   const [isAddingToCalendar, setIsAddingToCalendar] = useState(false);
+  const [isReprocessing, setIsReprocessing] = useState(false);
 
   const { user } = useAuth();
   const fetchEmailBody = useAction(api.gmailSync.fetchEmailBody);
   const addToCalendar = useAction(api.calendar.addToCalendar);
+  const reprocessEmail = useAction(api.summarizeActions.reprocessEmail);
 
-  // Try Convex ID lookup first, then fall back to external ID
+  // Look up email by Convex ID (authenticated)
   const isConvex = id ? isConvexId(id) : false;
-  const emailByConvexId = useEmail(isConvex ? (id as Id<"emails">) : undefined);
-  const emailByExternalId = useEmailByExternalId(!isConvex ? id : undefined);
-
-  const email = isConvex ? emailByConvexId : emailByExternalId;
+  const email = useEmail(isConvex ? (id as Id<"emails">) : undefined);
   const { archiveEmail, markReplyNeeded } = useEmailActions();
 
   // Fetch all emails in this thread
@@ -162,6 +161,7 @@ export default function EmailDetailScreen() {
         description: event.description,
         timezone,
         emailId: convexId,
+        recurrence: event.recurrence,
       });
       // Open the calendar link on web
       if (Platform.OS === "web" && result.htmlLink) {
@@ -181,6 +181,33 @@ export default function EmailDetailScreen() {
       router.push(`/person/${email.fromContact._id}`);
     }
   }, [email]);
+
+  const handleReprocess = useCallback(async () => {
+    if (!convexId || !user?.email) {
+      showAlert("Error", "Cannot reprocess - missing email or user");
+      return;
+    }
+
+    setIsReprocessing(true);
+    try {
+      const result = await reprocessEmail({
+        emailId: convexId,
+        userEmail: user.email,
+      });
+
+      if (result.success) {
+        showAlert("Success", "Email reprocessed successfully. Refresh to see updates.");
+      } else {
+        showAlert("Error", result.error || "Failed to reprocess email");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to reprocess";
+      showAlert("Error", message);
+      console.error("Failed to reprocess email:", err);
+    } finally {
+      setIsReprocessing(false);
+    }
+  }, [convexId, user?.email, reprocessEmail]);
 
   // Mock data for development
   const mockEmail: EmailCardData = {
@@ -247,9 +274,22 @@ export default function EmailDetailScreen() {
         options={{
           headerTitle: "",
           headerRight: () => (
-            <TouchableOpacity onPress={handleArchive} style={styles.headerButton}>
-              <Text style={styles.headerButtonText}>Archive</Text>
-            </TouchableOpacity>
+            <View style={styles.headerButtonGroup}>
+              <TouchableOpacity
+                onPress={handleReprocess}
+                style={styles.headerButton}
+                disabled={isReprocessing}
+              >
+                {isReprocessing ? (
+                  <ActivityIndicator size="small" color="#6366F1" />
+                ) : (
+                  <Text style={styles.headerButtonText}>Reprocess</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleArchive} style={styles.headerButton}>
+                <Text style={styles.headerButtonText}>Archive</Text>
+              </TouchableOpacity>
+            </View>
           ),
         }}
       />
@@ -383,6 +423,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#fff",
+  },
+  headerButtonGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   headerButton: {
     paddingHorizontal: 16,

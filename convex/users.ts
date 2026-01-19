@@ -1,32 +1,10 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, internalQuery } from "./_generated/server";
+import { authedQuery, authedMutation } from "./functions";
 
-/**
- * Get user by WorkOS ID
- */
-export const getByWorkosId = query({
-  args: {
-    workosId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("users")
-      .withIndex("by_workos_id", (q) => q.eq("workosId", args.workosId))
-      .first();
-  },
-});
-
-/**
- * Get user by ID
- */
-export const getUser = query({
-  args: {
-    userId: v.id("users"),
-  },
-  handler: async (ctx, args) => {
-    return await ctx.db.get(args.userId);
-  },
-});
+// =============================================================================
+// Auth Flow Functions (used by WorkOS callback)
+// =============================================================================
 
 /**
  * Create or update user from WorkOS auth
@@ -103,46 +81,81 @@ export const connectGmailAccount = mutation({
   },
 });
 
+// =============================================================================
+// Internal queries for auth system
+// =============================================================================
+
 /**
- * Disconnect a provider from a user
+ * Internal: Get user by WorkOS ID or email (for auth system)
  */
-export const disconnectProvider = mutation({
+export const getUserForAuth = internalQuery({
   args: {
-    userId: v.id("users"),
-    provider: v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap")),
+    workosId: v.optional(v.string()),
+    email: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user) throw new Error("User not found");
+    if (args.workosId) {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_workos_id", (q) => q.eq("workosId", args.workosId))
+        .first();
+      if (user) return user;
+    }
 
-    await ctx.db.patch(args.userId, {
-      connectedProviders: (user.connectedProviders || []).filter(
-        (p) => p.provider !== args.provider
-      ),
-    });
+    if (args.email) {
+      return await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", args.email!))
+        .first();
+    }
 
-    return { success: true };
+    return null;
+  },
+});
+
+// =============================================================================
+// Authenticated endpoints (require valid JWT)
+// =============================================================================
+
+/**
+ * Get the current authenticated user
+ */
+export const getMe = authedQuery({
+  args: {},
+  handler: async (ctx) => {
+    return ctx.user;
   },
 });
 
 /**
- * Update user preferences
+ * Get connected providers for the current user
  */
-export const updatePreferences = mutation({
+export const getMyConnectedProviders = authedQuery({
+  args: {},
+  handler: async (ctx) => {
+    return (ctx.user.connectedProviders || []).map((p) => ({
+      provider: p.provider,
+      email: p.email,
+      isConnected: true,
+      expiresAt: p.expiresAt,
+    }));
+  },
+});
+
+/**
+ * Update current user's preferences
+ */
+export const updateMyPreferences = authedMutation({
   args: {
-    userId: v.id("users"),
     preferences: v.object({
       autoProcessEmails: v.optional(v.boolean()),
       urgencyThreshold: v.optional(v.number()),
     }),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user) throw new Error("User not found");
-
-    await ctx.db.patch(args.userId, {
+    await ctx.db.patch(ctx.userId, {
       preferences: {
-        ...user.preferences,
+        ...ctx.user.preferences,
         ...args.preferences,
       },
     });
@@ -152,21 +165,19 @@ export const updatePreferences = mutation({
 });
 
 /**
- * Get connected provider info (without sensitive tokens)
+ * Disconnect a provider from current user
  */
-export const getConnectedProviders = query({
+export const disconnectMyProvider = authedMutation({
   args: {
-    userId: v.id("users"),
+    provider: v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap")),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user) return [];
+    await ctx.db.patch(ctx.userId, {
+      connectedProviders: (ctx.user.connectedProviders || []).filter(
+        (p) => p.provider !== args.provider
+      ),
+    });
 
-    return (user.connectedProviders || []).map((p) => ({
-      provider: p.provider,
-      email: p.email,
-      isConnected: true,
-      expiresAt: p.expiresAt,
-    }));
+    return { success: true };
   },
 });

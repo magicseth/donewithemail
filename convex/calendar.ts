@@ -134,6 +134,9 @@ export const addToCalendar = action({
     description: v.optional(v.string()),
     timezone: v.string(), // Client's timezone e.g. "America/New_York"
     emailId: v.optional(v.id("emails")),
+    // Recurrence rule in RRULE format (without "RRULE:" prefix)
+    // e.g., "FREQ=WEEKLY;BYDAY=TU" for every Tuesday
+    recurrence: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ eventId: string; htmlLink: string }> => {
     // Get user's tokens
@@ -207,6 +210,12 @@ export const addToCalendar = action({
     // Add location if provided
     if (args.location) {
       event.location = args.location;
+    }
+
+    // Add recurrence rule for repeating events
+    // Google Calendar expects an array of RRULE strings with the "RRULE:" prefix
+    if (args.recurrence) {
+      event.recurrence = [`RRULE:${args.recurrence}`];
     }
 
     // Create event via Google Calendar API

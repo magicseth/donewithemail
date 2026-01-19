@@ -1,74 +1,13 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation } from "./_generated/server";
+import { authedQuery, authedMutation } from "./functions";
+
+// =============================================================================
+// Internal Functions (used by email sync)
+// =============================================================================
 
 /**
- * Get a contact by ID
- */
-export const getContact = query({
-  args: {
-    contactId: v.id("contacts"),
-  },
-  handler: async (ctx, args) => {
-    return await ctx.db.get(args.contactId);
-  },
-});
-
-/**
- * Get contact by email address for a user
- */
-export const getContactByEmail = query({
-  args: {
-    userId: v.id("users"),
-    email: v.string(),
-  },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("contacts")
-      .withIndex("by_user_email", (q) =>
-        q.eq("userId", args.userId).eq("email", args.email)
-      )
-      .first();
-  },
-});
-
-/**
- * Get all contacts for a user, sorted by last email
- */
-export const getContacts = query({
-  args: {
-    userId: v.id("users"),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const limit = args.limit ?? 100;
-
-    return await ctx.db
-      .query("contacts")
-      .withIndex("by_user_last_email", (q) => q.eq("userId", args.userId))
-      .order("desc")
-      .take(limit);
-  },
-});
-
-/**
- * Get VIP contacts
- */
-export const getVIPContacts = query({
-  args: {
-    userId: v.id("users"),
-  },
-  handler: async (ctx, args) => {
-    const contacts = await ctx.db
-      .query("contacts")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .collect();
-
-    return contacts.filter((c) => c.relationship === "vip");
-  },
-});
-
-/**
- * Upsert a contact (create or update)
+ * Upsert a contact (create or update) - used by email sync
  */
 export const upsertContact = mutation({
   args: {
@@ -114,10 +53,84 @@ export const upsertContact = mutation({
   },
 });
 
+// =============================================================================
+// Authenticated endpoints (require valid JWT)
+// =============================================================================
+
 /**
- * Update contact relationship
+ * Get a contact by ID for the current user (with ownership check)
  */
-export const updateRelationship = mutation({
+export const getMyContact = authedQuery({
+  args: {
+    contactId: v.id("contacts"),
+  },
+  handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) return null;
+
+    // Verify ownership
+    if (contact.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Contact does not belong to you");
+    }
+
+    return contact;
+  },
+});
+
+/**
+ * Get contact by email address for the current user
+ */
+export const getMyContactByEmail = authedQuery({
+  args: {
+    email: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("contacts")
+      .withIndex("by_user_email", (q) =>
+        q.eq("userId", ctx.userId).eq("email", args.email)
+      )
+      .first();
+  },
+});
+
+/**
+ * Get all contacts for the current user, sorted by last email
+ */
+export const getMyContacts = authedQuery({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 100;
+
+    return await ctx.db
+      .query("contacts")
+      .withIndex("by_user_last_email", (q) => q.eq("userId", ctx.userId))
+      .order("desc")
+      .take(limit);
+  },
+});
+
+/**
+ * Get VIP contacts for the current user
+ */
+export const getMyVIPContacts = authedQuery({
+  args: {},
+  handler: async (ctx) => {
+    const contacts = await ctx.db
+      .query("contacts")
+      .withIndex("by_user", (q) => q.eq("userId", ctx.userId))
+      .collect();
+
+    return contacts.filter((c) => c.relationship === "vip");
+  },
+});
+
+/**
+ * Update contact relationship for the current user
+ */
+export const updateMyContactRelationship = authedMutation({
   args: {
     contactId: v.id("contacts"),
     relationship: v.union(
@@ -127,6 +140,16 @@ export const updateRelationship = mutation({
     ),
   },
   handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) {
+      throw new Error("Contact not found");
+    }
+
+    // Verify ownership
+    if (contact.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Contact does not belong to you");
+    }
+
     await ctx.db.patch(args.contactId, {
       relationship: args.relationship,
     });
@@ -136,14 +159,24 @@ export const updateRelationship = mutation({
 });
 
 /**
- * Update contact with AI-generated relationship summary
+ * Update contact relationship summary for the current user
  */
-export const updateRelationshipSummary = mutation({
+export const updateMyContactRelationshipSummary = authedMutation({
   args: {
     contactId: v.id("contacts"),
     relationshipSummary: v.string(),
   },
   handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) {
+      throw new Error("Contact not found");
+    }
+
+    // Verify ownership
+    if (contact.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Contact does not belong to you");
+    }
+
     await ctx.db.patch(args.contactId, {
       relationshipSummary: args.relationshipSummary,
     });
@@ -153,15 +186,20 @@ export const updateRelationshipSummary = mutation({
 });
 
 /**
- * Get contact statistics
+ * Get contact statistics for the current user
  */
-export const getContactStats = query({
+export const getMyContactStats = authedQuery({
   args: {
     contactId: v.id("contacts"),
   },
   handler: async (ctx, args) => {
     const contact = await ctx.db.get(args.contactId);
     if (!contact) return null;
+
+    // Verify ownership
+    if (contact.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Contact does not belong to you");
+    }
 
     // Get email count and recent emails
     const emails = await ctx.db
@@ -200,17 +238,19 @@ export const getContactStats = query({
 });
 
 /**
- * Get contact statistics by email address (searches all users' contacts)
+ * Get contact statistics by email address for the current user
  */
-export const getContactStatsByEmail = query({
+export const getMyContactStatsByEmail = authedQuery({
   args: {
     email: v.string(),
   },
   handler: async (ctx, args) => {
-    // Find the contact by email (across all users for now)
+    // Find the contact by email for the current user only
     const contact = await ctx.db
       .query("contacts")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .withIndex("by_user_email", (q) =>
+        q.eq("userId", ctx.userId).eq("email", args.email)
+      )
       .first();
 
     if (!contact) return null;

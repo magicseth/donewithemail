@@ -84,6 +84,10 @@ export default defineSchema({
       endTime: v.optional(v.string()),
       location: v.optional(v.string()),
       description: v.optional(v.string()),
+      // Recurrence rule for repeating events (RRULE format for Google Calendar API)
+      recurrence: v.optional(v.string()),
+      // Human-readable description of recurrence (e.g., "Every other Tuesday")
+      recurrenceDescription: v.optional(v.string()),
     })),
 
     // Set when user adds the event to their calendar

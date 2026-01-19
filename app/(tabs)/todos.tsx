@@ -268,13 +268,13 @@ export default function TodosScreen() {
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
   const [isSearchingMissed, setIsSearchingMissed] = useState(false);
 
-  // Query for TODO emails (marked as reply_needed)
+  // Query for TODO emails (marked as reply_needed) - authenticated endpoint
   const todoEmails = useQuery(
-    api.emails.getTodosByEmail,
-    isAuthenticated && user?.email ? { email: user.email, limit: 50 } : "skip"
+    api.emails.getMyTodoEmails,
+    isAuthenticated ? { limit: 50 } : "skip"
   );
 
-  const triageEmail = useMutation(api.emails.triageEmail);
+  const triageEmail = useMutation(api.emails.triageMyEmail);
   const startMissedSearch = useMutation(api.missedTodos.startMissedTodosSearchByEmail);
 
   const isLoading = todoEmails === undefined;
