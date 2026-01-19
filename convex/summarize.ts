@@ -66,9 +66,9 @@ export const getEmailForSummary = internalQuery({
 
     return {
       ...email,
-      // Use body from emailBodies table, fallback to legacy field on email
-      bodyFull: emailBody?.bodyFull || email.bodyFull,
-      bodyHtml: emailBody?.bodyHtml || email.bodyHtml,
+      // Body content from emailBodies table
+      bodyFull: emailBody?.bodyFull,
+      bodyHtml: emailBody?.bodyHtml,
       fromEmail: contact?.email,
       fromName: contact?.name,
       summary: summary?.summary,
@@ -132,9 +132,9 @@ export const getEmailByExternalId = internalQuery({
 
     return {
       ...email,
-      // Use body from emailBodies table, fallback to legacy field on email
-      bodyFull: emailBody?.bodyFull || email.bodyFull,
-      bodyHtml: emailBody?.bodyHtml || email.bodyHtml,
+      // Body content from emailBodies table
+      bodyFull: emailBody?.bodyFull,
+      bodyHtml: emailBody?.bodyHtml,
       fromEmail: fromContact?.email,
       fromName: fromContact?.name,
       fromRelationship: fromContact?.relationship,

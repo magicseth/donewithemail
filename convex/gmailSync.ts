@@ -536,7 +536,6 @@ export const fetchEmailBody = action({
     // Get the email to find its externalId
     type EmailData = {
       externalId: string;
-      bodyFull?: string; // Optional - may be in emailBodies table
       bodyPreview: string;
     };
     const email: EmailData | null = await ctx.runQuery(internal.emails.getEmailById, {
@@ -567,14 +566,7 @@ export const fetchEmailBody = action({
       return { body: emailBody.bodyFull, isHtml: false };
     }
 
-    // Fallback: check legacy bodyFull on emails table (for backwards compatibility)
-    if (email.bodyFull && email.bodyFull.includes("<")) {
-      return { body: email.bodyFull, isHtml: true };
-    }
-    if (email.bodyFull) {
-      return { body: email.bodyFull, isHtml: false };
-    }
-
+    // No body content found in emailBodies table, fetch from Gmail
     // Get user's Gmail tokens
     const user = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
       email: args.userEmail,

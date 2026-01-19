@@ -16,11 +16,7 @@ export default defineSchema({
     cc: v.optional(v.array(v.id("contacts"))),
     subject: v.string(),
     bodyPreview: v.string(),
-    // Large body content now stored in emailBodies table
-    // These fields are optional for backwards compatibility during migration
-    bodyFull: v.optional(v.string()),
-    bodyHtml: v.optional(v.string()),
-    rawPayload: v.optional(v.string()),
+    // Large body content stored in emailBodies table (migrated)
     receivedAt: v.number(),
 
     // User state

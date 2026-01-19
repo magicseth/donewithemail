@@ -24,6 +24,7 @@ import type * as gmailAuth from "../gmailAuth.js";
 import type * as gmailOAuth from "../gmailOAuth.js";
 import type * as gmailSend from "../gmailSend.js";
 import type * as gmailSync from "../gmailSync.js";
+import type * as migrations from "../migrations.js";
 import type * as missedTodos from "../missedTodos.js";
 import type * as missedTodosHelpers from "../missedTodosHelpers.js";
 import type * as missedTodosWorkflow from "../missedTodosWorkflow.js";
@@ -62,6 +63,7 @@ declare const fullApi: ApiFromModules<{
   gmailOAuth: typeof gmailOAuth;
   gmailSend: typeof gmailSend;
   gmailSync: typeof gmailSync;
+  migrations: typeof migrations;
   missedTodos: typeof missedTodos;
   missedTodosHelpers: typeof missedTodosHelpers;
   missedTodosWorkflow: typeof missedTodosWorkflow;
@@ -2954,6 +2956,92 @@ export declare const components: {
           null
         >;
       };
+    };
+  };
+  migrations: {
+    lib: {
+      cancel: FunctionReference<
+        "mutation",
+        "internal",
+        { name: string },
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          error?: string;
+          isDone: boolean;
+          latestEnd?: number;
+          latestStart: number;
+          name: string;
+          next?: Array<string>;
+          processed: number;
+          state: "inProgress" | "success" | "failed" | "canceled" | "unknown";
+        }
+      >;
+      cancelAll: FunctionReference<
+        "mutation",
+        "internal",
+        { sinceTs?: number },
+        Array<{
+          batchSize?: number;
+          cursor?: string | null;
+          error?: string;
+          isDone: boolean;
+          latestEnd?: number;
+          latestStart: number;
+          name: string;
+          next?: Array<string>;
+          processed: number;
+          state: "inProgress" | "success" | "failed" | "canceled" | "unknown";
+        }>
+      >;
+      clearAll: FunctionReference<
+        "mutation",
+        "internal",
+        { before?: number },
+        null
+      >;
+      getStatus: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number; names?: Array<string> },
+        Array<{
+          batchSize?: number;
+          cursor?: string | null;
+          error?: string;
+          isDone: boolean;
+          latestEnd?: number;
+          latestStart: number;
+          name: string;
+          next?: Array<string>;
+          processed: number;
+          state: "inProgress" | "success" | "failed" | "canceled" | "unknown";
+        }>
+      >;
+      migrate: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun: boolean;
+          fnHandle: string;
+          name: string;
+          next?: Array<{ fnHandle: string; name: string }>;
+          oneBatchOnly?: boolean;
+        },
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          error?: string;
+          isDone: boolean;
+          latestEnd?: number;
+          latestStart: number;
+          name: string;
+          next?: Array<string>;
+          processed: number;
+          state: "inProgress" | "success" | "failed" | "canceled" | "unknown";
+        }
+      >;
     };
   };
   pushNotifications: {
