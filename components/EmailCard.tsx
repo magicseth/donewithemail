@@ -5,16 +5,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  Platform,
   ActivityIndicator,
 } from "react-native";
 import { AISummary } from "./AISummary";
-
-// Only import WebView on native platforms
-let WebView: any = null;
-if (Platform.OS !== "web") {
-  WebView = require("react-native-webview").WebView;
-}
+import { WebViewWrapper } from "./WebViewWrapper";
 
 // Check if content looks like HTML
 function isHtml(content: string): boolean {
@@ -238,28 +232,7 @@ export function EmailCard({
       {/* Body preview */}
       <View style={styles.bodyContainer}>
         {showFullContent && isHtml(email.bodyPreview) ? (
-          Platform.OS === "web" ? (
-            // Render HTML in iframe on web
-            <iframe
-              srcDoc={email.bodyPreview}
-              style={{
-                width: "100%",
-                minHeight: 400,
-                border: "none",
-                backgroundColor: "#fff",
-              }}
-              sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-scripts"
-            />
-          ) : (
-            // Render HTML in WebView on native
-            <WebView
-              originWhitelist={["*"]}
-              source={{ html: email.bodyPreview }}
-              style={styles.webView}
-              scrollEnabled={false}
-              showsVerticalScrollIndicator={false}
-            />
-          )
+          <WebViewWrapper html={email.bodyPreview} />
         ) : (
           <Text
             style={styles.bodyText}
@@ -391,10 +364,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#444",
     lineHeight: 24,
-  },
-  webView: {
-    minHeight: 400,
-    backgroundColor: "#fff",
   },
   urgencyBar: {
     height: 4,
