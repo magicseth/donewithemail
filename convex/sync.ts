@@ -193,6 +193,9 @@ export const storeEmailInternal = internalMutation({
     receivedAt: v.number(),
   },
   handler: async (ctx, args): Promise<{ emailId: Id<"emails">; isNew: boolean }> => {
+    // Extract bodyFull to store separately
+    const { bodyFull, ...emailFields } = args;
+
     const existing = await ctx.db
       .query("emails")
       .withIndex("by_external_id", (q) =>
@@ -204,10 +207,17 @@ export const storeEmailInternal = internalMutation({
       return { emailId: existing._id, isNew: false };
     }
 
+    // Insert email without large body field
     const emailId = await ctx.db.insert("emails", {
-      ...args,
+      ...emailFields,
       isRead: false,
       isTriaged: false,
+    });
+
+    // Store body in separate table
+    await ctx.db.insert("emailBodies", {
+      emailId,
+      bodyFull,
     });
 
     // Queue for AI processing

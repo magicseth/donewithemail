@@ -16,9 +16,11 @@ export default defineSchema({
     cc: v.optional(v.array(v.id("contacts"))),
     subject: v.string(),
     bodyPreview: v.string(),
-    bodyFull: v.string(),
-    bodyHtml: v.optional(v.string()), // Full HTML body if available
-    rawPayload: v.optional(v.string()), // Raw Gmail API payload JSON for reprocessing
+    // Large body content now stored in emailBodies table
+    // These fields are optional for backwards compatibility during migration
+    bodyFull: v.optional(v.string()),
+    bodyHtml: v.optional(v.string()),
+    rawPayload: v.optional(v.string()),
     receivedAt: v.number(),
 
     // User state
@@ -54,6 +56,16 @@ export default defineSchema({
       searchField: "subject",
       filterFields: ["userId"],
     }),
+
+  // Email bodies stored separately to keep emails table lightweight
+  // This allows querying many emails without hitting memory limits
+  emailBodies: defineTable({
+    emailId: v.id("emails"),
+    bodyFull: v.string(),
+    bodyHtml: v.optional(v.string()),
+    rawPayload: v.optional(v.string()),
+  })
+    .index("by_email", ["emailId"]),
 
   // AI-generated email summaries (separate table for cleaner data model)
   emailSummaries: defineTable({

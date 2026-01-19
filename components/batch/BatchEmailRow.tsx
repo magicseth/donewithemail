@@ -1,4 +1,4 @@
-import React, { useCallback, memo } from "react";
+import React, { useCallback, memo, useState } from "react";
 import {
   View,
   Text,
@@ -47,111 +47,198 @@ function formatTimeAgo(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
+export interface QuickReplyOption {
+  label: string;
+  body: string;
+}
+
 interface BatchEmailRowProps {
   email: BatchEmailPreview;
-  isSaved: boolean;
+  isPunted: boolean;
   isSubscription?: boolean;
-  onSave: () => void;
+  onPunt: () => void;
+  onAccept?: () => void;
+  onQuickReply?: (reply: QuickReplyOption) => void;
+  onMicReply?: () => void;
   onUnsubscribe?: () => void;
+  isAccepting?: boolean;
   isUnsubscribing?: boolean;
 }
 
 export const BatchEmailRow = memo(function BatchEmailRow({
   email,
-  isSaved,
+  isPunted,
   isSubscription,
-  onSave,
+  onPunt,
+  onAccept,
+  onQuickReply,
+  onMicReply,
   onUnsubscribe,
+  isAccepting,
   isUnsubscribing,
 }: BatchEmailRowProps) {
+  const [showReplyOptions, setShowReplyOptions] = useState(false);
+
   // Prefer fromName (from email header) over contact name (may be stale for shared addresses)
   const fromName = email.fromName || email.fromContact?.name || email.fromContact?.email || "Unknown";
   const initials = getInitials(fromName);
   const timeAgo = formatTimeAgo(email.receivedAt);
 
+  const hasCalendar = !!email.calendarEvent;
+  const hasQuickReplies = email.quickReplies && email.quickReplies.length > 0;
+
   const handlePress = useCallback(() => {
     router.push(`/email/${email._id}`);
   }, [email._id]);
 
+  const handleReplyToggle = useCallback(() => {
+    setShowReplyOptions(prev => !prev);
+  }, []);
+
   return (
-    <View style={[styles.container, isSaved && styles.containerSaved]}>
-      {/* Unsubscribe button (for subscriptions only) */}
-      {isSubscription && onUnsubscribe && (
-        <TouchableOpacity
-          style={[styles.unsubButton, isUnsubscribing && styles.unsubButtonDisabled]}
-          onPress={onUnsubscribe}
-          disabled={isUnsubscribing}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          {isUnsubscribing ? (
-            <ActivityIndicator size="small" color="#EF4444" />
-          ) : (
-            <Text style={styles.unsubButtonText}>Unsub</Text>
-          )}
-        </TouchableOpacity>
-      )}
-
-      {/* Avatar */}
-      <View style={styles.avatarContainer}>
-        {email.fromContact?.avatarUrl ? (
-          <Image
-            source={{ uri: email.fromContact.avatarUrl }}
-            style={styles.avatar}
-          />
-        ) : (
-          <View style={[styles.avatar, styles.avatarPlaceholder]}>
-            <Text style={styles.avatarText}>{initials}</Text>
-          </View>
+    <View style={[styles.container, isPunted && styles.containerPunted]}>
+      {/* Main row */}
+      <View style={styles.mainRow}>
+        {/* Unsubscribe button (for subscriptions only) */}
+        {isSubscription && onUnsubscribe && (
+          <TouchableOpacity
+            style={[styles.unsubButton, isUnsubscribing && styles.buttonDisabled]}
+            onPress={onUnsubscribe}
+            disabled={isUnsubscribing}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            {isUnsubscribing ? (
+              <ActivityIndicator size="small" color="#EF4444" />
+            ) : (
+              <Text style={styles.unsubButtonText}>Unsub</Text>
+            )}
+          </TouchableOpacity>
         )}
-      </View>
 
-      {/* Content - pressable to open email */}
-      <TouchableOpacity style={styles.content} onPress={handlePress} activeOpacity={0.7}>
-        {/* Header row: sender + time */}
-        <View style={styles.headerRow}>
-          <Text style={styles.senderName} numberOfLines={1}>
-            {fromName}
-          </Text>
-          <Text style={styles.timeAgo}>{timeAgo}</Text>
+        {/* Avatar */}
+        <View style={styles.avatarContainer}>
+          {email.fromContact?.avatarUrl ? (
+            <Image
+              source={{ uri: email.fromContact.avatarUrl }}
+              style={styles.avatar}
+            />
+          ) : (
+            <View style={[styles.avatar, styles.avatarPlaceholder]}>
+              <Text style={styles.avatarText}>{initials}</Text>
+            </View>
+          )}
         </View>
 
-        {/* Subject */}
-        <Text style={styles.subject} numberOfLines={1}>
-          {decodeHtmlEntities(email.subject)}
-        </Text>
+        {/* Content - pressable to open email */}
+        <TouchableOpacity style={styles.content} onPress={handlePress} activeOpacity={0.7}>
+          {/* Header row: sender + time */}
+          <View style={styles.headerRow}>
+            <Text style={styles.senderName} numberOfLines={1}>
+              {fromName}
+            </Text>
+            <Text style={styles.timeAgo}>{timeAgo}</Text>
+          </View>
 
-        {/* Summary/preview */}
-        <Text style={styles.preview} numberOfLines={1}>
-          {email.summary || decodeHtmlEntities(email.bodyPreview)}
-        </Text>
-      </TouchableOpacity>
+          {/* Subject */}
+          <Text style={styles.subject} numberOfLines={1}>
+            {decodeHtmlEntities(email.subject)}
+          </Text>
 
-      {/* Save button */}
-      <TouchableOpacity
-        style={[styles.saveButton, isSaved && styles.saveButtonSaved]}
-        onPress={onSave}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-      >
-        <Text style={[styles.saveButtonText, isSaved && styles.saveButtonTextSaved]}>
-          {isSaved ? "Saved" : "Save"}
-        </Text>
-      </TouchableOpacity>
+          {/* Summary/preview */}
+          <Text style={styles.preview} numberOfLines={1}>
+            {email.summary || decodeHtmlEntities(email.bodyPreview)}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Action buttons */}
+        <View style={styles.actionButtons}>
+          {/* Reply button - only if quick replies or mic available */}
+          {(hasQuickReplies || onMicReply) && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.replyButton, showReplyOptions && styles.replyButtonActive]}
+              onPress={handleReplyToggle}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            >
+              <Text style={[styles.actionButtonText, styles.replyButtonText, showReplyOptions && styles.replyButtonTextActive]}>
+                Reply
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Accept button - only for calendar items */}
+          {hasCalendar && onAccept && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.acceptButton, isAccepting && styles.buttonDisabled]}
+              onPress={onAccept}
+              disabled={isAccepting}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            >
+              {isAccepting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={[styles.actionButtonText, styles.acceptButtonText]}>Accept</Text>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Punt button - always visible, far right */}
+          <TouchableOpacity
+            style={[styles.actionButton, styles.puntButton, isPunted && styles.puntButtonActive]}
+            onPress={onPunt}
+            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          >
+            <Text style={[styles.actionButtonText, styles.puntButtonText, isPunted && styles.puntButtonTextActive]}>
+              {isPunted ? "Punted" : "Punt"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Expanded reply options */}
+      {showReplyOptions && (
+        <View style={styles.replyOptionsRow}>
+          {/* Quick reply chips */}
+          {email.quickReplies?.map((reply, idx) => (
+            <TouchableOpacity
+              key={idx}
+              style={styles.quickReplyChip}
+              onPress={() => onQuickReply?.(reply)}
+            >
+              <Text style={styles.quickReplyText} numberOfLines={1}>
+                {reply.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+
+          {/* Mic button */}
+          {onMicReply && (
+            <TouchableOpacity
+              style={styles.micButton}
+              onPress={onMicReply}
+            >
+              <Text style={styles.micButtonText}>🎤</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 });
 
 const styles = StyleSheet.create({
   container: {
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  containerPunted: {
+    backgroundColor: "#EEF2FF",
+  },
+  mainRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
-    backgroundColor: "#fff",
-  },
-  containerSaved: {
-    backgroundColor: "#EEF2FF",
   },
   unsubButton: {
     paddingHorizontal: 8,
@@ -160,7 +247,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginRight: 8,
   },
-  unsubButtonDisabled: {
+  buttonDisabled: {
     opacity: 0.6,
   },
   unsubButtonText: {
@@ -215,24 +302,89 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#666",
   },
-  saveButton: {
-    paddingHorizontal: 12,
+  actionButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  actionButton: {
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    backgroundColor: "#f0f0f0",
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#e0e0e0",
   },
-  saveButtonSaved: {
+  actionButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  replyButton: {
+    backgroundColor: "#fff",
+    borderColor: "#6366F1",
+  },
+  replyButtonActive: {
+    backgroundColor: "#6366F1",
+  },
+  replyButtonText: {
+    color: "#6366F1",
+  },
+  replyButtonTextActive: {
+    color: "#fff",
+  },
+  acceptButton: {
+    backgroundColor: "#F59E0B",
+    borderColor: "#F59E0B",
+  },
+  acceptButtonText: {
+    color: "#fff",
+  },
+  puntButton: {
+    backgroundColor: "#f5f5f5",
+    borderColor: "#ddd",
+  },
+  puntButtonActive: {
     backgroundColor: "#6366F1",
     borderColor: "#6366F1",
   },
-  saveButtonText: {
-    fontSize: 12,
-    fontWeight: "600",
+  puntButtonText: {
     color: "#666",
   },
-  saveButtonTextSaved: {
+  puntButtonTextActive: {
     color: "#fff",
+  },
+  replyOptionsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    paddingTop: 4,
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+    backgroundColor: "#FAFAFA",
+  },
+  quickReplyChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#6366F1",
+    maxWidth: 150,
+  },
+  quickReplyText: {
+    fontSize: 12,
+    color: "#6366F1",
+    fontWeight: "500",
+  },
+  micButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#EF4444",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  micButtonText: {
+    fontSize: 16,
   },
 });

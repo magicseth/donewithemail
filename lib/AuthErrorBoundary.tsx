@@ -40,12 +40,18 @@ export function isAuthError(error: unknown): boolean {
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
     return (
+      // Convex/WorkOS auth errors
       message.includes("unauthorized") ||
       message.includes("no valid authentication token") ||
       message.includes("not authenticated") ||
       message.includes("authentication required") ||
       message.includes("invalid token") ||
-      message.includes("token expired")
+      message.includes("token expired") ||
+      // Gmail-specific auth errors (refresh token revoked)
+      message.includes("sign out and sign in") ||
+      message.includes("gmail access has been revoked") ||
+      message.includes("invalid_grant") ||
+      message.includes("token has been revoked")
     );
   }
   return false;

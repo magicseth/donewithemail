@@ -17,6 +17,17 @@ export const getUserByEmail = internalQuery({
   },
 });
 
+// Internal query to get email body from emailBodies table
+export const getEmailBodyById = internalQuery({
+  args: { emailId: v.id("emails") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("emailBodies")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .first();
+  },
+});
+
 // Internal query to get cached summaries for a list of external IDs
 export const getCachedSummaries = internalQuery({
   args: { externalIds: v.array(v.string()) },
@@ -211,6 +222,9 @@ export const storeEmailInternal = internalMutation({
     isSubscription: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    // Extract body fields to store separately
+    const { bodyFull, bodyHtml, rawPayload, ...emailFields } = args;
+
     // Check if email already exists
     const existing = await ctx.db
       .query("emails")
@@ -237,10 +251,19 @@ export const storeEmailInternal = internalMutation({
       return { emailId: existing._id, isNew: false };
     }
 
+    // Insert email without large body fields (stored separately in emailBodies)
     const emailId = await ctx.db.insert("emails", {
-      ...args,
+      ...emailFields,
       isTriaged: false,
       direction: args.direction || "incoming",
+    });
+
+    // Store body content in separate table to keep emails table lightweight
+    await ctx.db.insert("emailBodies", {
+      emailId,
+      bodyFull,
+      bodyHtml,
+      rawPayload,
     });
 
     return { emailId, isNew: true };
@@ -262,18 +285,18 @@ export const updateUserTokens = internalMutation({
   },
 });
 
-// Refresh access token if expired
-async function refreshTokenIfNeeded(
-  accessToken: string,
-  refreshToken: string,
-  expiresAt: number
-): Promise<{ accessToken: string; expiresAt: number; refreshed: boolean }> {
-  // If token is still valid (with 5 min buffer), return it
-  if (Date.now() < expiresAt - 5 * 60 * 1000) {
-    return { accessToken, expiresAt, refreshed: false };
+// Custom error class for auth errors that require re-authentication
+export class GmailAuthError extends Error {
+  constructor(message: string, public requiresReauth: boolean = false) {
+    super(message);
+    this.name = "GmailAuthError";
   }
+}
 
-  // Refresh the token
+// Refresh access token if expired or forced
+async function refreshGoogleToken(
+  refreshToken: string
+): Promise<{ accessToken: string; expiresAt: number }> {
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -286,16 +309,105 @@ async function refreshTokenIfNeeded(
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to refresh token: ${error}`);
+    const errorText = await response.text();
+    console.error("[GmailSync] Token refresh failed:", response.status, errorText);
+
+    // Check if the refresh token is invalid/revoked
+    if (response.status === 400 || response.status === 401) {
+      const errorLower = errorText.toLowerCase();
+      if (
+        errorLower.includes("invalid_grant") ||
+        errorLower.includes("token has been expired or revoked") ||
+        errorLower.includes("token has been revoked")
+      ) {
+        throw new GmailAuthError(
+          "Gmail access has been revoked. Please sign out and sign in again.",
+          true
+        );
+      }
+    }
+
+    throw new GmailAuthError(`Failed to refresh Gmail token: ${errorText}`);
   }
 
   const data = await response.json();
   return {
     accessToken: data.access_token,
     expiresAt: Date.now() + data.expires_in * 1000,
+  };
+}
+
+// Refresh access token if expired
+async function refreshTokenIfNeeded(
+  accessToken: string,
+  refreshToken: string,
+  expiresAt: number
+): Promise<{ accessToken: string; expiresAt: number; refreshed: boolean }> {
+  // If token is still valid (with 5 min buffer), return it
+  if (Date.now() < expiresAt - 5 * 60 * 1000) {
+    return { accessToken, expiresAt, refreshed: false };
+  }
+
+  const result = await refreshGoogleToken(refreshToken);
+  return {
+    ...result,
     refreshed: true,
   };
+}
+
+// Helper to make Gmail API calls with automatic retry on 401
+async function gmailApiCall<T>(
+  url: string,
+  accessToken: string,
+  refreshToken: string | undefined,
+  options: RequestInit = {}
+): Promise<{ data: T; newToken?: { accessToken: string; expiresAt: number } }> {
+  const makeRequest = async (token: string) => {
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  };
+
+  let response = await makeRequest(accessToken);
+
+  // If unauthorized and we have a refresh token, try to refresh and retry once
+  if (response.status === 401 && refreshToken) {
+    console.log("[GmailSync] Got 401, attempting token refresh and retry...");
+
+    try {
+      const newToken = await refreshGoogleToken(refreshToken);
+      response = await makeRequest(newToken.accessToken);
+
+      if (response.ok) {
+        const data = await response.json();
+        return { data, newToken };
+      }
+    } catch (refreshError) {
+      // If refresh failed, throw that error (may indicate re-auth needed)
+      throw refreshError;
+    }
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    // Check for specific auth errors that need re-auth
+    if (response.status === 401 || response.status === 403) {
+      throw new GmailAuthError(
+        `Gmail API authorization failed (${response.status}): ${errorText}`,
+        true
+      );
+    }
+
+    throw new Error(`Gmail API error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  return { data };
 }
 
 // Fetch profile photo URL from Google People API
@@ -424,7 +536,7 @@ export const fetchEmailBody = action({
     // Get the email to find its externalId
     type EmailData = {
       externalId: string;
-      bodyFull: string;
+      bodyFull?: string; // Optional - may be in emailBodies table
       bodyPreview: string;
     };
     const email: EmailData | null = await ctx.runQuery(internal.emails.getEmailById, {
@@ -435,9 +547,32 @@ export const fetchEmailBody = action({
       throw new Error("Email not found");
     }
 
-    // If we already have HTML content, return it
+    // First check the emailBodies table for the body content
+    type EmailBodyData = {
+      bodyFull: string;
+      bodyHtml?: string;
+    };
+    const emailBody: EmailBodyData | null = await ctx.runQuery(internal.gmailSync.getEmailBodyById, {
+      emailId: args.emailId,
+    });
+
+    // If we have body in the emailBodies table, return it
+    if (emailBody?.bodyHtml && emailBody.bodyHtml.includes("<")) {
+      return { body: emailBody.bodyHtml, isHtml: true };
+    }
+    if (emailBody?.bodyFull && emailBody.bodyFull.includes("<")) {
+      return { body: emailBody.bodyFull, isHtml: true };
+    }
+    if (emailBody?.bodyFull) {
+      return { body: emailBody.bodyFull, isHtml: false };
+    }
+
+    // Fallback: check legacy bodyFull on emails table (for backwards compatibility)
     if (email.bodyFull && email.bodyFull.includes("<")) {
       return { body: email.bodyFull, isHtml: true };
+    }
+    if (email.bodyFull) {
+      return { body: email.bodyFull, isHtml: false };
     }
 
     // Get user's Gmail tokens
@@ -452,34 +587,47 @@ export const fetchEmailBody = action({
     // Refresh token if needed
     let accessToken: string = user.gmailAccessToken;
     if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
-      const refreshed = await refreshTokenIfNeeded(
-        user.gmailAccessToken,
-        user.gmailRefreshToken,
-        user.gmailTokenExpiresAt
-      );
-      accessToken = refreshed.accessToken;
+      try {
+        const refreshed = await refreshTokenIfNeeded(
+          user.gmailAccessToken,
+          user.gmailRefreshToken,
+          user.gmailTokenExpiresAt
+        );
+        accessToken = refreshed.accessToken;
 
-      // Save refreshed token to database
-      if (refreshed.refreshed) {
-        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
-          userId: user._id,
-          accessToken: refreshed.accessToken,
-          expiresAt: refreshed.expiresAt,
-        });
+        // Save refreshed token to database
+        if (refreshed.refreshed) {
+          await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+            userId: user._id,
+            accessToken: refreshed.accessToken,
+            expiresAt: refreshed.expiresAt,
+          });
+        }
+      } catch (error) {
+        if (error instanceof GmailAuthError && error.requiresReauth) {
+          throw error;
+        }
+        console.error("[GmailSync] Token refresh failed, trying with existing token:", error);
       }
     }
 
-    // Fetch full email from Gmail
-    const response = await fetch(
+    // Fetch full email from Gmail with auto-retry on 401
+    const result = await gmailApiCall<{ payload: any }>(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${email.externalId}?format=full`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
+      accessToken,
+      user.gmailRefreshToken
     );
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch email: ${response.status}`);
+    // Save new token if we got one from a retry
+    if (result.newToken) {
+      await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+        userId: user._id,
+        accessToken: result.newToken.accessToken,
+        expiresAt: result.newToken.expiresAt,
+      });
     }
 
-    const data = await response.json();
+    const data = result.data;
     const { html, plain } = extractBody(data.payload);
     const bodyFull = html || plain || email.bodyPreview;
     const isHtml = !!html;
@@ -494,14 +642,34 @@ export const fetchEmailBody = action({
   },
 });
 
-// Internal mutation to update email body
+// Internal mutation to update email body (stores in emailBodies table)
 export const updateEmailBody = internalMutation({
   args: {
     emailId: v.id("emails"),
     bodyFull: v.string(),
+    bodyHtml: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.emailId, { bodyFull: args.bodyFull });
+    // Check if body record already exists
+    const existing = await ctx.db
+      .query("emailBodies")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .first();
+
+    if (existing) {
+      // Update existing body record
+      await ctx.db.patch(existing._id, {
+        bodyFull: args.bodyFull,
+        ...(args.bodyHtml && { bodyHtml: args.bodyHtml }),
+      });
+    } else {
+      // Create new body record
+      await ctx.db.insert("emailBodies", {
+        emailId: args.emailId,
+        bodyFull: args.bodyFull,
+        bodyHtml: args.bodyHtml,
+      });
+    }
   },
 });
 
@@ -524,23 +692,45 @@ export const fetchEmails = action({
       );
     }
 
-    // Refresh token if needed (only if we have a refresh token)
-    let accessToken = user.gmailAccessToken;
-    if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
-      const refreshed = await refreshTokenIfNeeded(
-        user.gmailAccessToken,
-        user.gmailRefreshToken,
-        user.gmailTokenExpiresAt
-      );
-      accessToken = refreshed.accessToken;
-
-      // Save refreshed token to database so it persists
-      if (refreshed.refreshed) {
+    // Helper to save updated token to database
+    const saveTokenIfNeeded = async (newToken?: { accessToken: string; expiresAt: number }): Promise<string | null> => {
+      if (newToken) {
         await ctx.runMutation(internal.gmailSync.updateUserTokens, {
           userId: user._id,
-          accessToken: refreshed.accessToken,
-          expiresAt: refreshed.expiresAt,
+          accessToken: newToken.accessToken,
+          expiresAt: newToken.expiresAt,
         });
+        return newToken.accessToken;
+      }
+      return null;
+    };
+
+    // Refresh token if needed (only if we have a refresh token)
+    let accessToken: string = user.gmailAccessToken;
+    if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
+      try {
+        const refreshed = await refreshTokenIfNeeded(
+          user.gmailAccessToken,
+          user.gmailRefreshToken,
+          user.gmailTokenExpiresAt
+        );
+        accessToken = refreshed.accessToken;
+
+        // Save refreshed token to database so it persists
+        if (refreshed.refreshed) {
+          await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+            userId: user._id,
+            accessToken: refreshed.accessToken,
+            expiresAt: refreshed.expiresAt,
+          });
+        }
+      } catch (error) {
+        // If it's a re-auth error, re-throw it
+        if (error instanceof GmailAuthError && error.requiresReauth) {
+          throw error;
+        }
+        // For other errors, log and continue with existing token (might still work)
+        console.error("[GmailSync] Token refresh failed, trying with existing token:", error);
       }
     }
 
@@ -548,35 +738,45 @@ export const fetchEmails = action({
     // Fetch both INBOX and SENT emails
     const maxResults = args.maxResults || 15;
 
-    // Fetch INBOX emails
+    // Fetch INBOX emails with auto-retry on 401
     let inboxUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}&labelIds=INBOX`;
     if (args.pageToken) {
       inboxUrl += `&pageToken=${args.pageToken}`;
     }
 
-    const inboxResponse = await fetch(inboxUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    type MessageListResponse = { messages?: { id: string }[]; nextPageToken?: string };
 
-    if (!inboxResponse.ok) {
-      const error = await inboxResponse.text();
-      throw new Error(`Gmail API error: ${inboxResponse.status} - ${error}`);
+    const inboxResult: { data: MessageListResponse; newToken?: { accessToken: string; expiresAt: number } } = await gmailApiCall<MessageListResponse>(
+      inboxUrl,
+      accessToken,
+      user.gmailRefreshToken
+    );
+
+    // Save new token if we got one from a retry
+    const newToken: string | null = await saveTokenIfNeeded(inboxResult.newToken);
+    if (newToken) {
+      accessToken = newToken;
     }
 
-    const inboxData: { messages?: { id: string }[]; nextPageToken?: string } = await inboxResponse.json();
-    const inboxMessageIds: { id: string; direction: "incoming" }[] = (inboxData.messages || []).map(m => ({ ...m, direction: "incoming" as const }));
-    const nextPageToken = inboxData.nextPageToken;
+    const inboxData: MessageListResponse = inboxResult.data;
+    const inboxMessageIds: { id: string; direction: "incoming" }[] = (inboxData.messages || []).map((m: { id: string }) => ({ ...m, direction: "incoming" as const }));
+    const nextPageToken: string | undefined = inboxData.nextPageToken;
 
     // Also fetch SENT emails (half as many to not overwhelm)
     const sentUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${Math.ceil(maxResults / 2)}&labelIds=SENT`;
-    const sentResponse = await fetch(sentUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
 
     let sentMessageIds: { id: string; direction: "outgoing" }[] = [];
-    if (sentResponse.ok) {
-      const sentData: { messages?: { id: string }[] } = await sentResponse.json();
-      sentMessageIds = (sentData.messages || []).map(m => ({ ...m, direction: "outgoing" as const }));
+    try {
+      const sentResult = await gmailApiCall<MessageListResponse>(
+        sentUrl,
+        accessToken,
+        user.gmailRefreshToken
+      );
+      await saveTokenIfNeeded(sentResult.newToken);
+      sentMessageIds = (sentResult.data.messages || []).map(m => ({ ...m, direction: "outgoing" as const }));
+    } catch (error) {
+      // Sent folder is less critical, log and continue
+      console.error("[GmailSync] Failed to fetch sent emails:", error);
     }
 
     // Combine both lists, removing duplicates (some emails might be in both INBOX and SENT)

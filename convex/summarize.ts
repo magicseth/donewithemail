@@ -52,6 +52,12 @@ export const getEmailForSummary = internalQuery({
     // Get sender info
     const contact = await ctx.db.get(email.from);
 
+    // Get email body from separate table (or fallback to legacy field)
+    const emailBody = await ctx.db
+      .query("emailBodies")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .first();
+
     // Get existing summary if any
     const summary = await ctx.db
       .query("emailSummaries")
@@ -60,6 +66,9 @@ export const getEmailForSummary = internalQuery({
 
     return {
       ...email,
+      // Use body from emailBodies table, fallback to legacy field on email
+      bodyFull: emailBody?.bodyFull || email.bodyFull,
+      bodyHtml: emailBody?.bodyHtml || email.bodyHtml,
       fromEmail: contact?.email,
       fromName: contact?.name,
       summary: summary?.summary,
@@ -87,6 +96,12 @@ export const getEmailByExternalId = internalQuery({
       .first();
 
     if (!email) return null;
+
+    // Get email body from separate table (or fallback to legacy field)
+    const emailBody = await ctx.db
+      .query("emailBodies")
+      .withIndex("by_email", (q) => q.eq("emailId", email._id))
+      .first();
 
     // Get existing summary
     const existingSummary = await ctx.db
@@ -117,6 +132,9 @@ export const getEmailByExternalId = internalQuery({
 
     return {
       ...email,
+      // Use body from emailBodies table, fallback to legacy field on email
+      bodyFull: emailBody?.bodyFull || email.bodyFull,
+      bodyHtml: emailBody?.bodyHtml || email.bodyHtml,
       fromEmail: fromContact?.email,
       fromName: fromContact?.name,
       fromRelationship: fromContact?.relationship,

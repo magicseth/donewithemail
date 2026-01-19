@@ -8,24 +8,35 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { BatchCategoryCard } from "./BatchCategoryCard";
+import { QuickReplyOption } from "./BatchEmailRow";
 import { useBatchTriage, BatchCategory } from "../../hooks/useBatchTriage";
 
 interface BatchTriageViewProps {
   userEmail: string | undefined;
   onRefresh?: () => void;
   refreshing?: boolean;
+  onQuickReply?: (emailId: string, reply: QuickReplyOption) => void;
+  onMicReply?: (emailId: string) => void;
 }
 
-export function BatchTriageView({ userEmail, onRefresh, refreshing = false }: BatchTriageViewProps) {
+export function BatchTriageView({
+  userEmail,
+  onRefresh,
+  refreshing = false,
+  onQuickReply,
+  onMicReply,
+}: BatchTriageViewProps) {
   const {
     categories,
     total,
     isLoading,
-    savedEmails,
-    toggleSaveEmail,
+    puntedEmails,
+    togglePuntEmail,
     markCategoryDone,
+    acceptCalendar,
     unsubscribe,
     processingCategory,
+    acceptingIds,
     unsubscribingIds,
   } = useBatchTriage(userEmail);
 
@@ -47,6 +58,16 @@ export function BatchTriageView({ userEmail, onRefresh, refreshing = false }: Ba
       showToast(`${result.triaged} emails processed`, "success");
     }
   }, [markCategoryDone, showToast]);
+
+  // Handle accept calendar
+  const handleAcceptCalendar = useCallback(async (emailId: string) => {
+    try {
+      await acceptCalendar(emailId);
+      showToast("Added to calendar", "success");
+    } catch (err) {
+      showToast("Failed to add to calendar", "error");
+    }
+  }, [acceptCalendar, showToast]);
 
   // Handle unsubscribe
   const handleUnsubscribe = useCallback(async (emailId: string) => {
@@ -98,7 +119,7 @@ export function BatchTriageView({ userEmail, onRefresh, refreshing = false }: Ba
         <View style={styles.statsRow}>
           <Text style={styles.statsText}>
             {total} emails to review
-            {savedEmails.size > 0 && ` • ${savedEmails.size} saved to TODO`}
+            {puntedEmails.size > 0 && ` • ${puntedEmails.size} punted to TODO`}
           </Text>
         </View>
 
@@ -107,9 +128,11 @@ export function BatchTriageView({ userEmail, onRefresh, refreshing = false }: Ba
           <BatchCategoryCard
             category="pending"
             emails={categories.pending}
-            savedEmails={savedEmails}
-            onSaveEmail={toggleSaveEmail}
+            puntedEmails={puntedEmails}
+            onPuntEmail={togglePuntEmail}
             onMarkAllDone={() => handleMarkCategoryDone("pending")}
+            onQuickReply={onQuickReply}
+            onMicReply={onMicReply}
             onUnsubscribe={handleUnsubscribe}
             unsubscribingIds={unsubscribingIds}
             isProcessing={processingCategory === "pending"}
@@ -120,9 +143,11 @@ export function BatchTriageView({ userEmail, onRefresh, refreshing = false }: Ba
         <BatchCategoryCard
           category="humanWaiting"
           emails={categories.humanWaiting}
-          savedEmails={savedEmails}
-          onSaveEmail={toggleSaveEmail}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("humanWaiting")}
+          onQuickReply={onQuickReply}
+          onMicReply={onMicReply}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "humanWaiting"}
@@ -132,9 +157,11 @@ export function BatchTriageView({ userEmail, onRefresh, refreshing = false }: Ba
         <BatchCategoryCard
           category="actionNeeded"
           emails={categories.actionNeeded}
-          savedEmails={savedEmails}
-          onSaveEmail={toggleSaveEmail}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("actionNeeded")}
+          onQuickReply={onQuickReply}
+          onMicReply={onMicReply}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "actionNeeded"}
@@ -144,10 +171,14 @@ export function BatchTriageView({ userEmail, onRefresh, refreshing = false }: Ba
         <BatchCategoryCard
           category="calendar"
           emails={categories.calendar}
-          savedEmails={savedEmails}
-          onSaveEmail={toggleSaveEmail}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("calendar")}
+          onAcceptCalendar={handleAcceptCalendar}
+          onQuickReply={onQuickReply}
+          onMicReply={onMicReply}
           onUnsubscribe={handleUnsubscribe}
+          acceptingIds={acceptingIds}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "calendar"}
         />
@@ -156,9 +187,11 @@ export function BatchTriageView({ userEmail, onRefresh, refreshing = false }: Ba
         <BatchCategoryCard
           category="done"
           emails={categories.done}
-          savedEmails={savedEmails}
-          onSaveEmail={toggleSaveEmail}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("done")}
+          onQuickReply={onQuickReply}
+          onMicReply={onMicReply}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "done"}
@@ -168,9 +201,11 @@ export function BatchTriageView({ userEmail, onRefresh, refreshing = false }: Ba
         <BatchCategoryCard
           category="lowConfidence"
           emails={categories.lowConfidence}
-          savedEmails={savedEmails}
-          onSaveEmail={toggleSaveEmail}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("lowConfidence")}
+          onQuickReply={onQuickReply}
+          onMicReply={onMicReply}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "lowConfidence"}

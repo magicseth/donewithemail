@@ -7,6 +7,16 @@ import { internal } from "./_generated/api";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
 
+// Custom error for auth failures that need user re-authentication
+class GmailAuthError extends Error {
+  requiresReauth: boolean;
+  constructor(message: string, requiresReauth = false) {
+    super(message);
+    this.name = "GmailAuthError";
+    this.requiresReauth = requiresReauth;
+  }
+}
+
 // Refresh Google access token using stored Google refresh token
 async function refreshGoogleToken(
   refreshToken: string
@@ -26,8 +36,25 @@ async function refreshGoogleToken(
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to refresh Google token: ${error}`);
+    const errorText = await response.text();
+    console.error("[EmailSync] Token refresh failed:", response.status, errorText);
+
+    // Check if the refresh token is invalid/revoked
+    if (response.status === 400 || response.status === 401) {
+      const errorLower = errorText.toLowerCase();
+      if (
+        errorLower.includes("invalid_grant") ||
+        errorLower.includes("token has been expired or revoked") ||
+        errorLower.includes("token has been revoked")
+      ) {
+        throw new GmailAuthError(
+          "Gmail refresh token is invalid or revoked. User needs to re-authenticate.",
+          true
+        );
+      }
+    }
+
+    throw new Error(`Failed to refresh Google token: ${errorText}`);
   }
 
   const data = await response.json();
@@ -113,6 +140,15 @@ async function checkNewEmailsForUser(
   // Check if token is expired (with 5 minute buffer)
   const tokenExpired = user.gmailTokenExpiresAt && Date.now() >= (user.gmailTokenExpiresAt - 5 * 60 * 1000);
 
+  // Helper to save updated token
+  const saveToken = async (accessToken: string, expiresAt: number) => {
+    await ctx.runMutation(internal.emailSyncHelpers.updateUserGmailTokens, {
+      userId: user._id,
+      gmailAccessToken: accessToken,
+      gmailTokenExpiresAt: expiresAt,
+    });
+  };
+
   // Refresh token if needed and possible (using Google's refresh token directly)
   let accessToken = user.gmailAccessToken;
   if (tokenExpired && user.gmailRefreshToken) {
@@ -120,16 +156,14 @@ async function checkNewEmailsForUser(
       console.log(`Refreshing Google token for ${user.email}...`);
       const refreshed = await refreshGoogleToken(user.gmailRefreshToken);
       accessToken = refreshed.accessToken;
-
-      // Update the Gmail access token
-      await ctx.runMutation(internal.emailSyncHelpers.updateUserGmailTokens, {
-        userId: user._id,
-        gmailAccessToken: refreshed.accessToken,
-        gmailTokenExpiresAt: refreshed.expiresAt,
-      });
+      await saveToken(refreshed.accessToken, refreshed.expiresAt);
       console.log(`Token refreshed for ${user.email}, expires at ${new Date(refreshed.expiresAt).toISOString()}`);
     } catch (error) {
-      console.error(`Token refresh failed for ${user.email}:`, error);
+      if (error instanceof GmailAuthError && error.requiresReauth) {
+        console.error(`[EmailSync] User ${user.email} needs to re-authenticate:`, error.message);
+      } else {
+        console.error(`Token refresh failed for ${user.email}:`, error);
+      }
       return; // Can't continue without valid token
     }
   } else if (tokenExpired && !user.gmailRefreshToken) {
@@ -145,9 +179,32 @@ async function checkNewEmailsForUser(
   const afterEpoch = Math.floor(lastSync / 1000);
   const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=after:${afterEpoch}`;
 
-  const response = await fetch(url, {
+  // Make Gmail API call with retry on 401
+  let response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
+
+  // If we get 401 and have a refresh token, try to refresh and retry
+  if (response.status === 401 && user.gmailRefreshToken) {
+    console.log(`[EmailSync] Got 401 for ${user.email}, attempting token refresh and retry...`);
+    try {
+      const refreshed = await refreshGoogleToken(user.gmailRefreshToken);
+      accessToken = refreshed.accessToken;
+      await saveToken(refreshed.accessToken, refreshed.expiresAt);
+
+      // Retry the request
+      response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+    } catch (error) {
+      if (error instanceof GmailAuthError && error.requiresReauth) {
+        console.error(`[EmailSync] User ${user.email} needs to re-authenticate:`, error.message);
+      } else {
+        console.error(`[EmailSync] Token refresh failed for ${user.email}:`, error);
+      }
+      return;
+    }
+  }
 
   if (!response.ok) {
     console.error(`Gmail API error for ${user.email}: ${response.status}`);

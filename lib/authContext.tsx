@@ -341,6 +341,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Handle auth errors from Convex queries/mutations
   const handleAuthError = useCallback(async (error: Error) => {
     const message = error.message.toLowerCase();
+
+    // Check for Gmail-specific re-auth errors (refresh token revoked/expired)
+    const needsReauth =
+      message.includes("sign out and sign in") ||
+      message.includes("gmail access has been revoked") ||
+      message.includes("invalid_grant") ||
+      message.includes("token has been revoked");
+
+    if (needsReauth) {
+      console.log("[Auth] Gmail re-authentication required, signing out:", error.message);
+      await clearAuth();
+      return;
+    }
+
+    // Check for general Convex auth errors (WorkOS JWT issues)
     const isAuthError =
       message.includes("unauthorized") ||
       message.includes("no valid authentication token") ||

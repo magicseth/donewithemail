@@ -6,6 +6,11 @@ import { Id } from "../convex/_generated/dataModel";
 // Types for batch triage
 export type BatchCategory = "done" | "humanWaiting" | "actionNeeded" | "calendar" | "lowConfidence" | "pending";
 
+export interface QuickReplyOption {
+  label: string;
+  body: string;
+}
+
 export interface BatchEmailPreview {
   _id: string;
   subject: string;
@@ -14,6 +19,7 @@ export interface BatchEmailPreview {
   summary?: string;
   urgencyScore?: number;
   actionRequired?: "reply" | "action" | "fyi" | "none";
+  quickReplies?: QuickReplyOption[];
   calendarEvent?: {
     title: string;
     startTime?: string;
@@ -48,16 +54,18 @@ export interface BatchTriageResult {
   total: number;
   isLoading: boolean;
 
-  // Saved emails (will go to TODO instead of done)
-  savedEmails: Set<string>;
+  // Punted emails (will go to TODO instead of done)
+  puntedEmails: Set<string>;
 
   // Actions
-  toggleSaveEmail: (emailId: string) => void;
+  togglePuntEmail: (emailId: string) => void;
   markCategoryDone: (category: BatchCategory) => Promise<{ triaged: number; errors: string[] }>;
+  acceptCalendar: (emailId: string) => Promise<void>;
   unsubscribe: (emailId: string) => Promise<void>;
 
   // Processing state
   processingCategory: BatchCategory | null;
+  acceptingIds: Set<string>;
   unsubscribingIds: Set<string>;
 }
 
@@ -73,11 +81,11 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
   // Mutations and actions
   const batchTriageMutation = useMutation(api.emails.batchTriageMyEmails);
   const batchCalendarAction = useAction(api.calendar.batchAddToCalendar);
-  const batchUnsubscribeAction = useAction(api.subscriptions.batchUnsubscribeMy);
 
   // Local state
-  const [savedEmails, setSavedEmails] = useState<Set<string>>(new Set());
+  const [puntedEmails, setPuntedEmails] = useState<Set<string>>(new Set());
   const [processingCategory, setProcessingCategory] = useState<BatchCategory | null>(null);
+  const [acceptingIds, setAcceptingIds] = useState<Set<string>>(new Set());
   const [unsubscribingIds, setUnsubscribingIds] = useState<Set<string>>(new Set());
 
   // Categories data
@@ -95,9 +103,9 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
     return batchPreview;
   }, [batchPreview]);
 
-  // Toggle save state for an email
-  const toggleSaveEmail = useCallback((emailId: string) => {
-    setSavedEmails(prev => {
+  // Toggle punt state for an email
+  const togglePuntEmail = useCallback((emailId: string) => {
+    setPuntedEmails(prev => {
       const next = new Set(prev);
       if (next.has(emailId)) {
         next.delete(emailId);
@@ -108,7 +116,7 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
     });
   }, []);
 
-  // Mark all unsaved emails in a category as done
+  // Mark all unpunted emails in a category as done
   const markCategoryDone = useCallback(async (category: BatchCategory): Promise<{
     triaged: number;
     errors: string[];
@@ -125,9 +133,9 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
       // Get emails in this category
       const emailsInCategory = categoriesData[category];
 
-      // Split into saved (go to TODO) and unsaved (mark done)
-      const toSave = emailsInCategory.filter(e => savedEmails.has(e._id));
-      const toDone = emailsInCategory.filter(e => !savedEmails.has(e._id));
+      // Split into punted (go to TODO) and unpunted (mark done)
+      const toPunt = emailsInCategory.filter(e => puntedEmails.has(e._id));
+      const toDone = emailsInCategory.filter(e => !puntedEmails.has(e._id));
 
       // Build triage actions
       const triageActions: Array<{
@@ -135,15 +143,15 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
         action: "done" | "reply_needed";
       }> = [];
 
-      // Saved emails -> reply_needed (TODO)
-      for (const email of toSave) {
+      // Punted emails -> reply_needed (TODO)
+      for (const email of toPunt) {
         triageActions.push({
           emailId: email._id as Id<"emails">,
           action: "reply_needed",
         });
       }
 
-      // Unsaved emails -> done
+      // Unpunted emails -> done
       for (const email of toDone) {
         triageActions.push({
           emailId: email._id as Id<"emails">,
@@ -151,7 +159,7 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
         });
       }
 
-      // For calendar category, also add events to calendar (for unsaved only)
+      // For calendar category, also add events to calendar (for unpunted only)
       if (category === "calendar") {
         const calendarEmailIds = toDone
           .filter(e => e.calendarEvent)
@@ -187,8 +195,8 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
         }
       }
 
-      // Clear saved state for processed emails
-      setSavedEmails(prev => {
+      // Clear punted state for processed emails
+      setPuntedEmails(prev => {
         const next = new Set(prev);
         for (const email of emailsInCategory) {
           next.delete(email._id);
@@ -201,28 +209,46 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
     }
 
     return { triaged, errors };
-  }, [userEmail, categoriesData, savedEmails, batchCalendarAction, batchTriageMutation]);
+  }, [userEmail, categoriesData, puntedEmails, batchCalendarAction, batchTriageMutation]);
+
+  // Accept a single calendar event
+  const acceptCalendar = useCallback(async (emailId: string) => {
+    if (!userEmail) return;
+
+    setAcceptingIds(prev => new Set(prev).add(emailId));
+
+    try {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
+
+      // Add to calendar
+      await batchCalendarAction({
+        userEmail,
+        emailIds: [emailId as Id<"emails">],
+        timezone,
+      });
+
+      // Mark as done
+      await batchTriageMutation({
+        triageActions: [{
+          emailId: emailId as Id<"emails">,
+          action: "done",
+        }],
+      });
+    } finally {
+      setAcceptingIds(prev => {
+        const next = new Set(prev);
+        next.delete(emailId);
+        return next;
+      });
+    }
+  }, [userEmail, batchCalendarAction, batchTriageMutation]);
 
   // Unsubscribe from a mailing list
   const unsubscribe = useCallback(async (emailId: string) => {
-    // Find the email to get sender info
-    const allEmails = [
-      ...categoriesData.done,
-      ...categoriesData.humanWaiting,
-      ...categoriesData.actionNeeded,
-      ...categoriesData.calendar,
-      ...categoriesData.lowConfidence,
-      ...categoriesData.pending,
-    ];
-    const email = allEmails.find(e => e._id === emailId);
-    if (!email?.fromContact?.email) return;
-
     setUnsubscribingIds(prev => new Set(prev).add(emailId));
 
     try {
-      // We need to find the subscription by sender email
-      // For now, we'll just mark the email as done since we don't have subscription IDs here
-      // The actual unsubscribe should be done via the subscriptions API
+      // Mark the email as done
       await batchTriageMutation({
         triageActions: [{
           emailId: emailId as Id<"emails">,
@@ -236,17 +262,19 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
         return next;
       });
     }
-  }, [categoriesData, batchTriageMutation]);
+  }, [batchTriageMutation]);
 
   return {
     categories: categoriesData,
     total: batchPreview?.total ?? 0,
     isLoading: !batchPreview && isAuthenticated && !authLoading,
-    savedEmails,
-    toggleSaveEmail,
+    puntedEmails,
+    togglePuntEmail,
     markCategoryDone,
+    acceptCalendar,
     unsubscribe,
     processingCategory,
+    acceptingIds,
     unsubscribingIds,
   };
 }

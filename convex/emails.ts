@@ -51,6 +51,9 @@ export const storeEmail = mutation({
     receivedAt: v.number(),
   },
   handler: async (ctx, args) => {
+    // Extract bodyFull to store separately
+    const { bodyFull, ...emailFields } = args;
+
     // Check if email already exists
     const existing = await ctx.db
       .query("emails")
@@ -63,10 +66,17 @@ export const storeEmail = mutation({
       return { emailId: existing._id, isNew: false };
     }
 
+    // Insert email without large body fields
     const emailId = await ctx.db.insert("emails", {
-      ...args,
+      ...emailFields,
       isRead: false,
       isTriaged: false,
+    });
+
+    // Store body content in separate table
+    await ctx.db.insert("emailBodies", {
+      emailId,
+      bodyFull,
     });
 
     // Queue for AI processing
@@ -439,6 +449,7 @@ interface BatchEmailPreview {
   summary?: string;
   urgencyScore?: number;
   actionRequired?: "reply" | "action" | "fyi" | "none";
+  quickReplies?: Array<{ label: string; body: string }>;
   calendarEvent?: {
     title: string;
     startTime?: string;
@@ -505,6 +516,7 @@ export const getMyBatchTriagePreview = authedQuery({
           summary: summaryData?.summary,
           urgencyScore: summaryData?.urgencyScore,
           actionRequired: summaryData?.actionRequired,
+          quickReplies: summaryData?.quickReplies,
           calendarEvent: summaryData?.calendarEvent,
           shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
           isSubscription: email.isSubscription,
@@ -630,30 +642,42 @@ export const batchTriageMyEmails = authedMutation({
 });
 
 /**
- * Reset all triaged emails back to untriaged (for current user only)
+ * Reset a batch of triaged emails back to untriaged (for current user only)
+ * Returns remaining count so client can call again if needed
  */
 export const resetMyTriagedEmails = authedMutation({
   args: {},
   handler: async (ctx) => {
-    // Get all triaged emails for current user
+    const BATCH_SIZE = 50;
+
+    // Get a single batch of triaged emails using the proper index
     const triagedEmails = await ctx.db
       .query("emails")
-      .withIndex("by_user", (q) => q.eq("userId", ctx.userId))
-      .filter((q) => q.eq(q.field("isTriaged"), true))
-      .collect();
+      .withIndex("by_user_untriaged", (q) =>
+        q.eq("userId", ctx.userId).eq("isTriaged", true)
+      )
+      .take(BATCH_SIZE);
 
-    // Reset each one
-    let count = 0;
+    // Reset this batch
     for (const email of triagedEmails) {
       await ctx.db.patch(email._id, {
         isTriaged: false,
         triageAction: undefined,
         triagedAt: undefined,
       });
-      count++;
     }
 
-    console.log(`[Untriage] Reset ${count} emails for user ${ctx.userId}`);
-    return { success: true, count };
+    // Check if there are more
+    const remaining = await ctx.db
+      .query("emails")
+      .withIndex("by_user_untriaged", (q) =>
+        q.eq("userId", ctx.userId).eq("isTriaged", true)
+      )
+      .first();
+
+    const hasMore = remaining !== null;
+
+    console.log(`[Untriage] Reset ${triagedEmails.length} emails for user ${ctx.userId}, hasMore: ${hasMore}`);
+    return { success: true, count: triagedEmails.length, hasMore };
   },
 });

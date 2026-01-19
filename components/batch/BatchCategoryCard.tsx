@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from "react-native";
-import { BatchEmailRow } from "./BatchEmailRow";
+import { BatchEmailRow, QuickReplyOption } from "./BatchEmailRow";
 import type { BatchEmailPreview, BatchCategory } from "../../hooks/useBatchTriage";
 
 // Category configuration
@@ -66,10 +66,14 @@ const CATEGORY_CONFIG: Record<BatchCategory, CategoryConfig> = {
 interface BatchCategoryCardProps {
   category: BatchCategory;
   emails: BatchEmailPreview[];
-  savedEmails: Set<string>;
-  onSaveEmail: (emailId: string) => void;
+  puntedEmails: Set<string>;
+  onPuntEmail: (emailId: string) => void;
   onMarkAllDone: () => void;
+  onAcceptCalendar?: (emailId: string) => void;
+  onQuickReply?: (emailId: string, reply: QuickReplyOption) => void;
+  onMicReply?: (emailId: string) => void;
   onUnsubscribe?: (emailId: string) => void;
+  acceptingIds?: Set<string>;
   unsubscribingIds?: Set<string>;
   isProcessing?: boolean;
 }
@@ -77,10 +81,14 @@ interface BatchCategoryCardProps {
 export const BatchCategoryCard = memo(function BatchCategoryCard({
   category,
   emails,
-  savedEmails,
-  onSaveEmail,
+  puntedEmails,
+  onPuntEmail,
   onMarkAllDone,
+  onAcceptCalendar,
+  onQuickReply,
+  onMicReply,
   onUnsubscribe,
+  acceptingIds,
   unsubscribingIds,
   isProcessing,
 }: BatchCategoryCardProps) {
@@ -91,9 +99,9 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
     setIsExpanded(prev => !prev);
   }, []);
 
-  // Count how many are NOT saved (will be marked done)
-  const unsavedCount = emails.filter(e => !savedEmails.has(e._id)).length;
-  const savedCount = emails.length - unsavedCount;
+  // Count how many are NOT punted (will be marked done)
+  const unpuntedCount = emails.filter(e => !puntedEmails.has(e._id)).length;
+  const puntedCount = emails.length - unpuntedCount;
 
   // Don't render if category is empty
   if (emails.length === 0) {
@@ -112,9 +120,9 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
               <View style={[styles.countBadge, { backgroundColor: config.color }]}>
                 <Text style={styles.countText}>{emails.length}</Text>
               </View>
-              {savedCount > 0 && (
-                <View style={styles.savedBadge}>
-                  <Text style={styles.savedBadgeText}>{savedCount} saved</Text>
+              {puntedCount > 0 && (
+                <View style={styles.puntedBadge}>
+                  <Text style={styles.puntedBadgeText}>{puntedCount} punted</Text>
                 </View>
               )}
             </View>
@@ -134,16 +142,20 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
             <BatchEmailRow
               key={email._id}
               email={email}
-              isSaved={savedEmails.has(email._id)}
+              isPunted={puntedEmails.has(email._id)}
               isSubscription={email.isSubscription}
-              onSave={() => onSaveEmail(email._id)}
+              onPunt={() => onPuntEmail(email._id)}
+              onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
+              onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
+              onMicReply={onMicReply ? () => onMicReply(email._id) : undefined}
               onUnsubscribe={onUnsubscribe ? () => onUnsubscribe(email._id) : undefined}
+              isAccepting={acceptingIds?.has(email._id)}
               isUnsubscribing={unsubscribingIds?.has(email._id)}
             />
           ))}
 
           {/* Mark all as done button */}
-          {unsavedCount > 0 && (
+          {unpuntedCount > 0 && (
             <TouchableOpacity
               style={[styles.markDoneButton, isProcessing && styles.markDoneButtonDisabled]}
               onPress={onMarkAllDone}
@@ -153,16 +165,16 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
                 <Text style={styles.markDoneButtonText}>
-                  Mark {unsavedCount} as Done
+                  Mark {unpuntedCount} as Done
                 </Text>
               )}
             </TouchableOpacity>
           )}
 
-          {/* All saved message */}
-          {unsavedCount === 0 && (
-            <View style={styles.allSavedMessage}>
-              <Text style={styles.allSavedText}>All emails saved to TODO</Text>
+          {/* All punted message */}
+          {unpuntedCount === 0 && (
+            <View style={styles.allPuntedMessage}>
+              <Text style={styles.allPuntedText}>All emails punted to TODO</Text>
             </View>
           )}
         </View>
@@ -217,14 +229,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#fff",
   },
-  savedBadge: {
+  puntedBadge: {
     marginLeft: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
     backgroundColor: "#6366F1",
     borderRadius: 10,
   },
-  savedBadgeText: {
+  puntedBadgeText: {
     fontSize: 10,
     fontWeight: "600",
     color: "#fff",
@@ -259,11 +271,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  allSavedMessage: {
+  allPuntedMessage: {
     paddingVertical: 12,
     alignItems: "center",
   },
-  allSavedText: {
+  allPuntedText: {
     fontSize: 13,
     color: "#6366F1",
     fontWeight: "500",
