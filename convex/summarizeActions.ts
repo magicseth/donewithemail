@@ -112,6 +112,8 @@ interface SummarizeResult {
   quickReplies?: QuickReply[];
   calendarEvent?: CalendarEvent;
   deadline?: Deadline;
+  // AI prediction: should user accept this calendar invite?
+  shouldAcceptCalendar?: boolean;
 }
 
 export const summarizeEmail = action({
@@ -160,24 +162,28 @@ ${bodyText}
 
 TODAY'S DATE: ${today}
 
-CONTEXT: The sender name and subject line are ALREADY displayed above the summary in the UI. DO NOT repeat them.
+CONTEXT:
+- The sender name and subject line are ALREADY displayed above the summary in the UI. DO NOT repeat them.
+- If there's a calendar event, it will be displayed SEPARATELY below the summary with full details (title, time, location). DO NOT repeat calendar details in the summary.
 
 SUMMARY GUIDELINES:
-- Be concise but include ALL key details needed to make a decision without opening the email
-- DO NOT start with the sender name or repeat the subject - those are already visible
-- Include specific dates, amounts, deadlines, or asks
-- If it's a newsletter/marketing, say what it's promoting and if there's a deal
-- If it's a request, state exactly what's being asked and by when
-- If it's informational, state the key facts
+- MAXIMUM 240 CHARACTERS - this is for a compact inbox row view
+- DO NOT repeat sender name, subject, or calendar event details (title/time/location) - they're shown separately
+- Focus on the key decision point: what action is needed and why
+- If it's a calendar invite, summarize the PURPOSE/context, not the logistics
+- If it's a newsletter/marketing, mention the key offer briefly
+- If it's a request, state what's being asked
 - Use "you" to address the user directly
-- Can use markdown formatting and emojis sparingly
+- Can use emojis sparingly
 
 FIELDS:
-1. summary: Decision-ready synopsis with key details (what, when, how much, deadline). DO NOT repeat sender or subject.
+1. summary: Super short (<240 chars) decision-ready synopsis. DO NOT repeat sender, subject, or calendar details.
+   BAD: "Meeting invite for Thursday 2pm at Conference Room A"
+   GOOD: "Quarterly planning session - need to discuss Q2 budget priorities"
    BAD: "John from Acme wants to meet with you"
-   GOOD: "📅 Wants to meet Thursday 2pm to discuss Q2 budget (~$50k)"
+   GOOD: "Wants to sync on partnership proposal before board meeting"
    BAD: "A newsletter about sales"
-   GOOD: "🛒 20% off sale ends Sunday - camping gear + free shipping over $50"
+   GOOD: "🛒 20% off camping gear + free shipping >$50, ends Sunday"
 2. urgencyScore: 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
 3. urgencyReason: Brief explanation
 4. actionRequired: "reply" | "action" | "fyi" | "none"
@@ -188,6 +194,14 @@ FIELDS:
    - recurrenceDescription: Human-readable text (e.g., "Every Tuesday", "Every other Tuesday", "Monthly on the 15th")
 8. suggestedReply: Optional longer draft reply
 9. deadline: If there's a deadline or due date mentioned (e.g., "please respond by Friday", "submit by Jan 25"), extract {date, description}. Use ISO 8601 format for date. Only include if there's a clear deadline for the recipient.
+10. shouldAcceptCalendar: If calendarEvent is present, predict whether the user likely wants to accept this calendar invite (true) or decline/ignore it (false). Consider:
+   - Work meetings with colleagues/team → likely accept
+   - 1:1 meetings with important contacts → likely accept
+   - Social events from friends/family → likely accept
+   - Marketing webinars, cold outreach meetings → likely decline
+   - Spam calendar invites → likely decline
+   - Events at inconvenient times or conflicting with work → likely decline
+   Only include this field when calendarEvent is present.
 
 Email:
 ${emailContent}
@@ -253,6 +267,7 @@ Respond with only valid JSON, no markdown or explanation.`,
       actionDescription: result.actionDescription || undefined,
       quickReplies: result.quickReplies || undefined,
       calendarEvent: sanitizedCalendarEvent,
+      shouldAcceptCalendar: sanitizedCalendarEvent ? result.shouldAcceptCalendar : undefined,
       deadline: sanitizedDeadline,
       deadlineDescription: sanitizedDeadlineDescription,
     });
@@ -367,24 +382,28 @@ ${bodyText}`.trim();
 
 TODAY'S DATE: ${today}
 
-CONTEXT: The sender name and subject line are ALREADY displayed above the summary in the UI. DO NOT repeat them.
+CONTEXT:
+- The sender name and subject line are ALREADY displayed above the summary in the UI. DO NOT repeat them.
+- If there's a calendar event, it will be displayed SEPARATELY below the summary with full details (title, time, location). DO NOT repeat calendar details in the summary.
 
 SUMMARY GUIDELINES:
-- Be concise but include ALL key details needed to make a decision without opening the email
-- DO NOT start with the sender name or repeat the subject - those are already visible
-- Include specific dates, amounts, deadlines, or asks
-- If it's a newsletter/marketing, say what it's promoting and if there's a deal
-- If it's a request, state exactly what's being asked and by when
-- If it's informational, state the key facts
+- MAXIMUM 240 CHARACTERS - this is for a compact inbox row view
+- DO NOT repeat sender name, subject, or calendar event details (title/time/location) - they're shown separately
+- Focus on the key decision point: what action is needed and why
+- If it's a calendar invite, summarize the PURPOSE/context, not the logistics
+- If it's a newsletter/marketing, mention the key offer briefly
+- If it's a request, state what's being asked
 - Use "you" to address the user directly
-- Can use markdown formatting and emojis sparingly
+- Can use emojis sparingly
 
 FIELDS:
-1. summary: Decision-ready synopsis with key details (what, when, how much, deadline). DO NOT repeat sender or subject.
+1. summary: Super short (<240 chars) decision-ready synopsis. DO NOT repeat sender, subject, or calendar details.
+   BAD: "Meeting invite for Thursday 2pm at Conference Room A"
+   GOOD: "Quarterly planning session - need to discuss Q2 budget priorities"
    BAD: "John from Acme wants to meet with you"
-   GOOD: "📅 Wants to meet Thursday 2pm to discuss Q2 budget (~$50k)"
+   GOOD: "Wants to sync on partnership proposal before board meeting"
    BAD: "A newsletter about sales"
-   GOOD: "🛒 20% off sale ends Sunday - camping gear + free shipping over $50"
+   GOOD: "🛒 20% off camping gear + free shipping >$50, ends Sunday"
 2. urgencyScore: 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
 3. urgencyReason: Brief explanation
 4. actionRequired: "reply" | "action" | "fyi" | "none"
@@ -395,6 +414,14 @@ FIELDS:
    - recurrenceDescription: Human-readable text (e.g., "Every Tuesday", "Every other Tuesday", "Monthly on the 15th")
 8. suggestedReply: Optional longer draft reply
 9. deadline: If there's a deadline or due date mentioned (e.g., "please respond by Friday", "submit by Jan 25"), extract {date, description}. Use ISO 8601 format for date. Only include if there's a clear deadline for the recipient.
+10. shouldAcceptCalendar: If calendarEvent is present, predict whether the user likely wants to accept this calendar invite (true) or decline/ignore it (false). Consider:
+   - Work meetings with colleagues/team → likely accept
+   - 1:1 meetings with important contacts → likely accept
+   - Social events from friends/family → likely accept
+   - Marketing webinars, cold outreach meetings → likely decline
+   - Spam calendar invites → likely decline
+   - Events at inconvenient times or conflicting with work → likely decline
+   Only include this field when calendarEvent is present.
 
 Email:
 ${emailContent}
@@ -459,6 +486,7 @@ Respond with only valid JSON, no markdown or explanation.`,
             actionDescription: result.actionDescription || undefined,
             quickReplies: result.quickReplies || undefined,
             calendarEvent: sanitizedCalendarEvent,
+            shouldAcceptCalendar: sanitizedCalendarEvent ? result.shouldAcceptCalendar : undefined,
             deadline: sanitizedDeadline,
             deadlineDescription: sanitizedDeadlineDescription,
           });

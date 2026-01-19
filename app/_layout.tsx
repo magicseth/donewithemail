@@ -3,7 +3,8 @@ import { Stack } from "expo-router";
 import { ConvexReactClient, ConvexProviderWithAuth } from "convex/react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StyleSheet, Platform } from "react-native";
-import { AuthProvider } from "../lib/authContext";
+import { AuthProvider, useAuth } from "../lib/authContext";
+import { AuthErrorProvider } from "../lib/AuthErrorBoundary";
 import { usePushNotifications } from "../hooks/usePushNotifications";
 import * as SecureStore from "expo-secure-store";
 
@@ -146,47 +147,65 @@ function PushNotificationHandler({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Wrapper that provides auth error handling connected to the auth context
+function AuthErrorHandler({ children }: { children: React.ReactNode }) {
+  const { handleAuthError } = useAuth();
+
+  const onAuthError = useCallback(() => {
+    // The error boundary caught an auth error, handle it
+    handleAuthError(new Error("Unauthorized: Session expired"));
+  }, [handleAuthError]);
+
+  return (
+    <AuthErrorProvider onAuthError={onAuthError}>
+      {children}
+    </AuthErrorProvider>
+  );
+}
+
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <ConvexProviderWithAuth client={convex} useAuth={useAuthAdapter}>
         <AuthProvider>
-          <PushNotificationHandler>
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                animation: "slide_from_right",
-              }}
-            >
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen
-                name="email/[id]"
-                options={{
-                  presentation: "card",
-                  headerShown: true,
-                  headerTitle: "Email",
-                  headerBackTitle: "Back",
+          <AuthErrorHandler>
+            <PushNotificationHandler>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  animation: "slide_from_right",
                 }}
-              />
-              <Stack.Screen
-                name="person/[id]"
-                options={{
-                  presentation: "card",
-                  headerShown: true,
-                  headerTitle: "Contact",
-                  headerBackTitle: "Back",
-                }}
-              />
-              <Stack.Screen
-                name="compose"
-                options={{
-                  presentation: "modal",
-                  headerShown: true,
-                  headerTitle: "Compose",
-                }}
-              />
-            </Stack>
-          </PushNotificationHandler>
+              >
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen
+                  name="email/[id]"
+                  options={{
+                    presentation: "card",
+                    headerShown: true,
+                    headerTitle: "Email",
+                    headerBackTitle: "Back",
+                  }}
+                />
+                <Stack.Screen
+                  name="person/[id]"
+                  options={{
+                    presentation: "card",
+                    headerShown: true,
+                    headerTitle: "Contact",
+                    headerBackTitle: "Back",
+                  }}
+                />
+                <Stack.Screen
+                  name="compose"
+                  options={{
+                    presentation: "modal",
+                    headerShown: true,
+                    headerTitle: "Compose",
+                  }}
+                />
+              </Stack>
+            </PushNotificationHandler>
+          </AuthErrorHandler>
         </AuthProvider>
       </ConvexProviderWithAuth>
     </GestureHandlerRootView>

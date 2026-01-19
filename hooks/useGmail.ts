@@ -41,6 +41,7 @@ export interface GmailEmail {
   actionDescription?: string;
   quickReplies?: QuickReply[];
   calendarEvent?: CalendarEvent;
+  shouldAcceptCalendar?: boolean;
   fromContact?: {
     _id: string;
     email: string;

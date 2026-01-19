@@ -44,6 +44,8 @@ interface AuthContextType {
   handleCallback: (code: string) => Promise<{ success: boolean; hasGmailAccess: boolean }>;
   redirectUri: string;
   refreshAccessToken: () => Promise<string | null>;
+  /** Handle auth errors by attempting to refresh, or signing out if refresh fails */
+  handleAuthError: (error: Error) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -336,6 +338,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   }, [expiresAt, refreshToken, user, refreshAccessToken]);
 
+  // Handle auth errors from Convex queries/mutations
+  const handleAuthError = useCallback(async (error: Error) => {
+    const message = error.message.toLowerCase();
+    const isAuthError =
+      message.includes("unauthorized") ||
+      message.includes("no valid authentication token") ||
+      message.includes("not authenticated") ||
+      message.includes("authentication required") ||
+      message.includes("invalid token") ||
+      message.includes("token expired");
+
+    if (!isAuthError) {
+      console.log("[Auth] handleAuthError called with non-auth error:", error.message);
+      return;
+    }
+
+    console.log("[Auth] Handling auth error, attempting token refresh...");
+
+    // Try to refresh the token first
+    if (refreshToken) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        console.log("[Auth] Token refreshed successfully after auth error");
+        return;
+      }
+    }
+
+    // If refresh failed or no refresh token, sign out
+    console.log("[Auth] Token refresh failed or unavailable, signing out");
+    await clearAuth();
+  }, [refreshToken, refreshAccessToken, clearAuth]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -348,6 +382,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         handleCallback,
         redirectUri: REDIRECT_URI,
         refreshAccessToken,
+        handleAuthError,
       }}
     >
       {children}

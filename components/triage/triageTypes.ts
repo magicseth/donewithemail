@@ -3,7 +3,7 @@ import type { SharedValue } from "react-native-reanimated";
 /**
  * Triage target identifiers - exhaustive list of all possible actions
  */
-export type TriageTargetId = "done" | "reply" | "mic" | "unsubscribe";
+export type TriageTargetId = "done" | "accept" | "reply" | "mic" | "unsubscribe";
 
 /**
  * State machine phases for the triage system.
@@ -28,6 +28,8 @@ export interface TriageTarget {
   readonly label: string;
   // If set, only show for subscription emails
   readonly subscriptionOnly?: boolean;
+  // If set, only show when email has calendar event
+  readonly calendarOnly?: boolean;
 }
 
 /**
@@ -54,6 +56,8 @@ export interface TriageableEmail {
   readonly _id: string;
   readonly subject: string;
   readonly isSubscription?: boolean;
+  readonly calendarEvent?: unknown; // Presence indicates email has calendar event
+  readonly shouldAcceptCalendar?: boolean; // AI prediction: should user accept this calendar invite?
   readonly fromContact?: {
     readonly email: string;
     readonly name?: string;

@@ -4,6 +4,29 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 
+// Build SayLess attribution footer for calendar events
+function buildSayLessFooter(
+  emailInfo: { subject?: string; fromName?: string; fromEmail?: string } | null
+): string {
+  const lines: string[] = [];
+  lines.push("---");
+  lines.push("Scheduled by SayLess");
+
+  if (emailInfo) {
+    if (emailInfo.fromName || emailInfo.fromEmail) {
+      const sender = emailInfo.fromName
+        ? `${emailInfo.fromName} <${emailInfo.fromEmail}>`
+        : emailInfo.fromEmail;
+      lines.push(`From: ${sender}`);
+    }
+    if (emailInfo.subject) {
+      lines.push(`Subject: ${emailInfo.subject}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
 
@@ -193,10 +216,25 @@ export const addToCalendar = action({
       endDateTime = formatLocalDateTime(endDate);
     }
 
+    // Fetch email details if emailId provided (for attribution)
+    let emailInfo: { subject?: string; fromName?: string; fromEmail?: string } | null = null;
+    if (args.emailId) {
+      emailInfo = await ctx.runQuery(internal.summarize.getEmailBasicInfo, {
+        emailId: args.emailId,
+      });
+    }
+
+    // Build description with SayLess attribution
+    let description = args.description || "";
+    const saylessFooter = buildSayLessFooter(emailInfo);
+    if (saylessFooter) {
+      description = description ? `${description}\n\n${saylessFooter}` : saylessFooter;
+    }
+
     // Build event object with client's timezone
     const event: Record<string, unknown> = {
       summary: args.title,
-      description: args.description || "",
+      description,
       start: {
         dateTime: startDateTime,
         timeZone: args.timezone,

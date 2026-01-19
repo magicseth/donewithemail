@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { router, Stack, useFocusEffect } from "expo-router";
 import { useAction, useQuery, useMutation } from "convex/react";
+import { isAuthError, useAuthError } from "../../lib/AuthErrorBoundary";
 import { Audio } from "expo-av";
 import * as Haptics from "expo-haptics";
 import {
@@ -348,6 +349,7 @@ interface InboxEmail {
   summary?: string;
   quickReplies?: QuickReply[];
   calendarEvent?: CalendarEvent;
+  shouldAcceptCalendar?: boolean;
   threadCount?: number;
   isSubscription?: boolean;
   fromContact?: {
@@ -369,6 +371,7 @@ function toInboxEmail(email: GmailEmail): InboxEmail {
     summary: email.summary,
     quickReplies: email.quickReplies,
     calendarEvent: email.calendarEvent,
+    shouldAcceptCalendar: email.shouldAcceptCalendar,
     threadCount: email.threadCount,
     isSubscription: email.isSubscription,
     fromContact: email.fromContact ? {
@@ -555,80 +558,92 @@ const EmailRow = React.memo(function EmailRow({
           </View>
         )}
 
-        {/* Avatar */}
-        <View style={[styles.avatarContainer, isTriaged && styles.triagedContent]}>
-          {item.fromContact?.avatarUrl ? (
-            <Image
-              source={{ uri: item.fromContact.avatarUrl }}
-              style={styles.avatar}
-            />
-          ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder]}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={[styles.emailContent, isTriaged && styles.triagedContent]}>
-          {/* Header row */}
-          <View style={styles.emailHeader}>
-            <View style={styles.senderRow}>
-              <Text style={[styles.senderName, !item.isRead && styles.textBold]} numberOfLines={1}>
-                {fromName}
-              </Text>
-              {item.threadCount && item.threadCount > 1 && (
-                <View style={styles.threadBadge}>
-                  <Text style={styles.threadBadgeText}>{item.threadCount}</Text>
-                </View>
-              )}
-              <Text style={styles.timeAgo}>{timeAgo}</Text>
-            </View>
-
-            <Text style={[styles.subject, !item.isRead && styles.textBold]} numberOfLines={1}>
-              {decodeHtmlEntities(item.subject)}
-            </Text>
+        {/* Top row: Avatar + Header */}
+        <View style={[styles.emailTopRow, isTriaged && styles.triagedContent]}>
+          {/* Avatar */}
+          <View style={styles.avatarContainer}>
+            {item.fromContact?.avatarUrl ? (
+              <Image
+                source={{ uri: item.fromContact.avatarUrl }}
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Text style={styles.avatarText}>{initials}</Text>
+              </View>
+            )}
           </View>
 
-          {/* Summary or preview */}
-          <Text style={styles.preview} numberOfLines={2}>
-            {item.summary || decodeHtmlEntities(item.bodyPreview)}
-          </Text>
+          <View style={styles.emailContent}>
+            {/* Header row */}
+            <View style={styles.emailHeader}>
+              <View style={styles.senderRow}>
+                <Text style={[styles.senderName, !item.isRead && styles.textBold]} numberOfLines={1}>
+                  {fromName}
+                </Text>
+                {item.threadCount && item.threadCount > 1 && (
+                  <View style={styles.threadBadge}>
+                    <Text style={styles.threadBadgeText}>{item.threadCount}</Text>
+                  </View>
+                )}
+                <Text style={styles.timeAgo}>{timeAgo}</Text>
+              </View>
 
-          {/* Calendar event detected - compact single-line display */}
-          {item.calendarEvent && (
-            <View style={styles.calendarRow}>
-              <Text style={styles.calendarIcon}>{item.calendarEvent.recurrenceDescription ? "🔄" : "📅"}</Text>
-              <Text style={styles.calendarText} numberOfLines={1}>
-                {item.calendarEvent.startTime ? formatEventTime(item.calendarEvent.startTime, item.calendarEvent.endTime) + " · " : ""}
-                {decodeHtmlEntities(item.calendarEvent.title)}
-                {item.calendarEvent.location ? " · " + decodeHtmlEntities(item.calendarEvent.location) : ""}
+              <Text style={[styles.subject, !item.isRead && styles.textBold]} numberOfLines={1}>
+                {decodeHtmlEntities(item.subject)}
               </Text>
-              {item.calendarEvent.calendarEventId ? (
-                <View style={styles.addedBadge}>
-                  <Text style={styles.addedBadgeText}>✓</Text>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={[
-                    styles.addCalendarButton,
-                    addingCalendarFor === item._id && styles.addCalendarButtonDisabled,
-                  ]}
-                  onPress={() => onAddToCalendar(item, item.calendarEvent!)}
-                  disabled={addingCalendarFor === item._id}
-                >
-                  {addingCalendarFor === item._id ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.addCalendarButtonText}>Add</Text>
-                  )}
-                </TouchableOpacity>
-              )}
             </View>
-          )}
+          </View>
+        </View>
 
-          {/* Quick reply chips with mic button */}
+        {/* Full-width summary */}
+        <Text style={[styles.preview, styles.previewFullWidth, isTriaged && styles.triagedContent]} numberOfLines={2}>
+          {item.summary || decodeHtmlEntities(item.bodyPreview)}
+        </Text>
+
+        {/* Calendar event - full width, two rows */}
+        {item.calendarEvent && (
+          <View style={[styles.calendarRow, isTriaged && styles.triagedContent]}>
+            <View style={styles.calendarContent}>
+              <View style={styles.calendarTitleRow}>
+                <Text style={styles.calendarIcon}>{item.calendarEvent.recurrenceDescription ? "🔄" : "📅"}</Text>
+                <Text style={styles.calendarTitle} numberOfLines={1}>
+                  {decodeHtmlEntities(item.calendarEvent.title)}
+                </Text>
+                {item.calendarEvent.calendarEventId ? (
+                  <View style={styles.addedBadge}>
+                    <Text style={styles.addedBadgeText}>✓</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[
+                      styles.addCalendarButton,
+                      addingCalendarFor === item._id && styles.addCalendarButtonDisabled,
+                    ]}
+                    onPress={() => onAddToCalendar(item, item.calendarEvent!)}
+                    disabled={addingCalendarFor === item._id}
+                  >
+                    {addingCalendarFor === item._id ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.addCalendarButtonText}>Add</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+              <Text style={styles.calendarDetails} numberOfLines={1}>
+                {item.calendarEvent.startTime ? formatEventTime(item.calendarEvent.startTime, item.calendarEvent.endTime) : "Time TBD"}
+                {item.calendarEvent.location ? " · " + decodeHtmlEntities(item.calendarEvent.location) : ""}
+                {item.calendarEvent.recurrenceDescription ? " · " + item.calendarEvent.recurrenceDescription : ""}
+              </Text>
+            </View>
+          </View>
+        )}
+
+          {/* Quick reply chips - only render if there are quick replies */}
+        {item.quickReplies && item.quickReplies.length > 0 && (
           <View style={styles.quickReplyRow}>
-            {item.quickReplies && item.quickReplies.slice(0, 3).map((reply, idx) => (
+            {item.quickReplies.slice(0, 3).map((reply, idx) => (
               <TouchableOpacity
                 key={idx}
                 style={[
@@ -654,22 +669,21 @@ const EmailRow = React.memo(function EmailRow({
                 )}
               </TouchableOpacity>
             ))}
-
           </View>
+        )}
 
-          {/* Show recording status */}
-          {isRecordingThis && <TranscriptPreview transcript={transcript} />}
-        </View>
+        {/* Show recording status */}
+        {isRecordingThis && <TranscriptPreview transcript={transcript} />}
 
-          {/* Urgency indicator */}
-          {item.urgencyScore !== undefined && item.urgencyScore >= 50 && (
-            <View
-              style={[
-                styles.urgencyIndicator,
-                { backgroundColor: item.urgencyScore >= 80 ? "#FF4444" : "#FFAA00" },
-              ]}
-            />
-          )}
+        {/* Urgency indicator */}
+        {item.urgencyScore !== undefined && item.urgencyScore >= 50 && (
+          <View
+            style={[
+              styles.urgencyIndicator,
+              { backgroundColor: item.urgencyScore >= 80 ? "#FF4444" : "#FFAA00" },
+            ]}
+          />
+        )}
       </TouchableOpacity>
     </TriageRowWrapper>
   );
@@ -815,6 +829,11 @@ const TriageListWrapper = React.memo(function TriageListWrapper({
 
 export default function InboxScreen() {
   // ============================================================================
+  // AUTH ERROR HANDLING
+  // ============================================================================
+  const { reportAuthError } = useAuthError();
+
+  // ============================================================================
   // EMAIL & SESSION STATE
   // ============================================================================
   const [sessionStart, setSessionStart] = useState(() => Date.now());
@@ -899,12 +918,15 @@ export default function InboxScreen() {
 
   const { playStartSound, playStopSound } = useMicSounds();
 
-  // Unsubscribe action and subscriptions query - needed for handleTargetActivation
+  // Unsubscribe action and subscriptions query
   const batchUnsubscribeAction = useAction(api.subscriptions.batchUnsubscribeMy);
   const subscriptions = useQuery(
     api.subscriptionsHelpers.getSubscriptions,
     userEmail ? { userEmail } : "skip"
   );
+
+  // Calendar action - needed for Accept (done with calendar event)
+  const addToCalendarAction = useAction(api.calendar.addToCalendar);
 
   // ============================================================================
   // TRIAGE HANDLER - For use with TriageProvider
@@ -973,23 +995,53 @@ export default function InboxScreen() {
       return true; // Advance to next
     }
 
-    // --- DONE / REPLY TARGETS ---
+    // --- DONE / ACCEPT / REPLY TARGETS ---
     // Skip if already triaged
     if (triageInProgressRef.current.has(email._id) || triagedEmails.has(email._id)) {
       console.log(`[NewTriage] Already triaged: ${email._id}`);
       return false; // Don't advance
     }
 
-    const action: "done" | "reply_needed" = targetId === "done" ? "done" : "reply_needed";
+    // "accept" is treated as "done" for triage purposes
+    const action: "done" | "reply_needed" =
+      (targetId === "done" || targetId === "accept") ? "done" : "reply_needed";
     triageInProgressRef.current.add(email._id);
 
     // Haptic feedback
     if (Platform.OS !== "web") {
-      if (targetId === "done") {
+      if (targetId === "done" || targetId === "accept") {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       } else {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
+    }
+
+    // If "accept" target, add calendar event
+    if (targetId === "accept" && email.calendarEvent && userEmail) {
+      const event = email.calendarEvent as CalendarEvent;
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
+
+      console.log(`[NewTriage:Accept] Adding calendar event: ${event.title}`);
+      addToCalendarAction({
+        userEmail,
+        title: event.title,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        location: event.location,
+        description: event.description,
+        timezone,
+        emailId: email._id as any,
+        recurrence: event.recurrence,
+      }).then((result) => {
+        showToast(`Added "${event.title}" to calendar`, "success");
+        // Open the calendar link on web
+        if (Platform.OS === "web" && result.htmlLink) {
+          window.open(result.htmlLink, "_blank");
+        }
+      }).catch((err) => {
+        console.error(`[NewTriage:Accept] Calendar error:`, err);
+        showToast("Failed to add to calendar", "error");
+      });
     }
 
     // Optimistic update
@@ -1000,6 +1052,10 @@ export default function InboxScreen() {
       console.log(`[NewTriage] Success: "${email.subject}" -> ${action}`);
     } catch (error) {
       console.error(`[NewTriage] Failed:`, error);
+      // Check for auth errors and report them
+      if (error instanceof Error && isAuthError(error)) {
+        reportAuthError(error);
+      }
       // Revert on error
       setTriagedEmails(prev => {
         const next = new Map(prev);
@@ -1020,10 +1076,11 @@ export default function InboxScreen() {
     batchUnsubscribeAction,
     userEmail,
     showToast,
+    addToCalendarAction,
+    reportAuthError,
   ]);
 
   const sendEmailAction = useAction(api.gmailSend.sendReply);
-  const addToCalendarAction = useAction(api.calendar.addToCalendar);
 
   // Use search results when searching, otherwise use regular emails
   // Filter out locally triaged emails for optimistic updates
@@ -1038,6 +1095,7 @@ export default function InboxScreen() {
         summary: email.summary,
         quickReplies: email.quickReplies as QuickReply[] | undefined,
         calendarEvent: email.calendarEvent as CalendarEvent | undefined,
+        shouldAcceptCalendar: email.shouldAcceptCalendar,
         isSubscription: email.isSubscription,
         fromContact: email.fromContact ? {
           _id: email.fromContact._id,
@@ -1445,13 +1503,16 @@ const styles = StyleSheet.create({
     paddingBottom: 800,
   },
   emailItem: {
-    flexDirection: "row",
+    flexDirection: "column",
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
     minHeight: TRIAGE_CONFIG.rowHeight, // Minimum height for triage ball, but can grow
     // Background controlled by AnimatedRowWrapper
+  },
+  emailTopRow: {
+    flexDirection: "row",
   },
   emailItemUnread: {
     // Unread indicated by bold text, not background (wrapper controls background)
@@ -1555,6 +1616,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 4,
   },
+  previewFullWidth: {
+    marginTop: 6,
+  },
   quickReplyRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1639,24 +1703,36 @@ const styles = StyleSheet.create({
   fabIcon: {
     fontSize: 24,
   },
-  // Calendar styles - compact single-line display
+  // Calendar styles - two row display
   calendarRow: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 8,
+  },
+  calendarContent: {
+    flex: 1,
+  },
+  calendarTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FEF3C7",
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    marginTop: 6,
     gap: 6,
   },
   calendarIcon: {
-    fontSize: 12,
+    fontSize: 14,
   },
-  calendarText: {
+  calendarTitle: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 14,
+    fontWeight: "600",
     color: "#78350F",
+  },
+  calendarDetails: {
+    fontSize: 13,
+    color: "#92400E",
+    marginTop: 4,
+    marginLeft: 20, // Align with title (after icon)
   },
   addCalendarButton: {
     backgroundColor: "#F59E0B",

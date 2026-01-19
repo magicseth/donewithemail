@@ -90,6 +90,10 @@ export default defineSchema({
       recurrenceDescription: v.optional(v.string()),
     })),
 
+    // AI prediction: should user accept this calendar invite?
+    // true = likely want to attend, false = likely decline/ignore
+    shouldAcceptCalendar: v.optional(v.boolean()),
+
     // Set when user adds the event to their calendar
     calendarEventId: v.optional(v.string()),
     calendarEventLink: v.optional(v.string()),

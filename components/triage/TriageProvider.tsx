@@ -31,6 +31,8 @@ interface TriageContextValue {
   readonly phase: SharedValue<TriagePhase>;
   readonly activeIndex: SharedValue<number>;
   readonly isSubscription: SharedValue<boolean>;
+  readonly hasCalendarEvent: SharedValue<boolean>;
+  readonly shouldAcceptCalendar: SharedValue<boolean>;
 
   // Derived values
   readonly ballX: SharedValue<number>;
@@ -38,6 +40,7 @@ interface TriageContextValue {
   readonly activeTarget: SharedValue<TriageTargetId | null>;
   readonly proximities: SharedValue<Record<string, number>>;
   readonly closestTarget: SharedValue<{ id: TriageTargetId; proximity: number } | null>;
+  readonly effectivePositions: SharedValue<Record<string, number>>;
 
   // Screen dimensions
   readonly centerX: number;
@@ -117,16 +120,21 @@ export function TriageProvider({
   // This handles varying row heights correctly
   const activeIndex = useSharedValue(0);
 
-  // === Subscription status (shared value for worklet access) ===
+  // === Email flags (shared values for worklet access) ===
   const isSubscription = useSharedValue(false);
+  const hasCalendarEvent = useSharedValue(false);
+  const shouldAcceptCalendar = useSharedValue(false);
 
-  // Update isSubscription when activeIndex or emails change
+  // Update flags when activeIndex changes
   useAnimatedReaction(
     () => activeIndex.value,
     (idx) => {
       // Access module-level emails
       const email = moduleEmails[idx];
       isSubscription.value = email?.isSubscription ?? false;
+      hasCalendarEvent.value = !!email?.calendarEvent;
+      // Default to true (show Accept in center) when calendar event exists but no prediction yet
+      shouldAcceptCalendar.value = email?.shouldAcceptCalendar ?? (!!email?.calendarEvent);
     }
   );
 
@@ -134,7 +142,9 @@ export function TriageProvider({
   useEffect(() => {
     const email = emails[activeIndex.value];
     isSubscription.value = email?.isSubscription ?? false;
-  }, [emails, activeIndex, isSubscription]);
+    hasCalendarEvent.value = !!email?.calendarEvent;
+    shouldAcceptCalendar.value = email?.shouldAcceptCalendar ?? (!!email?.calendarEvent);
+  }, [emails, activeIndex, isSubscription, hasCalendarEvent, shouldAcceptCalendar]);
 
   // === Derived: Ball Position ===
   const { ballTravelMultiplier } = TRIAGE_CONFIG;
@@ -155,13 +165,16 @@ export function TriageProvider({
       ballX.value,
       ballY.value,
       centerX,
-      isSubscription.value
+      isSubscription.value,
+      hasCalendarEvent.value,
+      shouldAcceptCalendar.value
     );
   });
 
   const activeTarget = useDerivedValue(() => hitResult.value.hit);
   const proximities = useDerivedValue(() => hitResult.value.proximities);
   const closestTarget = useDerivedValue(() => hitResult.value.closestTarget);
+  const effectivePositions = useDerivedValue(() => hitResult.value.effectivePositions);
 
   // === Handler ref (avoids stale closure) ===
   const onTriageRef = useRef(onTriage);
@@ -246,11 +259,14 @@ export function TriageProvider({
     phase,
     activeIndex,
     isSubscription,
+    hasCalendarEvent,
+    shouldAcceptCalendar,
     ballX,
     ballY,
     activeTarget,
     proximities,
     closestTarget,
+    effectivePositions,
     centerX,
     screenWidth,
     setScrollY,

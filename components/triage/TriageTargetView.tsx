@@ -1,9 +1,13 @@
 import * as React from "react";
-import { View, Text, StyleSheet } from "react-native";
-import Animated, { useAnimatedStyle, withSpring } from "react-native-reanimated";
+import { Text, StyleSheet } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
 
 import { TRIAGE_CONFIG } from "./triageConfig";
 import { useTriageContext } from "./TriageProvider";
+import { isTargetVisibleForEmail } from "./triageTargets";
 import type { TriageTarget } from "./triageTypes";
 
 interface TriageTargetViewProps {
@@ -12,13 +16,39 @@ interface TriageTargetViewProps {
 
 /**
  * Renders a single triage target button.
- * Scales and changes color based on ball proximity.
+ * Position, visibility, scale and color are all dynamic based on email context.
  */
 export const TriageTargetView = React.memo(function TriageTargetView({
   target,
 }: TriageTargetViewProps) {
-  const { proximities, activeTarget, centerX } = useTriageContext();
-  const targetX = centerX + target.position;
+  const {
+    proximities,
+    activeTarget,
+    effectivePositions,
+    centerX,
+    isSubscription,
+    hasCalendarEvent,
+    shouldAcceptCalendar,
+  } = useTriageContext();
+
+  // Position style with dynamic X position and visibility
+  const positionStyle = useAnimatedStyle(() => {
+    const effectivePos = effectivePositions.value[target.id] ?? target.position;
+    const isVisible = isTargetVisibleForEmail(
+      target,
+      isSubscription.value,
+      hasCalendarEvent.value,
+      shouldAcceptCalendar.value
+    );
+
+    return {
+      left: centerX + effectivePos,
+      top: TRIAGE_CONFIG.targetTopOffset,
+      opacity: isVisible ? 1 : 0,
+      // Also hide from layout when not visible
+      pointerEvents: isVisible ? "auto" : "none",
+    };
+  });
 
   // Scale based on proximity
   const scaleStyle = useAnimatedStyle(() => {
@@ -50,14 +80,14 @@ export const TriageTargetView = React.memo(function TriageTargetView({
   });
 
   return (
-    <View style={[styles.container, { left: targetX, top: TRIAGE_CONFIG.targetTopOffset }]}>
+    <Animated.View style={[styles.container, positionStyle]}>
       <Animated.View style={scaleStyle}>
         <Animated.View style={[styles.button, bgStyle]}>
           <Text style={styles.icon}>{target.icon}</Text>
           <Text style={styles.label}>{target.label}</Text>
         </Animated.View>
       </Animated.View>
-    </View>
+    </Animated.View>
   );
 });
 

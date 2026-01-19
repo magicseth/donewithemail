@@ -1,5 +1,10 @@
 import { TRIAGE_CONFIG, getScreenDimensions } from "./triageConfig";
-import { TRIAGE_TARGETS, isTargetVisible } from "./triageTargets";
+import {
+  TRIAGE_TARGETS,
+  isTargetVisible,
+  isTargetVisibleForEmail,
+  getEffectiveTargetPosition,
+} from "./triageTargets";
 import type { TriageTarget, TriageTargetId, Point2D } from "./triageTypes";
 
 /**
@@ -37,11 +42,17 @@ export function calculateBallScreenY(
 
 /**
  * Calculate a target's center position on screen.
+ * @param effectivePosition Optional dynamic position override (used for calendar-aware positioning)
  */
-export function getTargetCenter(target: TriageTarget, centerX: number): Point2D {
+export function getTargetCenter(
+  target: TriageTarget,
+  centerX: number,
+  effectivePosition?: number
+): Point2D {
   "worklet";
+  const position = effectivePosition ?? target.position;
   return {
-    x: centerX + target.position,
+    x: centerX + position,
     y: TRIAGE_CONFIG.targetYCenter,
   };
 }
@@ -50,41 +61,61 @@ export function getTargetCenter(target: TriageTarget, centerX: number): Point2D 
  * Compute hit detection for all targets.
  *
  * IMPORTANT: Uses module-level TRIAGE_TARGETS to avoid closure capture bugs.
- * The isSubscription parameter determines which targets are considered.
+ * The parameters determine which targets are considered and their positions.
+ *
+ * @param ballX Ball's X position on screen
+ * @param ballY Ball's Y position on screen
+ * @param centerX Screen center X
+ * @param isSubscription Whether the email is a subscription
+ * @param hasCalendarEvent Whether the email has a calendar event
+ * @param shouldAcceptCalendar AI prediction for calendar acceptance
  *
  * Returns:
  * - hit: The target ID if ball is within activation radius, null otherwise
  * - proximities: Map of target ID -> proximity (0-1) for visual feedback
  * - closestTarget: The closest target with non-zero proximity
+ * - effectivePositions: Map of target ID -> effective X position (for rendering)
  */
 export function computeHitTest(
   ballX: number,
   ballY: number,
   centerX: number,
-  isSubscription: boolean
+  isSubscription: boolean,
+  hasCalendarEvent: boolean = false,
+  shouldAcceptCalendar: boolean = false
 ): {
   hit: TriageTargetId | null;
   proximities: Record<string, number>;
   closestTarget: { id: TriageTargetId; proximity: number } | null;
+  effectivePositions: Record<string, number>;
 } {
   "worklet";
   const { activationRadius, proximityRadius } = TRIAGE_CONFIG;
 
   let hit: TriageTargetId | null = null;
   const proximities: Record<string, number> = {};
+  const effectivePositions: Record<string, number> = {};
   let closestTarget: { id: TriageTargetId; proximity: number } | null = null;
 
   // Use module-level constant - no closure capture
   for (let i = 0; i < TRIAGE_TARGETS.length; i++) {
     const target = TRIAGE_TARGETS[i];
 
+    // Compute effective position for this target
+    const effectivePosition = getEffectiveTargetPosition(
+      target,
+      hasCalendarEvent,
+      shouldAcceptCalendar
+    );
+    effectivePositions[target.id] = effectivePosition;
+
     // Skip targets not visible for this email type
-    if (!isTargetVisible(target, isSubscription)) {
+    if (!isTargetVisibleForEmail(target, isSubscription, hasCalendarEvent, shouldAcceptCalendar)) {
       proximities[target.id] = 0;
       continue;
     }
 
-    const targetCenter = getTargetCenter(target, centerX);
+    const targetCenter = getTargetCenter(target, centerX, effectivePosition);
     const dist = distance2D({ x: ballX, y: ballY }, targetCenter);
 
     // Check for hit
@@ -102,7 +133,7 @@ export function computeHitTest(
     }
   }
 
-  return { hit, proximities, closestTarget };
+  return { hit, proximities, closestTarget, effectivePositions };
 }
 
 /**
@@ -115,10 +146,19 @@ export function computeActiveTarget(
   scrollY: number,
   activeIndex: number,
   centerX: number,
-  isSubscription: boolean
+  isSubscription: boolean,
+  hasCalendarEvent: boolean = false,
+  shouldAcceptCalendar: boolean = false
 ): TriageTargetId | null {
   "worklet";
   const ballY = calculateBallScreenY(scrollY, activeIndex);
-  const { hit } = computeHitTest(ballX, ballY, centerX, isSubscription);
+  const { hit } = computeHitTest(
+    ballX,
+    ballY,
+    centerX,
+    isSubscription,
+    hasCalendarEvent,
+    shouldAcceptCalendar
+  );
   return hit;
 }

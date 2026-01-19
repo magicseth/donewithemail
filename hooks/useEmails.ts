@@ -2,6 +2,23 @@ import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { useCallback } from "react";
+import { isAuthError, useAuthError } from "../lib/AuthErrorBoundary";
+
+/**
+ * Wraps a mutation call to detect and report auth errors
+ */
+function withAuthErrorHandling<T>(
+  mutationFn: () => Promise<T>,
+  reportAuthError: (error: Error) => void
+): Promise<T> {
+  return mutationFn().catch((error) => {
+    if (error instanceof Error && isAuthError(error)) {
+      console.log("[useEmails] Auth error detected in mutation:", error.message);
+      reportAuthError(error);
+    }
+    throw error; // Re-throw so caller can handle
+  });
+}
 
 /**
  * Hook for fetching untriaged emails for the feed view (authenticated)
@@ -51,18 +68,23 @@ export function useThreadEmails(emailId: Id<"emails"> | undefined) {
 
 /**
  * Hook for email triage actions (authenticated)
+ * Automatically reports auth errors to the error handler
  */
 export function useTriageEmail() {
   const triageMutation = useMutation(api.emails.triageMyEmail);
+  const { reportAuthError } = useAuthError();
 
   const triageEmail = useCallback(
     async (
       emailId: Id<"emails">,
       action: "done" | "reply_needed" | "delegated"
     ) => {
-      return triageMutation({ emailId, action });
+      return withAuthErrorHandling(
+        () => triageMutation({ emailId, action }),
+        reportAuthError
+      );
     },
-    [triageMutation]
+    [triageMutation, reportAuthError]
   );
 
   return { triageEmail };
@@ -70,15 +92,20 @@ export function useTriageEmail() {
 
 /**
  * Hook for marking email as read (authenticated)
+ * Automatically reports auth errors to the error handler
  */
 export function useMarkAsRead() {
   const markAsReadMutation = useMutation(api.emails.markMyEmailAsRead);
+  const { reportAuthError } = useAuthError();
 
   const markAsRead = useCallback(
     async (emailId: Id<"emails">) => {
-      return markAsReadMutation({ emailId });
+      return withAuthErrorHandling(
+        () => markAsReadMutation({ emailId }),
+        reportAuthError
+      );
     },
-    [markAsReadMutation]
+    [markAsReadMutation, reportAuthError]
   );
 
   return { markAsRead };

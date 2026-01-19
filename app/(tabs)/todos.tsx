@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { router, Stack } from "expo-router";
 import { useQuery, useMutation } from "convex/react";
+import { isAuthError, useAuthError } from "../../lib/AuthErrorBoundary";
 import * as Haptics from "expo-haptics";
 import {
   Gesture,
@@ -265,6 +266,7 @@ const EmailRow = React.memo(function EmailRow({
 
 export default function TodosScreen() {
   const { user, isAuthenticated } = useAuth();
+  const { reportAuthError } = useAuthError();
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
   const [isSearchingMissed, setIsSearchingMissed] = useState(false);
 
@@ -310,6 +312,10 @@ export default function TodosScreen() {
       });
     } catch (error) {
       console.error("Error marking email as done:", error);
+      // Check for auth errors and report them
+      if (error instanceof Error && isAuthError(error)) {
+        reportAuthError(error);
+      }
       // Revert on error
       setProcessedIds((prev) => {
         const next = new Set(prev);
@@ -317,7 +323,7 @@ export default function TodosScreen() {
         return next;
       });
     }
-  }, [triageEmail]);
+  }, [triageEmail, reportAuthError]);
 
   // Handler for searching missed TODOs
   const handleSearchMissedTodos = useCallback(async () => {
@@ -335,6 +341,11 @@ export default function TodosScreen() {
       }
     } catch (error) {
       console.error("Failed to start missed todos search:", error);
+      // Check for auth errors and report them
+      if (error instanceof Error && isAuthError(error)) {
+        reportAuthError(error);
+        return; // Don't show generic error for auth issues
+      }
       const errorMessage = "Failed to start search. Please try again.";
       if (Platform.OS === "web") {
         alert(errorMessage);
@@ -344,7 +355,7 @@ export default function TodosScreen() {
     } finally {
       setIsSearchingMissed(false);
     }
-  }, [user?.email, isSearchingMissed, startMissedSearch]);
+  }, [user?.email, isSearchingMissed, startMissedSearch, reportAuthError]);
 
   // Render email item
   const renderEmailItem = useCallback(({ item }: { item: TodoEmail }) => (

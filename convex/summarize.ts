@@ -24,6 +24,24 @@ export const markCalendarEventAdded = internalMutation({
   },
 });
 
+// Get basic email info for calendar event attribution
+export const getEmailBasicInfo = internalQuery({
+  args: { emailId: v.id("emails") },
+  handler: async (ctx, args) => {
+    const email = await ctx.db.get(args.emailId);
+    if (!email) return null;
+
+    // Get sender contact info
+    const contact = await ctx.db.get(email.from);
+
+    return {
+      subject: email.subject,
+      fromName: contact?.name,
+      fromEmail: contact?.email,
+    };
+  },
+});
+
 // Get email by ID for summarization
 export const getEmailForSummary = internalQuery({
   args: { emailId: v.id("emails") },
@@ -228,6 +246,7 @@ export const updateEmailSummary = internalMutation({
       recurrence: v.optional(v.string()),
       recurrenceDescription: v.optional(v.string()),
     })),
+    shouldAcceptCalendar: v.optional(v.boolean()),
     deadline: v.optional(v.string()),
     deadlineDescription: v.optional(v.string()),
   },
@@ -247,6 +266,7 @@ export const updateEmailSummary = internalMutation({
       actionDescription: args.actionDescription,
       quickReplies: args.quickReplies,
       calendarEvent: args.calendarEvent,
+      shouldAcceptCalendar: args.shouldAcceptCalendar,
       deadline: args.deadline,
       deadlineDescription: args.deadlineDescription,
       createdAt: Date.now(),
