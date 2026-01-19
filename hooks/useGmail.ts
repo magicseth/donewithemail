@@ -28,6 +28,7 @@ export interface GmailEmail {
   bodyPreview: string;
   receivedAt: number;
   isRead: boolean;
+  isSubscription?: boolean;
   summary?: string;
   urgencyScore?: number;
   urgencyReason?: string;
@@ -165,6 +166,7 @@ export function useGmail(sessionStart?: number) {
     bodyPreview: email.bodyPreview,
     receivedAt: email.receivedAt,
     isRead: email.isRead,
+    isSubscription: email.isSubscription,
     summary: email.summary,
     urgencyScore: email.urgencyScore,
     urgencyReason: email.urgencyReason,

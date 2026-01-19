@@ -11,6 +11,70 @@ const anthropic = createAnthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+// Convert HTML to plain text for AI summarization
+function htmlToPlainText(html: string): string {
+  if (!html) return "";
+
+  // Check if it looks like HTML
+  if (!html.includes("<")) return html;
+
+  let text = html;
+
+  // Remove style and script tags with their content
+  text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+  text = text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+
+  // Replace common block elements with newlines
+  text = text.replace(/<br\s*\/?>/gi, "\n");
+  text = text.replace(/<\/p>/gi, "\n\n");
+  text = text.replace(/<\/div>/gi, "\n");
+  text = text.replace(/<\/tr>/gi, "\n");
+  text = text.replace(/<\/li>/gi, "\n");
+  text = text.replace(/<\/h[1-6]>/gi, "\n\n");
+
+  // Remove all remaining HTML tags
+  text = text.replace(/<[^>]+>/g, "");
+
+  // Decode common HTML entities
+  text = text.replace(/&nbsp;/gi, " ");
+  text = text.replace(/&amp;/gi, "&");
+  text = text.replace(/&lt;/gi, "<");
+  text = text.replace(/&gt;/gi, ">");
+  text = text.replace(/&quot;/gi, '"');
+  text = text.replace(/&#39;/gi, "'");
+  text = text.replace(/&rsquo;/gi, "'");
+  text = text.replace(/&lsquo;/gi, "'");
+  text = text.replace(/&rdquo;/gi, '"');
+  text = text.replace(/&ldquo;/gi, '"');
+  text = text.replace(/&mdash;/gi, "—");
+  text = text.replace(/&ndash;/gi, "–");
+  text = text.replace(/&#\d+;/g, ""); // Remove remaining numeric entities
+
+  // Clean up whitespace
+  text = text.replace(/\n{3,}/g, "\n\n"); // Max 2 consecutive newlines
+  text = text.replace(/[ \t]+/g, " "); // Collapse spaces
+  text = text.replace(/^\s+|\s+$/gm, ""); // Trim each line
+
+  return text.trim();
+}
+
+// Check if a calendar event's start time is in the past
+function isEventInPast(startTime: string | undefined): boolean {
+  if (!startTime) return false;
+
+  // Try to parse as a date
+  const eventDate = new Date(startTime);
+  if (isNaN(eventDate.getTime())) {
+    // Couldn't parse - might be relative like "next Tuesday", assume future
+    return false;
+  }
+
+  // Check if it's in the past (with 1 hour buffer for timezone issues)
+  const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  return eventDate < oneHourAgo;
+}
+
 // Summarize a single email
 // Type for quick reply options
 interface QuickReply {
@@ -27,6 +91,12 @@ interface CalendarEvent {
   description?: string;
 }
 
+// Type for deadline
+interface Deadline {
+  date: string;  // ISO 8601 format
+  description: string;  // e.g., "respond by", "submit proposal by"
+}
+
 // Type for summarization result
 interface SummarizeResult {
   summary: string;
@@ -37,6 +107,7 @@ interface SummarizeResult {
   actionDescription?: string;
   quickReplies?: QuickReply[];
   calendarEvent?: CalendarEvent;
+  deadline?: Deadline;
 }
 
 export const summarizeEmail = action({
@@ -65,18 +136,25 @@ export const summarizeEmail = action({
       };
     }
 
-    // Build prompt
+    // Build prompt - use full body, convert HTML to text
+    const rawBody = email.bodyFull || email.bodyPreview || "";
+    const bodyText = htmlToPlainText(rawBody).slice(0, 8000); // 8000 chars is ~2000 tokens
     const emailContent = `
 From: ${email.fromName || email.fromEmail || "Unknown"}
 Subject: ${email.subject}
 
-${email.bodyPreview || email.bodyFull}
+${bodyText}
 `.trim();
 
     // Call Anthropic via AI SDK with enhanced prompt
+    const now = new Date();
+    const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
+    const today = `${dayOfWeek}, ${now.toISOString().split("T")[0]}`; // e.g., "Saturday, 2025-01-18"
     const { text } = await generateText({
       model: anthropic("claude-opus-4-5-20251101"),
       prompt: `Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
+
+TODAY'S DATE: ${today}
 
 CONTEXT: The sender name and subject line are ALREADY displayed above the summary in the UI. DO NOT repeat them.
 
@@ -101,8 +179,9 @@ FIELDS:
 4. actionRequired: "reply" | "action" | "fyi" | "none"
 5. actionDescription: Specific action needed if any
 6. quickReplies: If reply needed, up to 3 options as [{label, body}] - label max 20 chars, body is full reply
-7. calendarEvent: If meeting/event mentioned, extract {title, startTime, endTime, location, description}
+7. calendarEvent: If meeting/event mentioned, extract {title, startTime, endTime, location, description}. Use ISO 8601 format for startTime/endTime (e.g., "2025-01-20T14:00:00").
 8. suggestedReply: Optional longer draft reply
+9. deadline: If there's a deadline or due date mentioned (e.g., "please respond by Friday", "submit by Jan 25"), extract {date, description}. Use ISO 8601 format for date. Only include if there's a clear deadline for the recipient.
 
 Email:
 ${emailContent}
@@ -131,13 +210,13 @@ Respond with only valid JSON, no markdown or explanation.`,
       );
     }
 
-    // Sanitize calendarEvent (convert null to undefined, handle arrays)
+    // Sanitize calendarEvent (convert null to undefined, handle arrays, filter past events)
     let sanitizedCalendarEvent: CalendarEvent | undefined;
     // AI sometimes returns an array of events - take the first one
     const rawEvent = Array.isArray(result.calendarEvent)
       ? result.calendarEvent[0]
       : result.calendarEvent;
-    if (rawEvent && rawEvent.title) {
+    if (rawEvent && rawEvent.title && !isEventInPast(rawEvent.startTime)) {
       sanitizedCalendarEvent = {
         title: rawEvent.title,
         startTime: rawEvent.startTime || undefined,
@@ -145,6 +224,14 @@ Respond with only valid JSON, no markdown or explanation.`,
         location: rawEvent.location || undefined,
         description: rawEvent.description || undefined,
       };
+    }
+
+    // Sanitize deadline (only keep if not in the past)
+    let sanitizedDeadline: string | undefined;
+    let sanitizedDeadlineDescription: string | undefined;
+    if (result.deadline && result.deadline.date && !isEventInPast(result.deadline.date)) {
+      sanitizedDeadline = result.deadline.date;
+      sanitizedDeadlineDescription = result.deadline.description;
     }
 
     // Save to database
@@ -158,6 +245,8 @@ Respond with only valid JSON, no markdown or explanation.`,
       actionDescription: result.actionDescription || undefined,
       quickReplies: result.quickReplies || undefined,
       calendarEvent: sanitizedCalendarEvent,
+      deadline: sanitizedDeadline,
+      deadlineDescription: sanitizedDeadlineDescription,
     });
 
     return result;
@@ -233,8 +322,9 @@ export const summarizeByExternalIds = internalAction({
             };
           }
 
-          // Build context-rich prompt
-          const bodyText = (email.bodyPreview || email.bodyFull || "").slice(0, 500);
+          // Build context-rich prompt - use full body, convert HTML to text
+          const rawBody = email.bodyFull || email.bodyPreview || "";
+          const bodyText = htmlToPlainText(rawBody).slice(0, 8000); // 8000 chars is ~2000 tokens
 
           // Build sender context
           const senderName = email.fromName || email.fromEmail || "Unknown";
@@ -260,9 +350,14 @@ Subject: ${email.subject}${recentContext}
 ${bodyText}`.trim();
 
           // Call Anthropic via AI SDK with enhanced prompt
+          const now = new Date();
+          const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
+          const today = `${dayOfWeek}, ${now.toISOString().split("T")[0]}`; // e.g., "Saturday, 2025-01-18"
           const { text } = await generateText({
             model: anthropic("claude-opus-4-5-20251101"),
             prompt: `Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
+
+TODAY'S DATE: ${today}
 
 CONTEXT: The sender name and subject line are ALREADY displayed above the summary in the UI. DO NOT repeat them.
 
@@ -287,8 +382,9 @@ FIELDS:
 4. actionRequired: "reply" | "action" | "fyi" | "none"
 5. actionDescription: Specific action needed if any
 6. quickReplies: If reply needed, up to 3 options as [{label, body}] - label max 20 chars, body is full reply
-7. calendarEvent: If meeting/event mentioned, extract {title, startTime, endTime, location, description}
+7. calendarEvent: If meeting/event mentioned, extract {title, startTime, endTime, location, description}. Use ISO 8601 format for startTime/endTime (e.g., "2025-01-20T14:00:00").
 8. suggestedReply: Optional longer draft reply
+9. deadline: If there's a deadline or due date mentioned (e.g., "please respond by Friday", "submit by Jan 25"), extract {date, description}. Use ISO 8601 format for date. Only include if there's a clear deadline for the recipient.
 
 Email:
 ${emailContent}
@@ -316,13 +412,13 @@ Respond with only valid JSON, no markdown or explanation.`,
             );
           }
 
-          // Sanitize calendarEvent (convert null to undefined, handle arrays)
+          // Sanitize calendarEvent (convert null to undefined, handle arrays, filter past events)
           let sanitizedCalendarEvent: CalendarEvent | undefined;
           // AI sometimes returns an array of events - take the first one
           const rawEvent = Array.isArray(result.calendarEvent)
             ? result.calendarEvent[0]
             : result.calendarEvent;
-          if (rawEvent && rawEvent.title) {
+          if (rawEvent && rawEvent.title && !isEventInPast(rawEvent.startTime)) {
             sanitizedCalendarEvent = {
               title: rawEvent.title,
               startTime: rawEvent.startTime || undefined,
@@ -330,6 +426,14 @@ Respond with only valid JSON, no markdown or explanation.`,
               location: rawEvent.location || undefined,
               description: rawEvent.description || undefined,
             };
+          }
+
+          // Sanitize deadline (only keep if not in the past)
+          let sanitizedDeadline: string | undefined;
+          let sanitizedDeadlineDescription: string | undefined;
+          if (result.deadline && result.deadline.date && !isEventInPast(result.deadline.date)) {
+            sanitizedDeadline = result.deadline.date;
+            sanitizedDeadlineDescription = result.deadline.description;
           }
 
           // Save to database
@@ -343,6 +447,8 @@ Respond with only valid JSON, no markdown or explanation.`,
             actionDescription: result.actionDescription || undefined,
             quickReplies: result.quickReplies || undefined,
             calendarEvent: sanitizedCalendarEvent,
+            deadline: sanitizedDeadline,
+            deadlineDescription: sanitizedDeadlineDescription,
           });
 
           return { externalId, success: true, result };

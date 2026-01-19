@@ -16,6 +16,8 @@ export default defineSchema({
     subject: v.string(),
     bodyPreview: v.string(),
     bodyFull: v.string(),
+    bodyHtml: v.optional(v.string()), // Full HTML body if available
+    rawPayload: v.optional(v.string()), // Raw Gmail API payload JSON for reprocessing
     receivedAt: v.number(),
 
     // User state
@@ -27,6 +29,9 @@ export default defineSchema({
       v.literal("delegated")
     )),
     triagedAt: v.optional(v.number()),
+
+    // Follow-up reminder tracking
+    lastReminderAt: v.optional(v.number()),
 
     // Direction: incoming (received) or outgoing (sent)
     direction: v.optional(v.union(v.literal("incoming"), v.literal("outgoing"))),
@@ -43,6 +48,7 @@ export default defineSchema({
     .index("by_external_id", ["externalId", "provider"])
     .index("by_from", ["from"])
     .index("by_thread", ["userId", "threadId"])
+    .index("by_user_reply_needed", ["userId", "triageAction", "triagedAt"])
     .searchIndex("search_content", {
       searchField: "subject",
       filterFields: ["userId"],
@@ -84,9 +90,15 @@ export default defineSchema({
     calendarEventId: v.optional(v.string()),
     calendarEventLink: v.optional(v.string()),
 
+    // Deadline extracted from email (ISO string)
+    deadline: v.optional(v.string()),
+    deadlineDescription: v.optional(v.string()),  // e.g., "respond by", "submit by"
+    deadlineReminderSent: v.optional(v.boolean()),
+
     createdAt: v.number(),
   })
-    .index("by_email", ["emailId"]),
+    .index("by_email", ["emailId"])
+    .index("by_deadline", ["deadline"]),
 
   contacts: defineTable({
     userId: v.id("users"),

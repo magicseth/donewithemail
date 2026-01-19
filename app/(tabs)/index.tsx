@@ -37,6 +37,8 @@ import Animated, {
   useAnimatedProps,
   useDerivedValue,
   useAnimatedReaction,
+  useAnimatedRef,
+  measure,
   SharedValue,
 } from "react-native-reanimated";
 import { Dimensions } from "react-native";
@@ -234,8 +236,8 @@ const errorBoundaryStyles = StyleSheet.create({
 // Solution: lastTriggeredTarget tracks what was just triggered.
 // - After any action, we set lastTriggeredTarget = "done" (ball's new position)
 // - Trigger only fires when activeTarget !== lastTriggeredTarget
-// - lastTriggeredTarget clears when ball leaves all targets (activeTarget = null)
-// - This allows user to move ball away and come back to trigger again
+// - lastTriggeredTarget clears when a NEW drag starts (touch down)
+// - This allows each drag gesture to have fresh detection
 //
 // ADDING A NEW TARGET
 // -------------------
@@ -289,6 +291,10 @@ const logActiveTargetCalc = (ball: number, targetId: string, targetX: number, di
 
 // Track minimum distances during a drag session
 let minDistances: Record<string, number> = { done: 999, reply: 999, mic: 999 };
+
+// Module-level email storage - NOT captured by worklet serialization
+// This is updated by the component and read by handlers called via runOnJS
+let moduleEmails: InboxEmail[] = [];
 const logMinDistance = (targetId: string, distance: number) => {
   if (distance < minDistances[targetId]) {
     minDistances[targetId] = distance;
@@ -366,6 +372,8 @@ interface TriageState {
   needsReset: SharedValue<boolean>;
   // Track what target was last triggered (to prevent re-triggering same target)
   lastTriggeredTarget: SharedValue<string | null>;
+  // Measured ball Y position (updated by active row's ball)
+  measuredBallY: SharedValue<number>;
   // Computed: which row index is at the triage line (0-indexed)
   topRowIndex: { readonly value: number };
   // Computed: ball's X position
@@ -409,6 +417,9 @@ function useCreateTriageState(): TriageState {
   // Track what target was last triggered (to prevent re-triggering same target)
   const lastTriggeredTarget = useSharedValue<string | null>(null);
 
+  // Measured ball Y position - updated by the active row's RowBall component
+  const measuredBallY = useSharedValue(0);
+
   // topRowIndex is now just the activeIndex (not derived from scroll)
   const topRowIndex = useDerivedValue(() => activeIndex.value);
 
@@ -418,15 +429,14 @@ function useCreateTriageState(): TriageState {
     return result;
   });
 
-  // Ball Y position (matches the ball rendering formula)
-  const { rowHeight, headerOffset, listTopPadding, ballSize } = TRIAGE_CONFIG;
-  const TARGET_Y = 30; // Fixed Y position of targets at top
+  // Ball Y position - use actual measured position from the ball element
+  const { ballSize, headerOffset } = TRIAGE_CONFIG;
+  // Target visual position within overlay + offset for headers above overlay
+  const TARGET_Y = 30 + headerOffset; // 30px in overlay + 86px header = ~116px screen position
 
+  // ballY now directly uses the measured value from the active row's ball
   const ballY = useDerivedValue(() => {
-    const halfBall = ballSize / 2;
-    const activeIdx = activeIndex.value;
-    const rowContentY = listTopPadding + (activeIdx * rowHeight);
-    return headerOffset + rowContentY - scrollY.value;
+    return measuredBallY.value;
   });
 
   // Helper to calculate 2D distance between ball and target
@@ -502,6 +512,7 @@ function useCreateTriageState(): TriageState {
     isProcessing,
     needsReset,
     lastTriggeredTarget,
+    measuredBallY,
     topRowIndex,
     ballX,
     ballY,
@@ -590,6 +601,7 @@ interface InboxEmail {
   quickReplies?: QuickReply[];
   calendarEvent?: CalendarEvent;
   threadCount?: number;
+  isSubscription?: boolean;
   fromContact?: {
     _id: string;
     email: string;
@@ -610,6 +622,7 @@ function toInboxEmail(email: GmailEmail): InboxEmail {
     quickReplies: email.quickReplies,
     calendarEvent: email.calendarEvent,
     threadCount: email.threadCount,
+    isSubscription: email.isSubscription,
     fromContact: email.fromContact ? {
       _id: email.fromContact._id,
       email: email.fromContact.email,
@@ -829,7 +842,7 @@ const TargetView = React.memo(function TargetView({ target }: TargetViewProps) {
   );
 });
 
-const TriageOverlay = React.memo(function TriageOverlay() {
+const TriageOverlay = React.memo(function TriageOverlay({ showUnsubscribe }: { showUnsubscribe: boolean }) {
   const { rowHeight, headerOffset, listTopPadding, ballSize } = TRIAGE_CONFIG;
   const overlayRef = React.useRef<any>(null);
 
@@ -847,10 +860,15 @@ const TriageOverlay = React.memo(function TriageOverlay() {
     }
   }, []);
 
+  // Filter targets - hide unsubscribe if active email isn't a subscription
+  const visibleTargets = showUnsubscribe
+    ? TARGETS
+    : TARGETS.filter(t => t.id !== "unsubscribe");
+
   return (
     <View ref={overlayRef} style={triageStyles.overlay} pointerEvents="none" onLayout={handleOverlayLayout} collapsable={false}>
       {/* Render all targets dynamically - ball is now rendered in each row */}
-      {TARGETS.map(target => (
+      {visibleTargets.map(target => (
         <TargetView key={target.id} target={target} />
       ))}
     </View>
@@ -901,6 +919,29 @@ const RowBall = React.memo(function RowBall({ index }: { index: number }) {
   const { ballSize } = TRIAGE_CONFIG;
   const halfBall = ballSize / 2;
 
+  // Animated ref for measuring ball position
+  const ballRef = useAnimatedRef<Animated.View>();
+
+  // Measure and update ball Y position when this row is active
+  // Uses useAnimatedReaction to trigger measurement on scroll or activeIndex change
+  useAnimatedReaction(
+    () => ({
+      isActive: triage.activeIndex.value === index,
+      scrollY: triage.scrollY.value, // Re-measure when scroll changes
+    }),
+    (current) => {
+      if (current.isActive) {
+        // Measure the ball's screen position
+        const measured = measure(ballRef);
+        if (measured) {
+          // Update the shared measuredBallY with the ball's center Y position
+          triage.measuredBallY.value = measured.pageY + halfBall;
+        }
+      }
+    },
+    [index, halfBall]
+  );
+
   // Ball position - only moves if this row is the active row
   const ballPositionStyle = useAnimatedStyle(() => {
     const isActive = triage.activeIndex.value === index;
@@ -944,7 +985,7 @@ const RowBall = React.memo(function RowBall({ index }: { index: number }) {
   });
 
   return (
-    <Animated.View style={[rowBallStyles.ballContainer, ballPositionStyle]}>
+    <Animated.View ref={ballRef} style={[rowBallStyles.ballContainer, ballPositionStyle]}>
       <Animated.View style={[rowBallStyles.ball, ballScaleStyle]}>
         <Animated.View style={[rowBallStyles.ballInner, ballColorStyle]} />
       </Animated.View>
@@ -1132,8 +1173,6 @@ interface EmailRowProps {
   index: number;
   onSwipeToTodo: (email: InboxEmail) => void;
   onQuickReply: (email: InboxEmail, reply: QuickReply) => void;
-  onMicPressIn: (emailId: string) => void;
-  onMicPressOut: (email: InboxEmail) => void;
   onAddToCalendar: (email: InboxEmail, event: CalendarEvent) => void;
   sendingReplyFor: string | null;
   recordingFor: string | null;
@@ -1149,8 +1188,6 @@ const EmailRow = React.memo(function EmailRow({
   index,
   onSwipeToTodo,
   onQuickReply,
-  onMicPressIn,
-  onMicPressOut,
   onAddToCalendar,
   sendingReplyFor,
   recordingFor,
@@ -1178,14 +1215,6 @@ const EmailRow = React.memo(function EmailRow({
   const handlePress = useCallback(() => {
     router.push(`/email/${item._id}`);
   }, [item._id]);
-
-  const handleMicIn = useCallback(() => {
-    onMicPressIn(item._id);
-  }, [item._id, onMicPressIn]);
-
-  const handleMicOut = useCallback(() => {
-    onMicPressOut(item);
-  }, [item, onMicPressOut]);
 
   return (
     <AnimatedRowWrapper index={index}>
@@ -1257,30 +1286,18 @@ const EmailRow = React.memo(function EmailRow({
             {item.summary || decodeHtmlEntities(item.bodyPreview)}
           </Text>
 
-          {/* Calendar event detected */}
+          {/* Calendar event detected - compact single-line display */}
           {item.calendarEvent && (
             <View style={styles.calendarRow}>
-              <View style={styles.calendarInfo}>
-                <Text style={styles.calendarIcon}>📅</Text>
-                <View style={styles.calendarDetails}>
-                  <Text style={styles.calendarTitle} numberOfLines={1}>
-                    {decodeHtmlEntities(item.calendarEvent.title)}
-                  </Text>
-                  {item.calendarEvent.startTime && (
-                    <Text style={styles.calendarTime} numberOfLines={1}>
-                      {formatEventTime(item.calendarEvent.startTime, item.calendarEvent.endTime)}
-                    </Text>
-                  )}
-                  {item.calendarEvent.location && (
-                    <Text style={styles.calendarLocation} numberOfLines={1}>
-                      📍 {decodeHtmlEntities(item.calendarEvent.location)}
-                    </Text>
-                  )}
-                </View>
-              </View>
+              <Text style={styles.calendarIcon}>📅</Text>
+              <Text style={styles.calendarText} numberOfLines={1}>
+                {item.calendarEvent.startTime ? formatEventTime(item.calendarEvent.startTime, item.calendarEvent.endTime) + " · " : ""}
+                {decodeHtmlEntities(item.calendarEvent.title)}
+                {item.calendarEvent.location ? " · " + decodeHtmlEntities(item.calendarEvent.location) : ""}
+              </Text>
               {item.calendarEvent.calendarEventId ? (
                 <View style={styles.addedBadge}>
-                  <Text style={styles.addedBadgeText}>✓ Added</Text>
+                  <Text style={styles.addedBadgeText}>✓</Text>
                 </View>
               ) : (
                 <TouchableOpacity
@@ -1330,21 +1347,6 @@ const EmailRow = React.memo(function EmailRow({
               </TouchableOpacity>
             ))}
 
-            {/* Mic button - always visible */}
-            <TouchableOpacity
-              style={[
-                styles.micButton,
-                isRecordingThis && styles.micButtonRecording,
-              ]}
-              onPressIn={handleMicIn}
-              onPressOut={handleMicOut}
-              disabled={isSending || (isRecording && !isRecordingThis)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.micIcon}>
-                {isRecordingThis ? "🔴" : "🎤"}
-              </Text>
-            </TouchableOpacity>
           </View>
 
           {/* Show recording status */}
@@ -1385,14 +1387,31 @@ export default function InboxScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
 
+  // Toast state for non-blocking notifications
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+  const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
   // Triage state for optimistic updates - maps email ID to action taken
   const [triagedEmails, setTriagedEmails] = useState<Map<string, "done" | "reply_needed">>(new Map());
   const triageEmail = useMutation(api.emails.triageEmail);
 
   // Refs for triage logic
   const flatListRef = useRef<FlatList>(null);
-  const emailsRef = useRef<InboxEmail[]>([]);
   const triageInProgressRef = useRef<Set<string>>(new Set());
+  const componentIdRef = useRef(Math.random().toString(36).slice(2, 8));
+
+  // Debug: Log when component mounts and when gmailEmails changes
+  useEffect(() => {
+    console.log(`[Triage:Mount] Component ${componentIdRef.current} mounted`);
+    return () => console.log(`[Triage:Unmount] Component ${componentIdRef.current} unmounted`);
+  }, []);
+
+  useEffect(() => {
+    console.log(`[Triage:EmailsEffect] Component ${componentIdRef.current}: gmailEmails.length=${gmailEmails.length}, isLoading=${isLoading}`);
+  }, [gmailEmails, isLoading]);
 
   // Track if this is the initial mount to avoid resetting on first focus
   const isInitialMount = useRef(true);
@@ -1448,10 +1467,42 @@ export default function InboxScreen() {
     userEmail ? { userEmail } : "skip"
   );
 
+  // Track whether active email is a subscription (for showing/hiding unsub target)
+  const [activeEmailIsSubscription, setActiveEmailIsSubscription] = useState(false);
+
+  // JS function to update subscription status - reads from moduleEmails at call time
+  const updateSubscriptionStatus = useCallback((activeIdx: number) => {
+    const email = moduleEmails[activeIdx];
+    console.log(`[Triage:SubStatus] activeIdx=${activeIdx}, isSubscription=${email?.isSubscription}`);
+    setActiveEmailIsSubscription(!!email?.isSubscription);
+  }, []);
+
+  // Sync subscription status when active index changes
+  useAnimatedReaction(
+    () => triageState.activeIndex.value,
+    (activeIdx) => {
+      // Call JS function via runOnJS - it will read moduleEmails at call time
+      runOnJS(updateSubscriptionStatus)(activeIdx);
+    },
+    []
+  );
+
+  // Also sync when emails list changes
+  useEffect(() => {
+    const activeIdx = triageState.activeIndex.value;
+    updateSubscriptionStatus(activeIdx);
+  }, [gmailEmails, triageState.activeIndex, updateSubscriptionStatus]);
+
   // Triage handler - called when ball touches target
   const handleTargetActivation = useCallback(async (index: number, targetId: string) => {
-    const emails = emailsRef.current;
-    if (index < 0 || index >= emails.length) return;
+    // Use module-level emails (not captured by worklet serialization)
+    const emails = moduleEmails;
+    console.log(`[Triage:Handler] index=${index}, targetId=${targetId}, emails.length=${emails.length}`);
+    if (index < 0 || index >= emails.length) {
+      console.log(`[Triage:Handler] Early return: index out of bounds`);
+      triageState.isProcessing.value = false;
+      return;
+    }
 
     const email = emails[index];
     const target = TARGETS.find(t => t.id === targetId);
@@ -1484,14 +1535,26 @@ export default function InboxScreen() {
 
     // Handle unsubscribe
     if (targetId === "unsubscribe") {
+      // Skip unsubscribe for non-subscription emails (target may still detect if ball is in that area)
+      if (!email.isSubscription) {
+        console.log(`[Triage:Unsub] Skipping - email is not a subscription`);
+        triageState.isProcessing.value = false;
+        return;
+      }
       console.log(`[Triage:Unsub] Unsubscribe for email: ${email._id}, sender: ${email.fromContact?.email}`);
+      console.log(`[Triage:Unsub] Total subscriptions loaded: ${subscriptions?.length || 0}`);
+      if (subscriptions && subscriptions.length > 0) {
+        console.log(`[Triage:Unsub] Sample subscriptions: ${subscriptions.slice(0, 5).map(s => s.senderEmail).join(", ")}`);
+      }
       if (Platform.OS !== "web") {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
 
       // Find subscription for this sender
       const senderEmail = email.fromContact?.email;
+      console.log(`[Triage:Unsub] Looking for senderEmail: "${senderEmail}"`);
       const subscription = senderEmail && subscriptions?.find(s => s.senderEmail === senderEmail);
+      console.log(`[Triage:Unsub] Found subscription: ${subscription ? subscription._id : "none"}`);
 
       if (subscription && userEmail) {
         // Call unsubscribe action
@@ -1501,19 +1564,19 @@ export default function InboxScreen() {
         }).then(result => {
           console.log(`[Triage:Unsub] Result:`, result);
           if (result.completed.length > 0) {
-            showAlert("Unsubscribed", `Successfully unsubscribed from ${senderEmail}`);
+            showToast(`Unsubscribed from ${senderEmail}`, "success");
           } else if (result.manualRequired.length > 0) {
-            showAlert("Manual action required", `Please visit the unsubscribe link to complete: ${result.manualRequired[0].url}`);
+            showToast("Manual unsubscribe required - check email", "info");
           } else {
-            showAlert("Unsubscribe failed", "Could not unsubscribe automatically");
+            showToast("Unsubscribe failed", "error");
           }
         }).catch(err => {
           console.error(`[Triage:Unsub] Error:`, err);
-          showAlert("Error", "Failed to unsubscribe");
+          showToast("Failed to unsubscribe", "error");
         });
       } else {
         console.log(`[Triage:Unsub] No subscription found for ${senderEmail}`);
-        showAlert("No subscription", "This email doesn't have an unsubscribe option");
+        showToast("No unsubscribe option available", "info");
       }
 
       // Mark as done regardless
@@ -1587,7 +1650,18 @@ export default function InboxScreen() {
     } finally {
       triageInProgressRef.current.delete(email._id);
     }
-  }, [triageEmail, triagedEmails, playStartSound, startRecording, triageState, subscriptions, batchUnsubscribeAction, userEmail]);
+  }, [triageEmail, triagedEmails, playStartSound, startRecording, triageState, subscriptions, batchUnsubscribeAction, userEmail, showToast]);
+
+  // Keep ref to latest callback for use in worklet (runOnJS captures at creation time)
+  const handleTargetActivationRef = useRef(handleTargetActivation);
+  handleTargetActivationRef.current = handleTargetActivation;
+
+  // Stable wrapper that worklet can safely capture
+  const handleTargetActivationStable = useCallback((index: number, targetId: string) => {
+    console.log(`[Triage:StableWrapper] Called with index=${index}, targetId=${targetId}`);
+    console.log(`[Triage:StableWrapper] moduleEmails.length=${moduleEmails.length}`);
+    handleTargetActivationRef.current(index, targetId);
+  }, []);
 
   // Log ball position periodically for debugging
   const lastLogTimeShared = useSharedValue(0);
@@ -1666,7 +1740,7 @@ export default function InboxScreen() {
         // Set locks immediately in worklet to prevent cascade
         triageState.isProcessing.value = true;
         triageState.lastTriggeredTarget.value = current.activeTarget;
-        runOnJS(handleTargetActivation)(current.topRowIndex, current.activeTarget);
+        runOnJS(handleTargetActivationStable)(current.topRowIndex, current.activeTarget);
       }
     }
   );
@@ -1687,6 +1761,7 @@ export default function InboxScreen() {
         summary: email.summary,
         quickReplies: email.quickReplies as QuickReply[] | undefined,
         calendarEvent: email.calendarEvent as CalendarEvent | undefined,
+        isSubscription: email.isSubscription,
         fromContact: email.fromContact ? {
           _id: email.fromContact._id,
           email: email.fromContact.email,
@@ -1698,8 +1773,10 @@ export default function InboxScreen() {
 
   // Keep triaged items visible - user scrolls past them naturally
   const emails = displayEmails;
-  // Keep ref in sync for animation callbacks
-  emailsRef.current = emails;
+  // Update module-level emails (not captured by worklet serialization)
+  moduleEmails = emails;
+  console.log(`[Triage:RefSync] Setting moduleEmails, length=${emails.length}`);
+
   const isRecording = isConnecting || isConnected;
 
   // Handle swipe left to mark as TODO
@@ -1743,7 +1820,7 @@ export default function InboxScreen() {
     if (!recordingForRef.current) return;
 
     // Find the email being recorded for
-    const email = emailsRef.current.find(e => e._id === recordingForRef.current);
+    const email = moduleEmails.find(e => e._id === recordingForRef.current);
     if (!email) {
       console.log("[Triage:TouchEnd] email not found, cancelling");
       cancelRecording();
@@ -1784,8 +1861,24 @@ export default function InboxScreen() {
   // Handle native touch end event (for stopping recording)
   const handleNativeTouchEnd = useCallback(() => {
     console.log("[Triage:NativeTouchEnd] touch ended");
+    // Log all target positions and ball position for debugging
+    const { headerOffset } = TRIAGE_CONFIG;
+    const targetYBase = 30 + headerOffset; // Same calculation as TARGET_Y in useCreateTriageState
+    const ballX = triageState.ballX.value;
+    const ballY = triageState.ballY.value;
+    const scrollY = triageState.scrollY.value;
+    const topRowIndex = triageState.topRowIndex.value;
+    console.log(`[Triage:TouchEndDebug] Ball: x=${ballX.toFixed(0)}, y=${ballY.toFixed(0)}, scrollY=${scrollY.toFixed(0)}, topRowIndex=${topRowIndex}`);
+    for (const target of TARGETS) {
+      const targetX = CENTER_X + target.position;
+      const targetY = targetYBase + 20; // Approximate center
+      const distX = Math.abs(ballX - targetX);
+      const distY = Math.abs(ballY - targetY);
+      const dist2D = Math.sqrt(distX * distX + distY * distY);
+      console.log(`[Triage:TouchEndDebug] ${target.id}: x=${targetX}, y=${targetY}, distX=${distX.toFixed(0)}, distY=${distY.toFixed(0)}, dist2D=${dist2D.toFixed(0)}, activationRadius=${target.activationRadius}`);
+    }
     handleTouchEndWhileRecording();
-  }, [handleTouchEndWhileRecording]);
+  }, [handleTouchEndWhileRecording, triageState]);
 
   // On web, use native DOM events for full-frequency pointer tracking
   useEffect(() => {
@@ -1797,6 +1890,8 @@ export default function InboxScreen() {
       console.log(`[Triage:PointerDown] clientX=${e.clientX}, clientY=${e.clientY}`);
       triageState.startX.value = e.clientX;
       triageState.fingerX.value = e.clientX;
+      // Clear lastTriggeredTarget on new drag to allow fresh detection
+      triageState.lastTriggeredTarget.value = null;
     };
 
     const handlePointerMove = (e: PointerEvent) => {
@@ -1842,6 +1937,8 @@ export default function InboxScreen() {
         runOnJS(logTouchDown)(touch.absoluteX, touch.absoluteY);
         triageState.startX.value = touch.absoluteX;
         triageState.fingerX.value = touch.absoluteX;
+        // Clear lastTriggeredTarget on new drag to allow fresh detection
+        triageState.lastTriggeredTarget.value = null;
       }
     })
     .onTouchesMove((e) => {
@@ -1878,41 +1975,6 @@ export default function InboxScreen() {
     // Show review modal
     setReplyDraft({ email, body: reply.body, subject });
   }, []);
-
-  const handleMicPressIn = useCallback(async (emailId: string) => {
-    setRecordingFor(emailId);
-    playStartSound();
-    await startRecording();
-  }, [startRecording, playStartSound]);
-
-  const handleMicPressOut = useCallback(async (email: InboxEmail) => {
-    if (!recordingFor) {
-      cancelRecording();
-      setRecordingFor(null);
-      return;
-    }
-
-    playStopSound();
-    const finalTranscript = await stopRecording();
-    setRecordingFor(null);
-
-    if (!finalTranscript.trim()) {
-      showAlert("No speech detected", "Please try recording again.");
-      return;
-    }
-
-    if (!email.fromContact?.email) {
-      showAlert("Error", "Cannot determine recipient email address.");
-      return;
-    }
-
-    const subject = email.subject.startsWith("Re:")
-      ? email.subject
-      : `Re: ${email.subject}`;
-
-    // Show review modal
-    setReplyDraft({ email, body: finalTranscript, subject });
-  }, [recordingFor, stopRecording, cancelRecording, playStopSound]);
 
   const handleAddToCalendar = useCallback(async (email: InboxEmail, event: CalendarEvent) => {
     if (!userEmail) {
@@ -1985,8 +2047,6 @@ export default function InboxScreen() {
       index={index}
       onSwipeToTodo={handleSwipeToTodo}
       onQuickReply={handleQuickReply}
-      onMicPressIn={handleMicPressIn}
-      onMicPressOut={handleMicPressOut}
       onAddToCalendar={handleAddToCalendar}
       sendingReplyFor={sendingReplyFor}
       recordingFor={recordingFor}
@@ -1996,7 +2056,7 @@ export default function InboxScreen() {
       isTriaged={triagedEmails.has(item._id)}
       triageAction={triagedEmails.get(item._id)}
     />
-  ), [handleSwipeToTodo, handleQuickReply, handleMicPressIn, handleMicPressOut, handleAddToCalendar, sendingReplyFor, recordingFor, addingCalendarFor, isRecording, transcript, triagedEmails]);
+  ), [handleSwipeToTodo, handleQuickReply, handleAddToCalendar, sendingReplyFor, recordingFor, addingCalendarFor, isRecording, transcript, triagedEmails]);
 
   if (isLoading && emails.length === 0) {
     return (
@@ -2032,7 +2092,7 @@ export default function InboxScreen() {
         )}
 
         {/* Triage overlay - ball moves toward targets */}
-        <TriageOverlay />
+        <TriageOverlay showUnsubscribe={activeEmailIsSubscription} />
 
       {/* Swipe hint at top */}
       <View style={styles.swipeHintContainer}>
@@ -2068,6 +2128,8 @@ export default function InboxScreen() {
           const x = e.nativeEvent.pageX;
           triageState.startX.value = x;
           triageState.fingerX.value = x;
+          // Clear lastTriggeredTarget on new drag to allow fresh detection
+          triageState.lastTriggeredTarget.value = null;
           return false; // Don't claim responder - let scroll work
         }}
         onMoveShouldSetResponderCapture={(e) => {
@@ -2087,11 +2149,7 @@ export default function InboxScreen() {
             keyExtractor={(item) => item._id}
             renderItem={renderEmailItem}
             extraData={{ transcript, recordingFor, triagedEmails }}
-            getItemLayout={(_, index) => ({
-              length: TRIAGE_CONFIG.rowHeight,
-              offset: TRIAGE_CONFIG.listTopPadding + index * TRIAGE_CONFIG.rowHeight,
-              index,
-            })}
+            // Note: getItemLayout removed to support variable height rows
           contentContainerStyle={styles.listContent}
           refreshControl={
             Platform.OS !== "web" ? (
@@ -2197,6 +2255,17 @@ export default function InboxScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Toast notification */}
+      {toast && (
+        <View style={[
+          styles.toast,
+          toast.type === "success" && styles.toastSuccess,
+          toast.type === "error" && styles.toastError,
+        ]}>
+          <Text style={styles.toastText}>{toast.message}</Text>
+        </View>
+      )}
       </GestureHandlerRootView>
     </TriageContext.Provider>
     </ErrorBoundary>
@@ -2279,8 +2348,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
-    height: TRIAGE_CONFIG.rowHeight,
-    overflow: "hidden",
+    minHeight: TRIAGE_CONFIG.rowHeight, // Minimum height for triage ball, but can grow
     // Background controlled by AnimatedRowWrapper
   },
   emailItemUnread: {
@@ -2414,21 +2482,6 @@ const styles = StyleSheet.create({
   quickReplyTextPrimary: {
     color: "#fff",
   },
-  micButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#F0F0F0",
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: "auto",
-  },
-  micButtonRecording: {
-    backgroundColor: "#FEE2E2",
-  },
-  micIcon: {
-    fontSize: 16,
-  },
   urgencyIndicator: {
     position: "absolute",
     left: 0,
@@ -2484,65 +2537,44 @@ const styles = StyleSheet.create({
   fabIcon: {
     fontSize: 24,
   },
-  // Calendar styles
+  // Calendar styles - compact single-line display
   calendarRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     backgroundColor: "#FEF3C7",
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: "#FCD34D",
-  },
-  calendarInfo: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginTop: 6,
+    gap: 6,
   },
   calendarIcon: {
-    fontSize: 16,
-    marginTop: 1,
-  },
-  calendarDetails: {
-    flex: 1,
-    gap: 2,
-  },
-  calendarTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#78350F",
-  },
-  calendarTime: {
     fontSize: 12,
-    color: "#92400E",
   },
-  calendarLocation: {
-    fontSize: 11,
-    color: "#A16207",
+  calendarText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#78350F",
   },
   addCalendarButton: {
     backgroundColor: "#F59E0B",
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginLeft: 8,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   addCalendarButtonDisabled: {
     opacity: 0.6,
   },
   addCalendarButtonText: {
     color: "#fff",
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600",
   },
   addedBadge: {
     backgroundColor: "#10B981",
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginLeft: 8,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
   },
   addedBadgeText: {
     color: "#fff",
@@ -2627,5 +2659,32 @@ const styles = StyleSheet.create({
     padding: 16,
     textAlignVertical: "top",
     minHeight: 150,
+  },
+  toast: {
+    position: "absolute",
+    bottom: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: "#333",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  toastSuccess: {
+    backgroundColor: "#10B981",
+  },
+  toastError: {
+    backgroundColor: "#EF4444",
+  },
+  toastText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "500",
+    textAlign: "center",
   },
 });

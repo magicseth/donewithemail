@@ -26,8 +26,10 @@ export default function SettingsScreen() {
   const sendTestNotification = useMutation(api.notifications.sendTestNotificationWithAvatar);
   const sendTestCommunicationNotification = useMutation(api.notifications.sendTestCommunicationNotification);
   const resetAllToUntriaged = useMutation(api.emails.resetAllToUntriaged);
+  const scanExistingEmailsAction = useAction(api.subscriptions.scanExistingEmails);
   const [isResettingTriage, setIsResettingTriage] = useState(false);
   const [isSendingCommNotification, setIsSendingCommNotification] = useState(false);
+  const [isScanningSubscriptions, setIsScanningSubscriptions] = useState(false);
 
   // Check if Gmail is actually connected (has tokens stored)
   const isGmailConnected = useQuery(
@@ -112,6 +114,31 @@ export default function SettingsScreen() {
       }
     } finally {
       setIsSendingCommNotification(false);
+    }
+  };
+
+  const handleScanSubscriptions = async () => {
+    if (!user?.email) return;
+
+    setIsScanningSubscriptions(true);
+    try {
+      const result = await scanExistingEmailsAction({ userEmail: user.email });
+      const message = `Scanned ${result.scanned} emails.\nFound ${result.found} subscription(s).`;
+      if (Platform.OS === "web") {
+        window.alert(message);
+      } else {
+        Alert.alert("Subscription Scan Complete", message);
+      }
+    } catch (e) {
+      console.error("Scan subscriptions error:", e);
+      const errorMsg = e instanceof Error ? e.message : "Unknown error";
+      if (Platform.OS === "web") {
+        window.alert(`Error: ${errorMsg}`);
+      } else {
+        Alert.alert("Error", errorMsg);
+      }
+    } finally {
+      setIsScanningSubscriptions(false);
     }
   };
 
@@ -378,6 +405,26 @@ export default function SettingsScreen() {
               </Text>
             </View>
             {isResettingTriage ? (
+              <ActivityIndicator size="small" color="#6366F1" />
+            ) : (
+              <Text style={styles.aboutArrow}>→</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity
+            style={styles.aboutRow}
+            onPress={handleScanSubscriptions}
+            disabled={isScanningSubscriptions}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Scan for Subscriptions</Text>
+              <Text style={styles.settingDescription}>
+                Find unsubscribe links in existing emails
+              </Text>
+            </View>
+            {isScanningSubscriptions ? (
               <ActivityIndicator size="small" color="#6366F1" />
             ) : (
               <Text style={styles.aboutArrow}>→</Text>

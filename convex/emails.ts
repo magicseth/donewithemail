@@ -22,13 +22,18 @@ export const getUntriagedEmails = query({
   handler: async (ctx, args) => {
     const limit = args.limit ?? 50;
 
-    const emails = await ctx.db
+    const rawEmails = await ctx.db
       .query("emails")
       .withIndex("by_user_untriaged", (q) =>
         q.eq("userId", args.userId).eq("isTriaged", false)
       )
       .order("desc") // Newest first
-      .take(limit);
+      .take(limit * 2); // Fetch extra to account for filtering
+
+    // Filter out outgoing emails - no need to triage emails you sent
+    const emails = rawEmails
+      .filter((e) => e.direction !== "outgoing")
+      .slice(0, limit);
 
     // Fetch contact info and summary for each email
     const emailsWithData = await Promise.all(
@@ -82,24 +87,33 @@ export const getUntriagedByEmail = query({
 
     const limit = args.limit ?? 50;
 
-    // Get untriaged emails
-    const untriagedEmails = await ctx.db
+    // Get untriaged emails (fetch extra to account for filtering)
+    const rawUntriagedEmails = await ctx.db
       .query("emails")
       .withIndex("by_user_untriaged", (q) =>
         q.eq("userId", user._id).eq("isTriaged", false)
       )
       .order("desc")
-      .take(limit);
+      .take(limit * 2);
+
+    // Filter out outgoing emails - no need to triage emails you sent
+    const untriagedEmails = rawUntriagedEmails.filter(
+      (e) => e.direction !== "outgoing"
+    );
 
     // If sessionStart provided, also get emails triaged after that time
     let recentlyTriagedEmails: typeof untriagedEmails = [];
     if (args.sessionStart) {
-      recentlyTriagedEmails = await ctx.db
+      const rawRecentlyTriaged = await ctx.db
         .query("emails")
         .withIndex("by_user_triaged_at", (q) =>
           q.eq("userId", user._id).gt("triagedAt", args.sessionStart)
         )
         .collect();
+      // Also filter out outgoing from recently triaged
+      recentlyTriagedEmails = rawRecentlyTriaged.filter(
+        (e) => e.direction !== "outgoing"
+      );
     }
 
     // Merge and dedupe (in case of race conditions)

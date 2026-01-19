@@ -199,6 +199,8 @@ export const storeEmailInternal = internalMutation({
     subject: v.string(),
     bodyPreview: v.string(),
     bodyFull: v.string(),
+    bodyHtml: v.optional(v.string()),
+    rawPayload: v.optional(v.string()),
     receivedAt: v.number(),
     isRead: v.boolean(),
     direction: v.optional(v.union(v.literal("incoming"), v.literal("outgoing"))),
@@ -638,8 +640,9 @@ export const fetchEmails = action({
       const batchResults = await Promise.all(
         batch.map(async (msg) => {
         try {
+          // Use format=full to get complete email body for accurate summarization
           const msgResponse = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,
             { headers: { Authorization: `Bearer ${accessToken}` } }
           );
 
@@ -666,30 +669,37 @@ export const fetchEmails = action({
           const subject = unfold(getHeader("Subject")) || "(No subject)";
           const date = getHeader("Date");
 
-          // Debug: log raw and processed From header
-          console.log(`[HeaderParse] msgId=${msg.id}`);
-          console.log(`[HeaderParse] rawFrom: "${rawFrom}"`);
-          console.log(`[HeaderParse] rawFrom bytes: [${[...rawFrom].map(c => c.charCodeAt(0)).join(', ')}]`);
-          console.log(`[HeaderParse] unfolded: "${from}"`);
-
           // Parse sender name and email - handle various formats
           let senderName = "";
           let senderEmail = "";
 
           if (from) {
-            // Try to match "Name <email>" or just "email"
-            const fromMatch = from.match(
-              /(?:"?([^"<]*)"?\s*)?<?([^\s<>]+@[^\s<>]+)>?/
-            );
-            console.log(`[HeaderParse] regex match: ${JSON.stringify(fromMatch)}`);
-            if (fromMatch) {
-              senderName = fromMatch[1]?.trim() || "";
-              senderEmail = fromMatch[2] || from;
-              console.log(`[HeaderParse] parsed name="${senderName}", email="${senderEmail}"`);
+            // Parse "From" header - handle formats:
+            // 1. "Name <email@example.com>"
+            // 2. Name <email@example.com>
+            // 3. <email@example.com>
+            // 4. email@example.com (bare email)
+
+            // First, check if there are angle brackets
+            const angleMatch = from.match(/<([^<>]+@[^<>]+)>/);
+            if (angleMatch) {
+              // Email is in angle brackets, name is everything before
+              senderEmail = angleMatch[1].trim();
+              const beforeBracket = from.substring(0, from.indexOf('<')).trim();
+              // Remove surrounding quotes from name if present
+              senderName = beforeBracket.replace(/^["']|["']$/g, '').trim();
             } else {
-              senderEmail = from;
-              console.log(`[HeaderParse] no match, using full from as email: "${senderEmail}"`);
+              // No angle brackets - treat as bare email address
+              // Extract just the email part (handles "name email@domain" edge cases)
+              const emailMatch = from.match(/([^\s<>]+@[^\s<>]+)/);
+              if (emailMatch) {
+                senderEmail = emailMatch[1];
+              } else {
+                senderEmail = from.trim();
+              }
+              senderName = "";
             }
+
             // If name is empty but we have email, use email as name
             if (!senderName) {
               senderName = senderEmail;
@@ -702,14 +712,17 @@ export const fetchEmails = action({
             return null;
           }
 
-          // Use snippet as body preview (no full body fetch for inbox view)
+          // Extract full body content from payload
+          const { html, plain } = extractBody(msgData.payload);
+
           return {
             id: msg.id,
             threadId: msgData.threadId,
             subject,
             snippet: msgData.snippet || "",
-            bodyHtml: "",
-            bodyPlain: msgData.snippet || "",
+            bodyHtml: html,
+            bodyPlain: plain || msgData.snippet || "",
+            rawPayload: JSON.stringify(msgData.payload), // Store raw payload for reprocessing
             receivedAt: date ? new Date(date).getTime() : Date.now(),
             isRead: !msgData.labelIds?.includes("UNREAD"),
             labels: msgData.labelIds || [],
@@ -742,6 +755,7 @@ export const fetchEmails = action({
       snippet: string;
       bodyHtml: string;
       bodyPlain: string;
+      rawPayload?: string; // Raw Gmail API payload JSON for reprocessing
       receivedAt: number;
       isRead: boolean;
       labels: string[];
@@ -851,6 +865,8 @@ export const fetchEmails = action({
           subject: email.subject,
           bodyPreview: email.snippet,
           bodyFull,
+          bodyHtml: email.bodyHtml || undefined,
+          rawPayload: email.rawPayload,
           receivedAt: email.receivedAt,
           isRead: email.isRead,
           direction: email.direction,
@@ -914,7 +930,7 @@ export const fetchAndStoreEmailsByIds = internalAction({
     const stored: string[] = [];
     const failed: string[] = [];
 
-    // Step 1: Fetch all message metadata in parallel (just HTTP calls, no mutations)
+    // Step 1: Fetch all message data in parallel (just HTTP calls, no mutations)
     interface MessageData {
       msgId: string;
       threadId?: string;
@@ -922,8 +938,12 @@ export const fetchAndStoreEmailsByIds = internalAction({
       senderName: string;
       subject: string;
       snippet: string;
+      bodyHtml: string;
+      bodyPlain: string;
+      rawPayload: string;
       receivedAt: number;
       isRead: boolean;
+      direction: "incoming" | "outgoing";
       // Subscription fields
       listUnsubscribe?: string;
       listUnsubscribePost: boolean;
@@ -939,8 +959,9 @@ export const fetchAndStoreEmailsByIds = internalAction({
 
       const results = await Promise.all(batch.map(async (msgId): Promise<MessageData | null> => {
         try {
+          // Use format=full to get complete email body for accurate summarization
           const msgResponse = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe&metadataHeaders=List-Unsubscribe-Post`,
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`,
             { headers: { Authorization: `Bearer ${accessToken}` } }
           );
 
@@ -959,17 +980,30 @@ export const fetchAndStoreEmailsByIds = internalAction({
           const subject = unfold(getHeader("Subject")) || "(No subject)";
           const date = getHeader("Date");
 
-          // Parse sender
+          // Parse sender - check for angle brackets first to avoid greedy regex issues
           let senderName = "";
           let senderEmail = "";
-          const fromMatch = from.match(/(?:"?([^"<]*)"?\s*)?<?([^\s<>]+@[^\s<>]+)>?/);
-          if (fromMatch) {
-            senderName = fromMatch[1]?.trim() || "";
-            senderEmail = fromMatch[2] || from;
-          } else {
-            senderEmail = from;
+          if (from) {
+            const angleMatch = from.match(/<([^<>]+@[^<>]+)>/);
+            if (angleMatch) {
+              // Email is in angle brackets, name is everything before
+              senderEmail = angleMatch[1].trim();
+              const beforeBracket = from.substring(0, from.indexOf('<')).trim();
+              senderName = beforeBracket.replace(/^["']|["']$/g, '').trim();
+            } else {
+              // No angle brackets - treat as bare email address
+              const emailMatch = from.match(/([^\s<>]+@[^\s<>]+)/);
+              if (emailMatch) {
+                senderEmail = emailMatch[1];
+              } else {
+                senderEmail = from.trim();
+              }
+              senderName = "";
+            }
+            if (!senderName) {
+              senderName = senderEmail;
+            }
           }
-          if (!senderName) senderName = senderEmail;
 
           if (!senderEmail?.includes("@")) {
             failed.push(msgId);
@@ -981,6 +1015,13 @@ export const fetchAndStoreEmailsByIds = internalAction({
           const listUnsubscribePost = !!getHeader("List-Unsubscribe-Post");
           const isSubscription = !!listUnsubscribe;
 
+          // Detect direction: outgoing if sender matches user email
+          const direction: "incoming" | "outgoing" =
+            senderEmail.toLowerCase() === args.userEmail.toLowerCase() ? "outgoing" : "incoming";
+
+          // Extract full body content from payload
+          const { html, plain } = extractBody(msgData.payload);
+
           return {
             msgId,
             threadId: msgData.threadId || undefined,
@@ -988,8 +1029,12 @@ export const fetchAndStoreEmailsByIds = internalAction({
             senderName: senderName !== senderEmail ? senderName : senderEmail,
             subject,
             snippet: msgData.snippet || "",
+            bodyHtml: html,
+            bodyPlain: plain || msgData.snippet || "",
+            rawPayload: JSON.stringify(msgData.payload),
             receivedAt: date ? new Date(date).getTime() : Date.now(),
             isRead: !msgData.labelIds?.includes("UNREAD"),
+            direction,
             listUnsubscribe,
             listUnsubscribePost,
             isSubscription,
@@ -1039,6 +1084,8 @@ export const fetchAndStoreEmailsByIds = internalAction({
       }
 
       try {
+        // Prefer HTML body, fall back to plain text, then snippet
+        const bodyFull = msg.bodyHtml || msg.bodyPlain || msg.snippet;
         const { emailId, isNew } = await ctx.runMutation(internal.gmailSync.storeEmailInternal, {
           externalId: msg.msgId,
           threadId: msg.threadId,
@@ -1048,9 +1095,12 @@ export const fetchAndStoreEmailsByIds = internalAction({
           to: [],
           subject: msg.subject,
           bodyPreview: msg.snippet,
-          bodyFull: msg.snippet,
+          bodyFull,
+          bodyHtml: msg.bodyHtml || undefined,
+          rawPayload: msg.rawPayload,
           receivedAt: msg.receivedAt,
           isRead: msg.isRead,
+          direction: msg.direction,
           listUnsubscribe: msg.listUnsubscribe,
           listUnsubscribePost: msg.listUnsubscribePost,
           isSubscription: msg.isSubscription,

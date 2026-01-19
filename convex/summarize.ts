@@ -200,6 +200,8 @@ export const updateEmailSummary = internalMutation({
       location: v.optional(v.string()),
       description: v.optional(v.string()),
     })),
+    deadline: v.optional(v.string()),
+    deadlineDescription: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Check if summary already exists
@@ -217,6 +219,8 @@ export const updateEmailSummary = internalMutation({
       actionDescription: args.actionDescription,
       quickReplies: args.quickReplies,
       calendarEvent: args.calendarEvent,
+      deadline: args.deadline,
+      deadlineDescription: args.deadlineDescription,
       createdAt: Date.now(),
     };
 

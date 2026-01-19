@@ -172,6 +172,51 @@ Important for query performance:
 - **Gesture handlers**: Use `runOnJS(console.log)(data)` (they run on UI thread)
 - **Triage logging**: Server logs `[Triage] Action: done | Subject: "..."` on each triage
 
+## React Native Reanimated Gotchas
+
+### Worklet Serialization Issue
+**CRITICAL**: When you pass a function to `runOnJS()` or use it in `useAnimatedReaction`, Reanimated **serializes** any captured variables (including refs). Subsequent updates to `ref.current` won't be seen by the worklet.
+
+**Wrong** - ref gets serialized with empty value:
+```typescript
+const dataRef = useRef<Data[]>([]);
+dataRef.current = newData;  // Updates JS side
+
+useAnimatedReaction(
+  () => someValue.value,
+  (val) => {
+    const item = dataRef.current[val];  // STALE - sees serialized empty array!
+    runOnJS(doSomething)(item);
+  }
+);
+```
+
+**Correct** - use module-level variable:
+```typescript
+// Module level - resolved at runtime, not serialized
+let moduleData: Data[] = [];
+
+// In component:
+moduleData = newData;  // Updates module variable
+
+// JS function that reads module variable at call time
+const handleChange = useCallback((val: number) => {
+  const item = moduleData[val];  // CURRENT - reads at call time
+  doSomething(item);
+}, []);
+
+useAnimatedReaction(
+  () => someValue.value,
+  (val) => {
+    runOnJS(handleChange)(val);  // Pass primitive, read data in JS
+  }
+);
+```
+
+**Key principle**: Only pass primitives (numbers, strings) through `runOnJS()`. Read complex data (arrays, objects) from module-level variables inside the JS callback.
+
+See `app/(tabs)/index.tsx` - `moduleEmails` for the pattern.
+
 ## React Native Gesture Handler Gotchas
 
 ### Gesture.Manual() Limitations
