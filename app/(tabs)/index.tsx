@@ -531,11 +531,17 @@ const EmailRow = React.memo(function EmailRow({
     router.push(`/email/${item._id}`);
   }, [item._id]);
 
+  // Determine if this is a compact row (no quick replies and no calendar)
+  const hasQuickReplies = item.quickReplies && item.quickReplies.length > 0;
+  const hasCalendar = !!item.calendarEvent;
+  const isCompact = !hasQuickReplies && !hasCalendar;
+
   return (
     <TriageRowWrapper index={index}>
       <TouchableOpacity
           style={[
             styles.emailItem,
+            isCompact && styles.emailItemCompact,
             !item.isRead && styles.emailItemUnread,
             isTriaged && styles.emailItemTriaged,
             isRecordingThis && styles.emailItemRecording,
@@ -1510,6 +1516,9 @@ const styles = StyleSheet.create({
     borderBottomColor: "#eee",
     minHeight: TRIAGE_CONFIG.rowHeight, // Minimum height for triage ball, but can grow
     // Background controlled by AnimatedRowWrapper
+  },
+  emailItemCompact: {
+    minHeight: 90, // Reduced height for rows without quick replies or calendar
   },
   emailTopRow: {
     flexDirection: "row",

@@ -35,12 +35,13 @@ export const TriageBall = React.memo(function TriageBall({
   const { activeIndex, ballX, closestTarget, centerX } = useTriageContext();
   const { ballSize, halfBall } = TRIAGE_CONFIG;
 
-  // Position style - only active row's ball moves
+  // Position style - only active row's ball moves, others are hidden
   const positionStyle = useAnimatedStyle(() => {
     const isActive = activeIndex.value === rowIndex;
     const x = isActive ? ballX.value : centerX;
     return {
       transform: [{ translateX: x - halfBall }],
+      opacity: isActive ? 1 : 0,
     };
   });
 
