@@ -76,6 +76,10 @@ interface BatchCategoryCardProps {
   acceptingIds?: Set<string>;
   unsubscribingIds?: Set<string>;
   isProcessing?: boolean;
+  /** ID of email currently being recorded for */
+  recordingForId?: string | null;
+  /** Live transcript while recording */
+  transcript?: string;
 }
 
 export const BatchCategoryCard = memo(function BatchCategoryCard({
@@ -91,6 +95,8 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
   acceptingIds,
   unsubscribingIds,
   isProcessing,
+  recordingForId,
+  transcript,
 }: BatchCategoryCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const config = CATEGORY_CONFIG[category];
@@ -121,8 +127,8 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                 <Text style={styles.countText}>{emails.length}</Text>
               </View>
               {puntedCount > 0 && (
-                <View style={styles.puntedBadge}>
-                  <Text style={styles.puntedBadgeText}>{puntedCount} punted</Text>
+                <View style={styles.savedBadge}>
+                  <Text style={styles.savedBadgeText}>{puntedCount} saved</Text>
                 </View>
               )}
             </View>
@@ -144,6 +150,9 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
               email={email}
               isPunted={puntedEmails.has(email._id)}
               isSubscription={email.isSubscription}
+              expandReplyByDefault={category === "humanWaiting"}
+              isRecording={recordingForId === email._id}
+              transcript={recordingForId === email._id ? transcript : undefined}
               onPunt={() => onPuntEmail(email._id)}
               onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
               onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
@@ -171,10 +180,10 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
             </TouchableOpacity>
           )}
 
-          {/* All punted message */}
+          {/* All saved message */}
           {unpuntedCount === 0 && (
-            <View style={styles.allPuntedMessage}>
-              <Text style={styles.allPuntedText}>All emails punted to TODO</Text>
+            <View style={styles.allSavedMessage}>
+              <Text style={styles.allSavedText}>All emails saved to TODO</Text>
             </View>
           )}
         </View>
@@ -229,14 +238,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#fff",
   },
-  puntedBadge: {
+  savedBadge: {
     marginLeft: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
     backgroundColor: "#6366F1",
     borderRadius: 10,
   },
-  puntedBadgeText: {
+  savedBadgeText: {
     fontSize: 10,
     fontWeight: "600",
     color: "#fff",
@@ -271,11 +280,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  allPuntedMessage: {
+  allSavedMessage: {
     paddingVertical: 12,
     alignItems: "center",
   },
-  allPuntedText: {
+  allSavedText: {
     fontSize: 13,
     color: "#6366F1",
     fontWeight: "500",

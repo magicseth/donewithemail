@@ -56,6 +56,12 @@ interface BatchEmailRowProps {
   email: BatchEmailPreview;
   isPunted: boolean;
   isSubscription?: boolean;
+  /** If true, show quick reply options expanded by default (no Reply button) */
+  expandReplyByDefault?: boolean;
+  /** If true, this email is currently being recorded for */
+  isRecording?: boolean;
+  /** Live transcript while recording */
+  transcript?: string;
   onPunt: () => void;
   onAccept?: () => void;
   onQuickReply?: (reply: QuickReplyOption) => void;
@@ -69,6 +75,9 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   email,
   isPunted,
   isSubscription,
+  expandReplyByDefault = false,
+  isRecording = false,
+  transcript,
   onPunt,
   onAccept,
   onQuickReply,
@@ -77,7 +86,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   isAccepting,
   isUnsubscribing,
 }: BatchEmailRowProps) {
-  const [showReplyOptions, setShowReplyOptions] = useState(false);
+  const [showReplyOptions, setShowReplyOptions] = useState(expandReplyByDefault);
 
   // Prefer fromName (from email header) over contact name (may be stale for shared addresses)
   const fromName = email.fromName || email.fromContact?.name || email.fromContact?.email || "Unknown";
@@ -96,14 +105,22 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   }, []);
 
   return (
-    <View style={[styles.container, isPunted && styles.containerPunted]}>
-      {/* Main row */}
-      <View style={styles.mainRow}>
+    <TouchableOpacity
+      style={[
+        styles.container,
+        isPunted && styles.containerPunted,
+        isRecording && styles.containerRecording,
+      ]}
+      onPress={handlePress}
+      activeOpacity={0.7}
+    >
+      {/* Top row: avatar, sender/subject, action buttons */}
+      <View style={styles.topRow}>
         {/* Unsubscribe button (for subscriptions only) */}
         {isSubscription && onUnsubscribe && (
           <TouchableOpacity
             style={[styles.unsubButton, isUnsubscribing && styles.buttonDisabled]}
-            onPress={onUnsubscribe}
+            onPress={(e) => { e.stopPropagation(); onUnsubscribe(); }}
             disabled={isUnsubscribing}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
@@ -129,8 +146,8 @@ export const BatchEmailRow = memo(function BatchEmailRow({
           )}
         </View>
 
-        {/* Content - pressable to open email */}
-        <TouchableOpacity style={styles.content} onPress={handlePress} activeOpacity={0.7}>
+        {/* Sender and subject */}
+        <View style={styles.headerContent}>
           {/* Header row: sender + time */}
           <View style={styles.headerRow}>
             <Text style={styles.senderName} numberOfLines={1}>
@@ -143,17 +160,12 @@ export const BatchEmailRow = memo(function BatchEmailRow({
           <Text style={styles.subject} numberOfLines={1}>
             {decodeHtmlEntities(email.subject)}
           </Text>
-
-          {/* Summary/preview */}
-          <Text style={styles.preview} numberOfLines={1}>
-            {email.summary || decodeHtmlEntities(email.bodyPreview)}
-          </Text>
-        </TouchableOpacity>
+        </View>
 
         {/* Action buttons */}
         <View style={styles.actionButtons}>
-          {/* Reply button - only if quick replies or mic available */}
-          {(hasQuickReplies || onMicReply) && (
+          {/* Reply button - only if quick replies or mic available AND not expanded by default */}
+          {(hasQuickReplies || onMicReply) && !expandReplyByDefault && (
             <TouchableOpacity
               style={[styles.actionButton, styles.replyButton, showReplyOptions && styles.replyButtonActive]}
               onPress={handleReplyToggle}
@@ -181,47 +193,63 @@ export const BatchEmailRow = memo(function BatchEmailRow({
             </TouchableOpacity>
           )}
 
-          {/* Punt button - always visible, far right */}
+          {/* Save button - always visible, far right */}
           <TouchableOpacity
-            style={[styles.actionButton, styles.puntButton, isPunted && styles.puntButtonActive]}
+            style={[styles.actionButton, styles.saveButton, isPunted && styles.saveButtonActive]}
             onPress={onPunt}
             hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
           >
-            <Text style={[styles.actionButtonText, styles.puntButtonText, isPunted && styles.puntButtonTextActive]}>
-              {isPunted ? "Punted" : "Punt"}
+            <Text style={[styles.actionButtonText, styles.saveButtonText, isPunted && styles.saveButtonTextActive]}>
+              {isPunted ? "Saved" : "Save"}
             </Text>
           </TouchableOpacity>
         </View>
       </View>
 
+      {/* Summary row - spans full width below avatar */}
+      <View style={styles.summaryRow}>
+        <Text style={styles.summary} numberOfLines={2}>
+          {email.summary || decodeHtmlEntities(email.bodyPreview)}
+        </Text>
+      </View>
+
       {/* Expanded reply options */}
       {showReplyOptions && (
         <View style={styles.replyOptionsRow}>
-          {/* Quick reply chips */}
-          {email.quickReplies?.map((reply, idx) => (
-            <TouchableOpacity
-              key={idx}
-              style={styles.quickReplyChip}
-              onPress={() => onQuickReply?.(reply)}
-            >
-              <Text style={styles.quickReplyText} numberOfLines={1}>
-                {reply.label}
+          {/* Show transcript when recording, otherwise show quick reply chips */}
+          {isRecording ? (
+            <View style={styles.transcriptContainer}>
+              <Text style={styles.transcriptText}>
+                {transcript || "Listening..."}
               </Text>
-            </TouchableOpacity>
-          ))}
+            </View>
+          ) : (
+            /* Quick reply chips */
+            email.quickReplies?.map((reply, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={styles.quickReplyChip}
+                onPress={() => onQuickReply?.(reply)}
+              >
+                <Text style={styles.quickReplyText} numberOfLines={1}>
+                  {reply.label}
+                </Text>
+              </TouchableOpacity>
+            ))
+          )}
 
           {/* Mic button */}
           {onMicReply && (
             <TouchableOpacity
-              style={styles.micButton}
+              style={[styles.micButton, isRecording && styles.micButtonRecording]}
               onPress={onMicReply}
             >
-              <Text style={styles.micButtonText}>🎤</Text>
+              <Text style={styles.micButtonText}>{isRecording ? "⏹️" : "🎤"}</Text>
             </TouchableOpacity>
           )}
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 });
 
@@ -230,15 +258,18 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
+    paddingVertical: 10,
   },
   containerPunted: {
     backgroundColor: "#EEF2FF",
   },
-  mainRow: {
+  containerRecording: {
+    backgroundColor: "#FEF3C7",
+  },
+  topRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
-    paddingVertical: 10,
   },
   unsubButton: {
     paddingHorizontal: 8,
@@ -273,7 +304,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  content: {
+  headerContent: {
     flex: 1,
     marginRight: 8,
   },
@@ -296,11 +327,15 @@ const styles = StyleSheet.create({
   subject: {
     fontSize: 14,
     color: "#1a1a1a",
-    marginBottom: 2,
   },
-  preview: {
+  summaryRow: {
+    paddingHorizontal: 12,
+    paddingTop: 6,
+  },
+  summary: {
     fontSize: 13,
     color: "#666",
+    lineHeight: 18,
   },
   actionButtons: {
     flexDirection: "row",
@@ -337,18 +372,18 @@ const styles = StyleSheet.create({
   acceptButtonText: {
     color: "#fff",
   },
-  puntButton: {
+  saveButton: {
     backgroundColor: "#f5f5f5",
     borderColor: "#ddd",
   },
-  puntButtonActive: {
+  saveButtonActive: {
     backgroundColor: "#6366F1",
     borderColor: "#6366F1",
   },
-  puntButtonText: {
+  saveButtonText: {
     color: "#666",
   },
-  puntButtonTextActive: {
+  saveButtonTextActive: {
     color: "#fff",
   },
   replyOptionsRow: {
@@ -358,14 +393,11 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     paddingTop: 4,
     gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
-    backgroundColor: "#FAFAFA",
   },
   quickReplyChip: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: "#fff",
+    backgroundColor: "transparent",
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#6366F1",
@@ -376,6 +408,16 @@ const styles = StyleSheet.create({
     color: "#6366F1",
     fontWeight: "500",
   },
+  transcriptContainer: {
+    flex: 1,
+    marginRight: 8,
+  },
+  transcriptText: {
+    fontSize: 14,
+    color: "#333",
+    fontStyle: "italic",
+    lineHeight: 20,
+  },
   micButton: {
     width: 36,
     height: 36,
@@ -383,6 +425,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#EF4444",
     justifyContent: "center",
     alignItems: "center",
+  },
+  micButtonRecording: {
+    backgroundColor: "#DC2626",
+    // Pulsing effect would require Animated, using solid color for now
   },
   micButtonText: {
     fontSize: 16,

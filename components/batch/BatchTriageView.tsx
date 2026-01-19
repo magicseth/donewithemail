@@ -17,6 +17,10 @@ interface BatchTriageViewProps {
   refreshing?: boolean;
   onQuickReply?: (emailId: string, reply: QuickReplyOption) => void;
   onMicReply?: (emailId: string) => void;
+  /** ID of email currently being recorded for */
+  recordingForId?: string | null;
+  /** Live transcript while recording */
+  transcript?: string;
 }
 
 export function BatchTriageView({
@@ -25,6 +29,8 @@ export function BatchTriageView({
   refreshing = false,
   onQuickReply,
   onMicReply,
+  recordingForId,
+  transcript,
 }: BatchTriageViewProps) {
   const {
     categories,
@@ -119,7 +125,7 @@ export function BatchTriageView({
         <View style={styles.statsRow}>
           <Text style={styles.statsText}>
             {total} emails to review
-            {puntedEmails.size > 0 && ` • ${puntedEmails.size} punted to TODO`}
+            {puntedEmails.size > 0 && ` • ${puntedEmails.size} saved to TODO`}
           </Text>
         </View>
 
@@ -136,6 +142,8 @@ export function BatchTriageView({
             onUnsubscribe={handleUnsubscribe}
             unsubscribingIds={unsubscribingIds}
             isProcessing={processingCategory === "pending"}
+            recordingForId={recordingForId}
+            transcript={transcript}
           />
         )}
 
@@ -151,6 +159,8 @@ export function BatchTriageView({
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "humanWaiting"}
+          recordingForId={recordingForId}
+            transcript={transcript}
         />
 
         {/* Action needed category */}
@@ -165,6 +175,8 @@ export function BatchTriageView({
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "actionNeeded"}
+          recordingForId={recordingForId}
+            transcript={transcript}
         />
 
         {/* Calendar category */}
@@ -181,6 +193,8 @@ export function BatchTriageView({
           acceptingIds={acceptingIds}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "calendar"}
+          recordingForId={recordingForId}
+            transcript={transcript}
         />
 
         {/* Done category */}
@@ -195,6 +209,8 @@ export function BatchTriageView({
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "done"}
+          recordingForId={recordingForId}
+            transcript={transcript}
         />
 
         {/* Low confidence category */}
@@ -209,6 +225,8 @@ export function BatchTriageView({
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "lowConfidence"}
+          recordingForId={recordingForId}
+            transcript={transcript}
         />
 
         {/* Bottom spacing */}

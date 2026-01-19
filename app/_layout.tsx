@@ -149,15 +149,22 @@ function PushNotificationHandler({ children }: { children: React.ReactNode }) {
 
 // Wrapper that provides auth error handling connected to the auth context
 function AuthErrorHandler({ children }: { children: React.ReactNode }) {
-  const { handleAuthError } = useAuth();
+  const { handleAuthError, refreshAccessToken } = useAuth();
 
   const onAuthError = useCallback(() => {
     // The error boundary caught an auth error, handle it
     handleAuthError(new Error("Unauthorized: Session expired"));
   }, [handleAuthError]);
 
+  // Attempt to refresh auth token - returns true if successful
+  const onAttemptRefresh = useCallback(async (): Promise<boolean> => {
+    console.log("[AuthErrorHandler] Attempting auth refresh...");
+    const newToken = await refreshAccessToken();
+    return !!newToken;
+  }, [refreshAccessToken]);
+
   return (
-    <AuthErrorProvider onAuthError={onAuthError}>
+    <AuthErrorProvider onAuthError={onAuthError} onAttemptRefresh={onAttemptRefresh}>
       {children}
     </AuthErrorProvider>
   );

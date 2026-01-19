@@ -77,12 +77,8 @@ export default function EmailDetailScreen() {
         : email ? [email] : [];
 
       for (const e of emailsToFetch) {
-        // Skip if already fetched or loading, or if body looks like HTML already
+        // Skip if already fetched or loading
         if (fullBodies[e._id] || loadingBodies.has(e._id)) continue;
-        if (e.bodyFull && e.bodyFull.includes("<")) {
-          setFullBodies(prev => ({ ...prev, [e._id]: e.bodyFull }));
-          continue;
-        }
 
         setLoadingBodies(prev => new Set(prev).add(e._id));
         try {
@@ -236,7 +232,7 @@ export default function EmailDetailScreen() {
     ? {
         _id: email._id,
         subject: email.subject,
-        bodyPreview: fullBodies[email._id] || email.bodyFull || email.bodyPreview,
+        bodyPreview: fullBodies[email._id] || email.bodyPreview,
         receivedAt: email.receivedAt,
         isRead: email.isRead,
         summary: email.summary,
@@ -315,7 +311,7 @@ export default function EmailDetailScreen() {
             const emailData: EmailCardData = {
               _id: threadEmail._id,
               subject: threadEmail.subject,
-              bodyPreview: fullBodies[threadEmail._id] || threadEmail.bodyFull || threadEmail.bodyPreview,
+              bodyPreview: fullBodies[threadEmail._id] || threadEmail.bodyPreview,
               receivedAt: threadEmail.receivedAt,
               isRead: threadEmail.isRead,
               summary: threadEmail.summary,

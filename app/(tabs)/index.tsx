@@ -1272,6 +1272,68 @@ export default function InboxScreen() {
     }
   }, [replyDraft, userEmail, sendEmailAction]);
 
+  // ============================================================================
+  // BATCH MODE HANDLERS
+  // ============================================================================
+
+  // Handle quick reply from batch mode - needs to look up email from batch data
+  const handleBatchQuickReply = useCallback((emailId: string, reply: { label: string; body: string }) => {
+    // Find the email in gmail emails
+    const email = gmailEmails.find(e => e._id === emailId);
+    if (!email) {
+      showAlert("Error", "Email not found");
+      return;
+    }
+    if (!email.fromContact?.email) {
+      showAlert("Error", "Cannot determine recipient email address.");
+      return;
+    }
+
+    const subject = email.subject.startsWith("Re:")
+      ? email.subject
+      : `Re: ${email.subject}`;
+
+    // Show review modal
+    setReplyDraft({ email, body: reply.body, subject });
+  }, [gmailEmails]);
+
+  // Handle mic reply from batch mode - start/stop recording
+  const handleBatchMicReply = useCallback(async (emailId: string) => {
+    const email = gmailEmails.find(e => e._id === emailId);
+    if (!email) {
+      showAlert("Error", "Email not found");
+      return;
+    }
+
+    // If already recording for this email, stop and create draft
+    if (recordingFor === emailId) {
+      const finalTranscript = await stopRecording();
+      setRecordingFor(null);
+      playStopSound();
+
+      if (finalTranscript && finalTranscript.trim()) {
+        const subject = email.subject.startsWith("Re:")
+          ? email.subject
+          : `Re: ${email.subject}`;
+        setReplyDraft({ email, body: finalTranscript.trim(), subject });
+      } else {
+        showToast("No speech detected", "error");
+      }
+      return;
+    }
+
+    // If recording for a different email, cancel that first
+    if (recordingFor) {
+      cancelRecording();
+      setRecordingFor(null);
+    }
+
+    // Start recording for this email
+    playStartSound();
+    setRecordingFor(emailId);
+    startRecording();
+  }, [gmailEmails, recordingFor, startRecording, stopRecording, cancelRecording, playStartSound, playStopSound, showToast]);
+
   // Memoized render function using EmailRow component
   const renderEmailItem = useCallback(({ item, index }: { item: InboxEmail; index: number }) => (
     <EmailRow
@@ -1398,6 +1460,10 @@ export default function InboxScreen() {
           userEmail={userEmail}
           onRefresh={handleRefresh}
           refreshing={refreshing}
+          onQuickReply={handleBatchQuickReply}
+          onMicReply={handleBatchMicReply}
+          recordingForId={recordingFor}
+          transcript={transcript}
         />
       )}
 
