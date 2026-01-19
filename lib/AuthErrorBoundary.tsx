@@ -100,8 +100,10 @@ class AuthErrorBoundaryClass extends Component<Props, State> {
         try {
           const refreshed = await this.props.onAttemptRefresh();
           if (refreshed) {
-            // Refresh succeeded - clear error and re-render
-            console.log("[AuthErrorBoundary] Auth refresh succeeded, retrying render");
+            // Refresh succeeded - wait a moment for the auth adapter to pick up the new token
+            console.log("[AuthErrorBoundary] Auth refresh succeeded, waiting for token propagation...");
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            console.log("[AuthErrorBoundary] Retrying render");
             this.setState({ hasError: false, error: null, isAuthError: false, isAttemptingRefresh: false });
             return;
           }

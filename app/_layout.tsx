@@ -67,10 +67,13 @@ function useAuthAdapter() {
 
           // Check if token is expired (with 30 second buffer)
           if (expiresAt && Date.now() > expiresAt - 30000) {
-            console.log("[AuthAdapter] Token expired, waiting for refresh...");
-            // Don't provide expired token - AuthProvider will refresh it
-            // Keep the old token state to maintain isAuthenticated while refreshing
+            console.log("[AuthAdapter] Token expired, clearing token state");
+            // Clear the token so Convex knows auth is invalid
+            if (token !== null) {
+              setToken(null);
+            }
           } else if (accessToken !== token) {
+            console.log("[AuthAdapter] Token updated");
             setToken(accessToken);
           }
         } else {
@@ -98,8 +101,8 @@ function useAuthAdapter() {
     const initialDelay = Platform.OS === "web" ? 0 : 100;
     setTimeout(loadToken, initialDelay);
 
-    // Poll for token changes more frequently to catch refreshes
-    const interval = setInterval(loadToken, 1000);
+    // Poll for token changes frequently to catch refreshes
+    const interval = setInterval(loadToken, 500);
     return () => {
       isMounted = false;
       clearInterval(interval);

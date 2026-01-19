@@ -8,8 +8,13 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
-import { WebView } from "react-native-webview";
 import { AISummary } from "./AISummary";
+
+// Only import WebView on native platforms
+let WebView: any = null;
+if (Platform.OS !== "web") {
+  WebView = require("react-native-webview").WebView;
+}
 
 // Check if content looks like HTML
 function isHtml(content: string): boolean {

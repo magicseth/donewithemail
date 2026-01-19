@@ -39,6 +39,8 @@ export function BatchTriageView({
   pendingTranscriptForId,
   transcript,
 }: BatchTriageViewProps) {
+  // Disable scrolling while recording to prevent accidental release
+  const isRecording = !!recordingForId;
   const {
     categories,
     total,
@@ -118,6 +120,7 @@ export function BatchTriageView({
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
+        scrollEnabled={!isRecording}
         refreshControl={
           onRefresh ? (
             <RefreshControl

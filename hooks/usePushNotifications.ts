@@ -1,28 +1,38 @@
 import { useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
-import * as Notifications from "expo-notifications";
-import * as Device from "expo-device";
-import Constants from "expo-constants";
 import { useMutation, useConvexAuth } from "convex/react";
 import { useRouter } from "expo-router";
 import { api } from "../convex/_generated/api";
 
-// Configure how notifications are handled when app is in foreground
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+// Only import native modules on non-web platforms
+let Notifications: typeof import("expo-notifications") | null = null;
+let Device: typeof import("expo-device") | null = null;
+let Constants: typeof import("expo-constants").default | null = null;
+
+if (Platform.OS !== "web") {
+  Notifications = require("expo-notifications");
+  Device = require("expo-device");
+  Constants = require("expo-constants").default;
+
+  // Configure how notifications are handled when app is in foreground
+  if (Notifications) {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+  }
+}
 
 export function usePushNotifications() {
   const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
-  const [notification, setNotification] = useState<Notifications.Notification | null>(null);
-  const notificationListener = useRef<Notifications.EventSubscription | null>(null);
-  const responseListener = useRef<Notifications.EventSubscription | null>(null);
+  const [notification, setNotification] = useState<any | null>(null);
+  const notificationListener = useRef<any | null>(null);
+  const responseListener = useRef<any | null>(null);
 
   const router = useRouter();
   const { isAuthenticated, isLoading } = useConvexAuth();
@@ -30,7 +40,7 @@ export function usePushNotifications() {
 
   useEffect(() => {
     // Only run on native platforms
-    if (Platform.OS === "web") return;
+    if (Platform.OS === "web" || !Notifications || !Device) return;
 
     registerForPushNotificationsAsync().then((token) => {
       if (token) {
@@ -108,6 +118,8 @@ export function usePushNotifications() {
 }
 
 async function registerForPushNotificationsAsync(): Promise<string | null> {
+  if (!Notifications || !Device || !Constants) return null;
+
   // Push notifications only work on physical devices
   if (!Device.isDevice) {
     console.log("Push notifications require a physical device");

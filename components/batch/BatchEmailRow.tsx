@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   Image,
   ActivityIndicator,
 } from "react-native";
@@ -246,16 +247,21 @@ export const BatchEmailRow = memo(function BatchEmailRow({
               ))
             )}
 
-            {/* Mic button - always rightmost, press to talk */}
+            {/* Mic button - always rightmost, press and hold to talk */}
             {onMicPressIn && (
-              <TouchableOpacity
-                style={[styles.micButton, isRecording && styles.micButtonRecording]}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.micButton,
+                  isRecording && styles.micButtonRecording,
+                  pressed && !isRecording && styles.micButtonPressed,
+                ]}
                 onPressIn={onMicPressIn}
                 onPressOut={onMicPressOut}
-                activeOpacity={0.8}
+                // Large offset so press stays active even when finger moves away
+                pressRetentionOffset={{ top: 500, bottom: 500, left: 500, right: 500 }}
               >
                 <Text style={styles.micButtonText}>{isRecording ? "🎙️" : "🎤"}</Text>
-              </TouchableOpacity>
+              </Pressable>
             )}
           </View>
 
@@ -453,7 +459,9 @@ const styles = StyleSheet.create({
   },
   micButtonRecording: {
     backgroundColor: "#DC2626",
-    // Pulsing effect would require Animated, using solid color for now
+  },
+  micButtonPressed: {
+    backgroundColor: "#B91C1C",
   },
   micButtonText: {
     fontSize: 16,

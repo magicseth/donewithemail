@@ -280,17 +280,32 @@ import {
 const useMicSounds = () => {
   const startSoundRef = useRef<Audio.Sound | null>(null);
   const stopSoundRef = useRef<Audio.Sound | null>(null);
+  const webStartAudioRef = useRef<HTMLAudioElement | null>(null);
+  const webStopAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    // Preload sounds - using system-like tones
+    // Preload sounds
     const loadSounds = async () => {
-      if (Platform.OS === "web") return;
-
-      try {
-        // We'll use haptics + a simple notification-style feedback
-        // Since we don't have custom sound files, we rely on haptics for native
-      } catch (e) {
-        console.log("Sound loading skipped:", e);
+      if (Platform.OS === "web") {
+        // Preload web audio
+        webStartAudioRef.current = new window.Audio(require("../../assets/sounds/micopen.wav"));
+        webStartAudioRef.current.load();
+        webStopAudioRef.current = new window.Audio(require("../../assets/sounds/micclose.wav"));
+        webStopAudioRef.current.load();
+      } else {
+        // Preload native sounds
+        try {
+          const { sound: startSound } = await Audio.Sound.createAsync(
+            require("../../assets/sounds/micopen.wav")
+          );
+          startSoundRef.current = startSound;
+          const { sound: stopSound } = await Audio.Sound.createAsync(
+            require("../../assets/sounds/micclose.wav")
+          );
+          stopSoundRef.current = stopSound;
+        } catch (e) {
+          console.log("Sound loading error:", e);
+        }
       }
     };
     loadSounds();
@@ -302,24 +317,52 @@ const useMicSounds = () => {
   }, []);
 
   const playStartSound = useCallback(async () => {
-    if (Platform.OS === "web") return;
+    if (Platform.OS === "web") {
+      try {
+        if (webStartAudioRef.current) {
+          webStartAudioRef.current.currentTime = 0;
+          webStartAudioRef.current.play();
+        }
+      } catch (e) {
+        console.log("Web audio error:", e);
+      }
+      return;
+    }
 
     try {
-      // Strong haptic feedback for recording start
+      // Play sound + haptic feedback
+      if (startSoundRef.current) {
+        await startSoundRef.current.setPositionAsync(0);
+        await startSoundRef.current.playAsync();
+      }
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch (e) {
-      console.log("Haptic feedback error:", e);
+      console.log("Sound/haptic error:", e);
     }
   }, []);
 
   const playStopSound = useCallback(async () => {
-    if (Platform.OS === "web") return;
+    if (Platform.OS === "web") {
+      try {
+        if (webStopAudioRef.current) {
+          webStopAudioRef.current.currentTime = 0;
+          webStopAudioRef.current.play();
+        }
+      } catch (e) {
+        console.log("Web audio error:", e);
+      }
+      return;
+    }
 
     try {
-      // Double tap haptic for recording stop
+      // Play sound + haptic feedback
+      if (stopSoundRef.current) {
+        await stopSoundRef.current.setPositionAsync(0);
+        await stopSoundRef.current.playAsync();
+      }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
-      console.log("Haptic feedback error:", e);
+      console.log("Sound/haptic error:", e);
     }
   }, []);
 
