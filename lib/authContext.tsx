@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { Platform } from "react-native";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { Platform, AppState, AppStateStatus } from "react-native";
 import { useQuery, useAction } from "convex/react";
 import { api } from "../convex/_generated/api";
 import * as AuthSession from "expo-auth-session";
@@ -215,6 +215,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [authenticate, saveAuth]
   );
 
+  // Track if we need to retry refresh when app becomes active
+  const pendingRefreshRef = useRef(false);
+
+  // Check if error is a connection-related error (should retry)
+  const isConnectionError = (error: unknown): boolean => {
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase();
+      return (
+        message.includes("connection lost") ||
+        message.includes("network") ||
+        message.includes("timeout") ||
+        message.includes("in flight") ||
+        message.includes("failed to fetch")
+      );
+    }
+    return false;
+  };
+
   // Refresh access token using refresh token
   const refreshAccessToken = useCallback(async (): Promise<string | null> => {
     if (!refreshToken || isRefreshing) {
@@ -224,6 +242,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     console.log("[Auth] Refreshing access token...");
     setIsRefreshing(true);
+    pendingRefreshRef.current = false;
 
     try {
       const result = await refreshTokenAction({ refreshToken });
@@ -250,13 +269,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return null;
     } catch (e) {
       console.error("[Auth] Token refresh failed:", e);
-      // If refresh fails, sign out
+
+      // Check if this is a connection error - if so, schedule retry instead of signing out
+      if (isConnectionError(e)) {
+        console.log("[Auth] Connection error during refresh, will retry when app becomes active");
+        pendingRefreshRef.current = true;
+        return accessToken; // Return existing token, don't clear auth
+      }
+
+      // For other errors (invalid token, etc.), sign out
+      console.log("[Auth] Non-recoverable refresh error, signing out");
       await clearAuth();
       return null;
     } finally {
       setIsRefreshing(false);
     }
   }, [refreshToken, isRefreshing, accessToken, refreshTokenAction, clearAuth]);
+
+  // Retry refresh when app becomes active (after connection loss)
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === "active" && pendingRefreshRef.current && refreshToken && !isRefreshing) {
+        console.log("[Auth] App became active, retrying pending token refresh");
+        refreshAccessToken();
+      }
+    };
+
+    const subscription = AppState.addEventListener("change", handleAppStateChange);
+    return () => subscription.remove();
+  }, [refreshToken, isRefreshing, refreshAccessToken]);
+
+  // Also retry on web when tab becomes visible
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && pendingRefreshRef.current && refreshToken && !isRefreshing) {
+        console.log("[Auth] Tab became visible, retrying pending token refresh");
+        refreshAccessToken();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [refreshToken, isRefreshing, refreshAccessToken]);
 
   // Auto-refresh token before expiration
   useEffect(() => {

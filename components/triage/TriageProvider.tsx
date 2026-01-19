@@ -45,6 +45,7 @@ interface TriageContextValue {
 
   // Actions (called from JS)
   readonly setScrollY: (y: number) => void;
+  readonly setActiveIndex: (index: number) => void;
   readonly resetBall: () => void;
 }
 
@@ -107,10 +108,13 @@ export function TriageProvider({
   const fingerX = useSharedValue(centerX);
   const startX = useSharedValue(centerX);
   const scrollY = useSharedValue(0);
-  const prevScrollY = useSharedValue(0);
 
   // === State Machine ===
   const phase = useSharedValue<TriagePhase>("idle");
+
+  // === Active Index ===
+  // Set externally via onViewableItemsChanged from FlatList
+  // This handles varying row heights correctly
   const activeIndex = useSharedValue(0);
 
   // === Subscription status (shared value for worklet access) ===
@@ -172,18 +176,10 @@ export function TriageProvider({
 
     // Call handler - it returns false to prevent advancing (used for mic)
     Promise.resolve(onTriageRef.current(email, targetId, index))
-      .then((shouldAdvance) => {
-        // If handler returns false, don't advance (e.g., mic recording)
-        if (shouldAdvance === false) {
-          phase.value = "idle";
-          return;
-        }
-
-        // Advance to next email
-        activeIndex.value = activeIndex.value + 1;
-        // Reset ball to center
+      .then((_shouldAdvance) => {
+        // Reset ball to center after action
+        // activeIndex is derived from scroll - it will update when user scrolls to next email
         startX.value = fingerX.value;
-        prevScrollY.value = scrollY.value;
       })
       .catch((err) => {
         console.error("[Triage] Handler error:", err);
@@ -191,7 +187,7 @@ export function TriageProvider({
       .finally(() => {
         phase.value = "idle";
       });
-  }, [phase, activeIndex, startX, fingerX, prevScrollY, scrollY]);
+  }, [phase, startX, fingerX]);
 
   // === Watch for target activation ===
   useAnimatedReaction(
@@ -213,30 +209,17 @@ export function TriageProvider({
     }
   );
 
-  // === Watch for scroll-back navigation ===
-  const { rowHeight, scrollBackThreshold } = TRIAGE_CONFIG;
-
-  useAnimatedReaction(
-    () => scrollY.value,
-    (currentScrollY) => {
-      const delta = currentScrollY - prevScrollY.value;
-      const threshold = rowHeight * scrollBackThreshold;
-
-      if (delta < -threshold && phase.value === "idle" && activeIndex.value > 0) {
-        // Scrolling back - go to previous email
-        activeIndex.value = activeIndex.value - 1;
-        prevScrollY.value = currentScrollY;
-      } else if (delta > threshold) {
-        // Scrolling forward - update baseline
-        prevScrollY.value = currentScrollY;
-      }
-    }
-  );
+  // Note: scroll-back navigation is no longer needed since activeIndex
+  // is derived from scrollY - it automatically updates as user scrolls
 
   // === Actions ===
   const setScrollY = useCallback((y: number) => {
     scrollY.value = y;
   }, [scrollY]);
+
+  const setActiveIndex = useCallback((index: number) => {
+    activeIndex.value = index;
+  }, [activeIndex]);
 
   const resetBall = useCallback(() => {
     fingerX.value = centerX;
@@ -251,10 +234,9 @@ export function TriageProvider({
       fingerX.value = centerX;
       startX.value = centerX;
       scrollY.value = 0;
-      prevScrollY.value = 0;
     },
     getActiveIndex: () => activeIndex.value,
-  }), [activeIndex, phase, fingerX, startX, scrollY, prevScrollY, centerX]);
+  }), [activeIndex, phase, fingerX, startX, scrollY, centerX]);
 
   // === Context Value ===
   const value: TriageContextValue = {
@@ -272,6 +254,7 @@ export function TriageProvider({
     centerX,
     screenWidth,
     setScrollY,
+    setActiveIndex,
     resetBall,
   };
 

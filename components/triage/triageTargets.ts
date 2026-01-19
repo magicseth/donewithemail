@@ -6,10 +6,18 @@ import type { TriageTarget, TriageTargetId } from "./triageTypes";
  *
  * IMPORTANT: This array is used in worklets. Keep it simple and immutable.
  */
+/**
+ * Visual Layout:
+ *
+ *   Unsub      Done        CENTER        Reply         Mic
+ *     |          |            |            |            |
+ *  -160px     -80px          0px        +80px       +160px
+ *    🚫          ✓                         ↩            🎤
+ */
 export const TRIAGE_TARGETS: readonly TriageTarget[] = [
   {
     id: "unsubscribe",
-    position: -100,
+    position: -160, // Far left (subscription-only)
     color: "#F59E0B",
     bgColor: "#FFFBEB",
     icon: "🚫",
@@ -18,7 +26,7 @@ export const TRIAGE_TARGETS: readonly TriageTarget[] = [
   },
   {
     id: "done",
-    position: -20,
+    position: -80, // 80px left of center
     color: "#10B981",
     bgColor: "#ECFDF5",
     icon: "✓",
@@ -26,7 +34,7 @@ export const TRIAGE_TARGETS: readonly TriageTarget[] = [
   },
   {
     id: "reply",
-    position: 80,
+    position: 80, // 80px right of center
     color: "#6366F1",
     bgColor: "#EEF2FF",
     icon: "↩",
@@ -34,7 +42,7 @@ export const TRIAGE_TARGETS: readonly TriageTarget[] = [
   },
   {
     id: "mic",
-    position: 160,
+    position: 160, // 160px right of center
     color: "#EF4444",
     bgColor: "#FEF2F2",
     icon: "🎤",
