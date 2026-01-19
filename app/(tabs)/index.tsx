@@ -369,10 +369,11 @@ interface TriageState {
   activeIndex: SharedValue<number>;
   // Lock to prevent cascading triggers
   isProcessing: SharedValue<boolean>;
-  // Require ball to return to center before next activation
+  // Require ball to return to center before next activation (legacy - kept for scroll nav)
   needsReset: SharedValue<boolean>;
-  // Track what target was last triggered (to prevent re-triggering same target)
-  lastTriggeredTarget: SharedValue<string | null>;
+  // Track what emailIndex:target combo was last triggered (prevents re-triggering same combo)
+  // Format: "emailIndex:targetId" e.g. "0:done", "1:reply"
+  lastTriggeredCombo: SharedValue<string | null>;
   // Measured ball Y position (updated by active row's ball)
   measuredBallY: SharedValue<number>;
   // Computed: which row index is at the triage line (0-indexed)
@@ -413,11 +414,13 @@ function useCreateTriageState(): TriageState {
   // Lock to prevent cascading triggers
   const isProcessing = useSharedValue(false);
 
-  // Require ball to leave all targets before next triage can trigger
+  // Require ball to leave all targets before next activation (legacy - kept for scroll nav)
   const needsReset = useSharedValue(false);
 
-  // Track what target was last triggered (legacy, kept for interface compatibility)
-  const lastTriggeredTarget = useSharedValue<string | null>(null);
+  // Track what emailIndex:target combo was last triggered
+  // This prevents re-triggering the same action for the same email
+  // but allows triggering when moving to a different email
+  const lastTriggeredCombo = useSharedValue<string | null>(null);
 
   // Track scroll-based index changes to allow going back
   // When user scrolls down significantly, decrease activeIndex
@@ -434,7 +437,8 @@ function useCreateTriageState(): TriageState {
         activeIndex.value = activeIndex.value - 1;
         prevScrollY.value = currentScrollY;
         // Clear state machine so user can triage the previous email
-        needsReset.value = false;
+        // Note: we DON'T clear lastTriggeredCombo here - the combo check will allow
+        // triggering because the emailIndex changed
         isProcessing.value = false;
         console.log(`[Triage:ScrollNav] Scrolled back, activeIndex now ${activeIndex.value}`);
       } else if (delta > threshold) {
@@ -541,7 +545,7 @@ function useCreateTriageState(): TriageState {
     activeIndex,
     isProcessing,
     needsReset,
-    lastTriggeredTarget,
+    lastTriggeredCombo,
     measuredBallY,
     topRowIndex,
     ballX,
@@ -1572,7 +1576,7 @@ export default function InboxScreen() {
       // Reset triage state (both old and new)
       triageState.activeIndex.value = 0;
       triageState.isProcessing.value = false;
-      triageState.needsReset.value = false;
+      triageState.lastTriggeredCombo.value = null;
       triageRef.current?.reset(); // Reset new triage context
       // Scroll to top
       flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
@@ -1725,16 +1729,14 @@ export default function InboxScreen() {
         triageState.activeIndex.value = triageState.activeIndex.value + 1;
       }
 
-      // Reset ball to center, require ball to leave targets before next triage
+      // Reset ball to center
       triageState.startX.value = triageState.fingerX.value;
-      triageState.needsReset.value = true;
       triageState.isProcessing.value = false;
       return;
     }
 
     // Check if already triaged
     if (triageInProgressRef.current.has(email._id) || triagedEmails.has(email._id)) {
-      triageState.needsReset.value = true;
       triageState.isProcessing.value = false;
       return;
     }
@@ -1764,8 +1766,7 @@ export default function InboxScreen() {
     // This makes delta = 0, so ballX = CENTER_X
     triageState.startX.value = triageState.fingerX.value;
 
-    // Require ball to leave all targets before next triage can trigger
-    triageState.needsReset.value = true;
+    // Clear processing lock - the combo check will prevent re-triggering the same email:target
     triageState.isProcessing.value = false;
 
     try {
@@ -1939,8 +1940,8 @@ export default function InboxScreen() {
   );
 
   // Logging helpers for worklets
-  const logActiveTarget = useCallback((from: string | null, to: string | null, isProcessing: boolean, needsReset: boolean, lastTriggered: string | null) => {
-    console.log(`[Triage:ActiveTarget] changed from ${from ?? 'null'} to ${to}, isProcessing=${isProcessing}, needsReset=${needsReset}, lastTriggeredTarget=${lastTriggered ?? 'null'}`);
+  const logActiveTarget = useCallback((from: string | null, to: string | null, isProcessing: boolean, _unused: boolean, lastTriggeredCombo: string | null) => {
+    console.log(`[Triage:ActiveTarget] changed from ${from ?? 'null'} to ${to}, isProcessing=${isProcessing}, lastTriggeredCombo=${lastTriggeredCombo ?? 'null'}`);
   }, []);
   const logTrigger = useCallback((target: string, row: number, ballX: number, scrollY: number) => {
     const targetConfig = TARGETS.find(t => t.id === target);
@@ -1987,7 +1988,7 @@ export default function InboxScreen() {
     () => ({
       ballX: triageState.ballX.value,
       isProcessing: triageState.isProcessing.value,
-      needsReset: triageState.needsReset.value,
+      lastTriggeredCombo: triageState.lastTriggeredCombo.value,
       topRowIndex: triageState.topRowIndex.value,
       scrollY: triageState.scrollY.value,
     }),
@@ -1998,35 +1999,33 @@ export default function InboxScreen() {
 
       // Log state changes when activeTarget changes
       if (activeTarget !== prevActiveTarget) {
-        runOnJS(logActiveTarget)(prevActiveTarget, activeTarget, current.isProcessing, current.needsReset, null);
+        runOnJS(logActiveTarget)(prevActiveTarget, activeTarget, current.isProcessing, false, current.lastTriggeredCombo);
       }
 
-      // Clear needsReset when ball leaves ALL targets
-      if (activeTarget === null && current.needsReset) {
-        triageState.needsReset.value = false;
-        console.log('[Triage:Reset] Ball left all targets, needsReset cleared');
-      }
+      // Build the current combo string: "emailIndex:targetId"
+      const currentCombo = activeTarget !== null ? `${current.topRowIndex}:${activeTarget}` : null;
 
       // Trigger when:
       // - Ball is at a target (activeTarget !== null)
       // - Not already processing
-      // - needsReset is false (ball has left targets since last triage)
+      // - This emailIndex:target combo hasn't already been triggered
       if (activeTarget !== null) {
         if (current.isProcessing) {
           // Log once per change
           if (previous && previous.isProcessing !== current.isProcessing) {
             console.log(`[Triage:Blocked] isProcessing=true, target=${activeTarget}`);
           }
-        } else if (current.needsReset) {
+        } else if (currentCombo === current.lastTriggeredCombo) {
           // Log once per target change
           if (activeTarget !== prevActiveTarget) {
-            console.log(`[Triage:Blocked] needsReset=true, target=${activeTarget}, must leave all targets first`);
+            console.log(`[Triage:Blocked] combo=${currentCombo} already triggered, move to different email or target`);
           }
         } else {
           runOnJS(logTrigger)(activeTarget, current.topRowIndex, current.ballX, current.scrollY);
           // Set locks immediately in worklet to prevent cascade
           triageState.isProcessing.value = true;
-          triageState.needsReset.value = true;
+          // Store the combo we just triggered to prevent re-triggering
+          triageState.lastTriggeredCombo.value = currentCombo;
           // Reset scroll baseline so scroll-back detection works after triage
           triageState.prevScrollY.value = current.scrollY;
           runOnJS(handleTargetActivationStable)(current.topRowIndex, activeTarget);
