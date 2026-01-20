@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { action, mutation, query } from "./_generated/server";
-import { api } from "./_generated/api";
+import { action, mutation, query, internalQuery, internalMutation } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 
 const WORKOS_CLIENT_ID = process.env.WORKOS_CLIENT_ID!;
 const WORKOS_API_KEY = process.env.WORKOS_API_KEY!;
@@ -206,21 +206,16 @@ export const refreshToken = action({
     const data = await response.json();
 
     // Update user's WorkOS refresh token if a new one was provided
-    // This is best-effort - OCC errors can happen if other mutations are updating the user
+    // Query for user ID first (read-only), then patch (write-only) to avoid OCC conflicts
     if (data.refresh_token && data.user?.id) {
-      try {
-        await ctx.runMutation(api.auth.updateWorkosRefreshToken, {
-          workosUserId: data.user.id,
+      const userId = await ctx.runQuery(internal.auth.getUserIdByWorkosId, {
+        workosUserId: data.user.id,
+      });
+      if (userId) {
+        await ctx.runMutation(internal.auth.updateWorkosRefreshToken, {
+          userId,
           workosRefreshToken: data.refresh_token,
         });
-      } catch (e) {
-        // Ignore OCC errors - the token update isn't critical for auth to work
-        const errorMessage = e instanceof Error ? e.message : String(e);
-        if (errorMessage.includes("Data read or written in this mutation changed")) {
-          console.log("WorkOS refresh token update skipped due to OCC conflict (non-critical)");
-        } else {
-          throw e; // Re-throw other errors
-        }
       }
     }
 
@@ -234,22 +229,28 @@ export const refreshToken = action({
   },
 });
 
-// Update WorkOS refresh token for a user
-export const updateWorkosRefreshToken = mutation({
-  args: {
-    workosUserId: v.string(),
-    workosRefreshToken: v.string(),
-  },
+// Get user ID by WorkOS ID (for use in actions before mutations)
+export const getUserIdByWorkosId = internalQuery({
+  args: { workosUserId: v.string() },
   handler: async (ctx, args) => {
     const user = await ctx.db
       .query("users")
       .withIndex("by_workos_id", (q) => q.eq("workosId", args.workosUserId))
       .first();
+    return user?._id ?? null;
+  },
+});
 
-    if (user) {
-      await ctx.db.patch(user._id, {
-        workosRefreshToken: args.workosRefreshToken,
-      });
-    }
+// Update WorkOS refresh token for a user - takes userId directly to avoid OCC conflicts
+export const updateWorkosRefreshToken = internalMutation({
+  args: {
+    userId: v.id("users"),
+    workosRefreshToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Direct patch without query - avoids OCC conflicts with other user updates
+    await ctx.db.patch(args.userId, {
+      workosRefreshToken: args.workosRefreshToken,
+    });
   },
 });
