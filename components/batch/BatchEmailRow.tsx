@@ -11,6 +11,7 @@ import {
   ScrollView,
   Dimensions,
   Platform,
+  Switch,
 } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "convex/react";
@@ -233,27 +234,30 @@ export const BatchEmailRow = memo(function BatchEmailRow({
 
         {/* Action buttons */}
         <View style={styles.actionButtons}>
-          {/* Needs Reply button - toggles TODO state and reply options */}
+          {/* Done switch - ON by default (done), OFF = needs reply/TODO */}
           {onNeedsReplyPress && (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.replyButton, isPunted && styles.replyButtonActive]}
-              onPress={() => {
-                if (isPunted) {
-                  // Currently in TODO - remove from TODO and hide replies
-                  onNeedsReplyPress();
-                  setShowReplyOptions(false);
-                } else {
-                  // Not in TODO - add to TODO and show replies
-                  onNeedsReplyPress();
-                  setShowReplyOptions(true);
-                }
-              }}
-              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-            >
-              <Text style={[styles.actionButtonText, styles.replyButtonText, isPunted && styles.replyButtonTextActive]}>
-                Needs Reply
+            <View style={styles.doneSwitchContainer}>
+              <Text style={[styles.doneSwitchLabel, isPunted && styles.doneSwitchLabelActive]}>
+                {isPunted ? "Reply" : "Done"}
               </Text>
-            </TouchableOpacity>
+              <Switch
+                value={!isPunted}
+                onValueChange={(isDone) => {
+                  if (isDone) {
+                    // Switched to ON (Done) - remove from TODO and hide replies
+                    onNeedsReplyPress();
+                    setShowReplyOptions(false);
+                  } else {
+                    // Switched to OFF (Needs Reply) - add to TODO and show replies
+                    onNeedsReplyPress();
+                    setShowReplyOptions(true);
+                  }
+                }}
+                trackColor={{ false: "#6366F1", true: "#D1D5DB" }}
+                thumbColor={isPunted ? "#fff" : "#fff"}
+                ios_backgroundColor="#D1D5DB"
+              />
+            </View>
           )}
 
           {/* Reply expansion toggle - only if quick replies or mic available AND not expanded by default */}
@@ -649,6 +653,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+  },
+  doneSwitchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  doneSwitchLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+  },
+  doneSwitchLabelActive: {
+    color: "#6366F1",
   },
   actionButton: {
     paddingHorizontal: 10,
