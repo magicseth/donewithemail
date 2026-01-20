@@ -19,6 +19,7 @@ import {
 import { router, Stack, useFocusEffect } from "expo-router";
 import { useAction, useQuery, useMutation } from "convex/react";
 import { isAuthError, useAuthError } from "../../lib/AuthErrorBoundary";
+import { useAuth } from "../../lib/authContext";
 import { useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
 import {
@@ -865,6 +866,7 @@ export default function InboxScreen() {
   // AUTH ERROR HANDLING
   // ============================================================================
   const { reportAuthError } = useAuthError();
+  const { refreshAccessToken, signIn } = useAuth();
 
   // ============================================================================
   // INBOX MODE STATE
@@ -1318,13 +1320,6 @@ export default function InboxScreen() {
     setReplyDraft({ email, body: reply.body, subject });
   }, [gmailEmails]);
 
-  // Play mic open sound when deepgram actually connects and starts streaming
-  useEffect(() => {
-    if (isConnected && recordingFor) {
-      playStartSound();
-    }
-  }, [isConnected, recordingFor, playStartSound]);
-
   // Handle mic press in from batch mode - start recording
   const handleBatchMicPressIn = useCallback((emailId: string) => {
     console.log(`[Mic] handleBatchMicPressIn called for ${emailId}, recordingFor=${recordingFor}`);
@@ -1431,6 +1426,18 @@ export default function InboxScreen() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#6366F1" />
+        <TouchableOpacity
+          style={{ backgroundColor: "#6366F1", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, marginTop: 20 }}
+          onPress={refreshAccessToken}
+        >
+          <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>Refresh Token</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{ backgroundColor: "#10B981", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, marginTop: 12 }}
+          onPress={signIn}
+        >
+          <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>Sign In</Text>
+        </TouchableOpacity>
       </View>
     );
   }

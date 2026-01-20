@@ -34,7 +34,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Inbox",
+          title: "Donebox",
           tabBarIcon: ({ focused }) => <TabIcon name="inbox" focused={focused} />,
         }}
       />

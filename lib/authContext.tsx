@@ -107,8 +107,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const loadAuth = async () => {
       try {
         const stored = await storage.getItem(AUTH_STORAGE_KEY);
+        console.log("[Auth] loadAuth - stored:", stored ? "found" : "not found");
         if (stored) {
           const parsed: StoredAuth = JSON.parse(stored);
+          console.log("[Auth] loadAuth - parsed:", {
+            hasUser: !!parsed.user,
+            hasToken: !!parsed.accessToken,
+            hasRefresh: !!parsed.refreshToken,
+            expiresAt: parsed.expiresAt ? new Date(parsed.expiresAt).toISOString() : null,
+          });
           setUser(parsed.user);
           setAccessToken(parsed.accessToken);
           setRefreshToken(parsed.refreshToken || null);
@@ -129,6 +136,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refresh?: string,
     expiresIn?: number
   ) => {
+    console.log("[Auth] saveAuth called:", {
+      hasUser: !!userData,
+      hasToken: !!token,
+      hasRefresh: !!refresh,
+      expiresIn,
+    });
     const expTime = expiresIn ? Date.now() + (expiresIn * 1000) : undefined;
     await storage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
       user: userData,
@@ -140,6 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAccessToken(token);
     setRefreshToken(refresh || null);
     setExpiresAt(expTime || null);
+    console.log("[Auth] Auth saved successfully");
   }, []);
 
   // Clear auth
