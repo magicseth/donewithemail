@@ -113,9 +113,17 @@ export default defineSchema({
     deadlineReminderSent: v.optional(v.boolean()),
 
     createdAt: v.number(),
+
+    // Vector embedding for semantic search (1536-dim for text-embedding-3-small)
+    embedding: v.optional(v.array(v.float64())),
   })
     .index("by_email", ["emailId"])
-    .index("by_deadline", ["deadline"]),
+    .index("by_deadline", ["deadline"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 1536,
+      filterFields: ["emailId"],
+    }),
 
   contacts: defineTable({
     userId: v.id("users"),

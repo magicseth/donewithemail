@@ -35,6 +35,8 @@ import Animated, {
   useAnimatedProps,
 } from "react-native-reanimated";
 import { Dimensions } from "react-native";
+import { AskEmailModal } from "../../components/AskEmailModal";
+import { useEmailAgent } from "../../hooks/useEmailAgent";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const SCREEN_HEIGHT = Dimensions.get("window").height;
@@ -874,6 +876,11 @@ export default function InboxScreen() {
   const [inboxMode, setInboxMode] = useState<InboxMode>("swipe");
 
   // ============================================================================
+  // ASK MY EMAIL AGENT
+  // ============================================================================
+  const { isOpen: isAskEmailOpen, open: openAskEmail, close: closeAskEmail } = useEmailAgent();
+
+  // ============================================================================
   // EMAIL & SESSION STATE
   // ============================================================================
   const [sessionStart, setSessionStart] = useState(() => Date.now());
@@ -1449,7 +1456,7 @@ export default function InboxScreen() {
         {/* Triage overlay - targets at top of screen (only in swipe mode) */}
         {inboxMode === "swipe" && <NewTriageOverlay />}
 
-      {/* Mode toggle */}
+      {/* Mode toggle and Ask button */}
       <View style={styles.modeToggleContainer}>
         <TouchableOpacity
           style={[styles.modeToggleButton, inboxMode === "swipe" && styles.modeToggleButtonActive]}
@@ -1467,7 +1474,16 @@ export default function InboxScreen() {
             AI Batch
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.askEmailButton}
+          onPress={openAskEmail}
+        >
+          <Text style={styles.askEmailButtonText}>Ask</Text>
+        </TouchableOpacity>
       </View>
+
+      {/* Ask My Email Modal */}
+      <AskEmailModal visible={isAskEmailOpen} onClose={closeAskEmail} />
 
       {/* Swipe hint at top - only show in swipe mode */}
       {inboxMode === "swipe" && (
@@ -1653,6 +1669,18 @@ const styles = StyleSheet.create({
     color: "#666",
   },
   modeToggleTextActive: {
+    color: "#fff",
+  },
+  askEmailButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "#10B981",
+    marginLeft: 8,
+  },
+  askEmailButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
     color: "#fff",
   },
   swipeHintContainer: {
