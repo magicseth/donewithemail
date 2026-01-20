@@ -114,13 +114,25 @@ export function BatchTriageView({
 
   // Handle accept calendar
   const handleAcceptCalendar = useCallback(async (emailId: string) => {
+    // Find the email to get the event title
+    const allEmails = [
+      ...categories.done,
+      ...categories.humanWaiting,
+      ...categories.actionNeeded,
+      ...categories.calendar,
+      ...categories.lowConfidence,
+      ...categories.pending,
+    ];
+    const email = allEmails.find(e => e._id === emailId);
+    const eventTitle = email?.calendarEvent?.title || email?.fromName || "Event";
+
     try {
       await acceptCalendar(emailId);
-      showToast("Added to calendar", "success");
+      showToast(`Appointment "${eventTitle}" added to calendar`, "success", emailId);
     } catch (err) {
       showToast("Failed to add to calendar", "error");
     }
-  }, [acceptCalendar, showToast]);
+  }, [categories, acceptCalendar, showToast]);
 
   // Handle unsubscribe - shows toast with undo option
   const handleUnsubscribe = useCallback(async (emailId: string) => {
@@ -215,12 +227,14 @@ export function BatchTriageView({
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("done")}
+          onAcceptCalendar={handleAcceptCalendar}
           onQuickReply={onQuickReply}
           onMicPressIn={onMicPressIn}
           onMicPressOut={onMicPressOut}
           onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
           onNeedsReplyPress={handleNeedsReplyPress}
+          acceptingIds={acceptingIds}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "done"}
           recordingForId={recordingForId}
@@ -236,12 +250,14 @@ export function BatchTriageView({
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("lowConfidence")}
+          onAcceptCalendar={handleAcceptCalendar}
           onQuickReply={onQuickReply}
           onMicPressIn={onMicPressIn}
           onMicPressOut={onMicPressOut}
           onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
           onNeedsReplyPress={handleNeedsReplyPress}
+          acceptingIds={acceptingIds}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "lowConfidence"}
           recordingForId={recordingForId}
@@ -257,12 +273,14 @@ export function BatchTriageView({
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("actionNeeded")}
+          onAcceptCalendar={handleAcceptCalendar}
           onQuickReply={onQuickReply}
           onMicPressIn={onMicPressIn}
           onMicPressOut={onMicPressOut}
           onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
           onNeedsReplyPress={handleNeedsReplyPress}
+          acceptingIds={acceptingIds}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "actionNeeded"}
           recordingForId={recordingForId}
@@ -278,12 +296,14 @@ export function BatchTriageView({
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("humanWaiting")}
+          onAcceptCalendar={handleAcceptCalendar}
           onQuickReply={onQuickReply}
           onMicPressIn={onMicPressIn}
           onMicPressOut={onMicPressOut}
           onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
           onNeedsReplyPress={handleNeedsReplyPress}
+          acceptingIds={acceptingIds}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "humanWaiting"}
           recordingForId={recordingForId}
@@ -323,12 +343,14 @@ export function BatchTriageView({
             puntedEmails={puntedEmails}
             onPuntEmail={togglePuntEmail}
             onMarkAllDone={() => handleMarkCategoryDone("pending")}
+            onAcceptCalendar={handleAcceptCalendar}
             onQuickReply={onQuickReply}
             onMicPressIn={onMicPressIn}
             onMicPressOut={onMicPressOut}
             onSendTranscript={onSendTranscript}
             onUnsubscribe={handleUnsubscribe}
             onNeedsReplyPress={handleNeedsReplyPress}
+            acceptingIds={acceptingIds}
             unsubscribingIds={unsubscribingIds}
             isProcessing={processingCategory === "pending"}
             recordingForId={recordingForId}

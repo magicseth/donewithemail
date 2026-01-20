@@ -177,7 +177,6 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
               onNeedsReplyPress={onNeedsReplyPress ? () => onNeedsReplyPress(email._id) : undefined}
               isAccepting={acceptingIds?.has(email._id)}
               isUnsubscribing={unsubscribingIds?.has(email._id)}
-              hideTodoButton={category === "done" || category === "lowConfidence" || category === "actionNeeded"}
             />
           ))}
 

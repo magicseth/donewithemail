@@ -34,6 +34,19 @@ export const getEmailById = internalQuery({
   },
 });
 
+// Get email body from the separate emailBodies table
+export const getEmailBodyById = internalQuery({
+  args: {
+    emailId: v.id("emails"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("emailBodies")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .first();
+  },
+});
+
 /**
  * Store a new email (called by sync)
  */

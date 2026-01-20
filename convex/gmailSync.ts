@@ -398,7 +398,6 @@ export const fetchEmailBody = action({
     // Get the email to find its externalId
     type EmailData = {
       externalId: string;
-      bodyFull: string;
       bodyPreview: string;
     };
     const email: EmailData | null = await ctx.runQuery(internal.emails.getEmailById, {
@@ -409,9 +408,13 @@ export const fetchEmailBody = action({
       throw new Error("Email not found");
     }
 
-    // If we already have HTML content, return it
-    if (email.bodyFull && email.bodyFull.includes("<")) {
-      return { body: email.bodyFull, isHtml: true };
+    // Check if we already have body stored in emailBodies table
+    const existingBody = await ctx.runQuery(internal.emails.getEmailBodyById, {
+      emailId: args.emailId,
+    });
+
+    if (existingBody?.bodyFull && existingBody.bodyFull.includes("<")) {
+      return { body: existingBody.bodyFull, isHtml: true };
     }
 
     // Get user's Gmail tokens
@@ -468,14 +471,27 @@ export const fetchEmailBody = action({
   },
 });
 
-// Internal mutation to update email body
+// Internal mutation to update email body (stored in separate emailBodies table)
 export const updateEmailBody = internalMutation({
   args: {
     emailId: v.id("emails"),
     bodyFull: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.emailId, { bodyFull: args.bodyFull });
+    // Check if body already exists for this email
+    const existingBody = await ctx.db
+      .query("emailBodies")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .first();
+
+    if (existingBody) {
+      await ctx.db.patch(existingBody._id, { bodyFull: args.bodyFull });
+    } else {
+      await ctx.db.insert("emailBodies", {
+        emailId: args.emailId,
+        bodyFull: args.bodyFull,
+      });
+    }
   },
 });
 
@@ -1027,7 +1043,7 @@ export const fetchAndStoreEmailsByIds = internalAction({
         // If this is a subscription email, upsert the subscription record
         if (msg.isSubscription && msg.listUnsubscribe) {
           try {
-            await ctx.runMutation(internal.subscriptions.upsertSubscription, {
+            await ctx.runMutation(internal.subscriptionsHelpers.upsertSubscription, {
               userId: user._id,
               senderEmail: msg.senderEmail,
               senderName: msg.senderName !== msg.senderEmail ? msg.senderName : undefined,

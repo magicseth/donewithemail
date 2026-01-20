@@ -114,8 +114,6 @@ interface BatchEmailRowProps {
   onNeedsReplyPress?: () => void;
   isAccepting?: boolean;
   isUnsubscribing?: boolean;
-  /** If true, hide the TODO button (for FYI, Needs Review, Action Needed categories) */
-  hideTodoButton?: boolean;
 }
 
 export const BatchEmailRow = memo(function BatchEmailRow({
@@ -136,7 +134,6 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   onNeedsReplyPress,
   isAccepting,
   isUnsubscribing,
-  hideTodoButton = false,
 }: BatchEmailRowProps) {
   const [showReplyOptions, setShowReplyOptions] = useState(expandReplyByDefault);
   const [showPreview, setShowPreview] = useState(false);
@@ -219,11 +216,21 @@ export const BatchEmailRow = memo(function BatchEmailRow({
 
         {/* Action buttons */}
         <View style={styles.actionButtons}>
-          {/* Needs Reply button - toggles TODO state via onNeedsReplyPress */}
+          {/* Needs Reply button - toggles TODO state and reply options */}
           {onNeedsReplyPress && (
             <TouchableOpacity
               style={[styles.actionButton, styles.replyButton, isPunted && styles.replyButtonActive]}
-              onPress={onNeedsReplyPress}
+              onPress={() => {
+                if (isPunted) {
+                  // Currently in TODO - remove from TODO and hide replies
+                  onNeedsReplyPress();
+                  setShowReplyOptions(false);
+                } else {
+                  // Not in TODO - add to TODO and show replies
+                  onNeedsReplyPress();
+                  setShowReplyOptions(true);
+                }
+              }}
               hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
             >
               <Text style={[styles.actionButtonText, styles.replyButtonText, isPunted && styles.replyButtonTextActive]}>
@@ -245,34 +252,6 @@ export const BatchEmailRow = memo(function BatchEmailRow({
             </TouchableOpacity>
           )}
 
-          {/* Accept button - only for calendar items */}
-          {hasCalendar && onAccept && (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.acceptButton, isAccepting && styles.buttonDisabled]}
-              onPress={onAccept}
-              disabled={isAccepting}
-              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-            >
-              {isAccepting ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={[styles.actionButtonText, styles.acceptButtonText]}>Accept</Text>
-              )}
-            </TouchableOpacity>
-          )}
-
-          {/* TODO button - toggles punted state, hidden in some categories */}
-          {!hideTodoButton && (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.saveButton, isPunted && styles.saveButtonActive]}
-              onPress={onPunt}
-              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-            >
-              <Text style={[styles.actionButtonText, styles.saveButtonText, isPunted && styles.saveButtonTextActive]}>
-                {isPunted ? "In TODO" : "TODO"}
-              </Text>
-            </TouchableOpacity>
-          )}
         </View>
       </View>
 
@@ -297,6 +276,53 @@ export const BatchEmailRow = memo(function BatchEmailRow({
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Calendar event details with add button */}
+      {hasCalendar && email.calendarEvent && (
+        <View style={styles.calendarEventContainer}>
+          <View style={styles.calendarEventContent}>
+            <Text style={styles.calendarEventTitle}>
+              📅 {email.calendarEvent.title}
+            </Text>
+            {email.calendarEvent.startTime && (
+              <Text style={styles.calendarEventTime}>
+                {new Date(email.calendarEvent.startTime).toLocaleString(undefined, {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+                {email.calendarEvent.endTime && (
+                  ` - ${new Date(email.calendarEvent.endTime).toLocaleTimeString(undefined, {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}`
+                )}
+              </Text>
+            )}
+            {email.calendarEvent.location && (
+              <Text style={styles.calendarEventLocation} numberOfLines={1}>
+                📍 {email.calendarEvent.location}
+              </Text>
+            )}
+          </View>
+          {onAccept && (
+            <TouchableOpacity
+              style={[styles.calendarAddButton, isAccepting && styles.calendarAddButtonAccepted]}
+              onPress={onAccept}
+              disabled={isAccepting}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              {isAccepting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.calendarAddButtonText}>+</Text>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {/* Expanded reply options */}
       {showReplyOptions && (
@@ -484,6 +510,53 @@ const styles = StyleSheet.create({
   summaryWithUnsub: {
     marginRight: 8,
   },
+  calendarEventContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 12,
+    marginTop: 8,
+    paddingLeft: 12,
+    paddingRight: 8,
+    paddingVertical: 8,
+    backgroundColor: "#FFFBEB",
+    borderRadius: 8,
+  },
+  calendarEventContent: {
+    flex: 1,
+  },
+  calendarEventTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#B45309",
+  },
+  calendarEventTime: {
+    fontSize: 12,
+    color: "#92400E",
+    marginTop: 2,
+  },
+  calendarEventLocation: {
+    fontSize: 12,
+    color: "#92400E",
+    marginTop: 2,
+  },
+  calendarAddButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F59E0B",
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+  },
+  calendarAddButtonAccepted: {
+    backgroundColor: "#10B981",
+  },
+  calendarAddButtonText: {
+    fontSize: 24,
+    fontWeight: "600",
+    color: "#fff",
+    lineHeight: 28,
+  },
   unsubButton: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -524,27 +597,6 @@ const styles = StyleSheet.create({
     color: "#6366F1",
   },
   replyButtonTextActive: {
-    color: "#fff",
-  },
-  acceptButton: {
-    backgroundColor: "#F59E0B",
-    borderColor: "#F59E0B",
-  },
-  acceptButtonText: {
-    color: "#fff",
-  },
-  saveButton: {
-    backgroundColor: "#f5f5f5",
-    borderColor: "#ddd",
-  },
-  saveButtonActive: {
-    backgroundColor: "#6366F1",
-    borderColor: "#6366F1",
-  },
-  saveButtonText: {
-    color: "#666",
-  },
-  saveButtonTextActive: {
     color: "#fff",
   },
   replyOptionsContainer: {
