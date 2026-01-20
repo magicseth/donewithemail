@@ -114,7 +114,16 @@ async function processFeatureRequest(request: {
     }
     execSync(`git clone ${REPO_URL} ${workDir}`, { stdio: "inherit" });
 
-    // Create a branch for this feature
+    // Start from voice-preview merged with main (so Claude sees all previous voice features + latest main)
+    console.log(`\n🔀 Preparing base: merging main and voice-preview...`);
+    execSync(`git fetch origin voice-preview`, { cwd: workDir, stdio: "inherit" });
+    execSync(`git checkout voice-preview`, { cwd: workDir, stdio: "inherit" });
+    execSync(`git merge origin/main -m "Merge main into voice-preview (pre-feature)"`, {
+      cwd: workDir,
+      stdio: "inherit"
+    });
+
+    // Create a branch for this feature (from the merged state)
     const branchName = `feature/voice-${request._id.slice(-8)}`;
     console.log(`\n🌿 Creating branch: ${branchName}`);
     execSync(`git checkout -b ${branchName}`, { cwd: workDir, stdio: "inherit" });
@@ -167,11 +176,22 @@ Important: This is a React Native Expo app. Follow existing patterns in the code
     await updateProgress("pushing", "Pushing feature branch...", { commitHash });
     execSync(`git push -u origin ${branchName}`, { cwd: workDir, stdio: "inherit" });
 
-    // Merge into voice-preview branch
+    // Merge into voice-preview branch (first merge main to get latest features)
     console.log(`\n🔀 Merging into voice-preview...`);
-    await updateProgress("merging", "Merging into voice-preview branch...");
-    execSync(`git fetch origin voice-preview`, { cwd: workDir, stdio: "inherit" });
+    await updateProgress("merging", "Merging main into voice-preview...");
+    execSync(`git fetch origin voice-preview main`, { cwd: workDir, stdio: "inherit" });
     execSync(`git checkout voice-preview`, { cwd: workDir, stdio: "inherit" });
+
+    // First merge main into voice-preview to get latest features
+    console.log(`   Merging main into voice-preview first...`);
+    execSync(`git merge origin/main -m "Merge main into voice-preview"`, {
+      cwd: workDir,
+      stdio: "inherit"
+    });
+
+    // Then merge the feature branch
+    console.log(`   Merging feature branch...`);
+    await updateProgress("merging", "Merging feature branch...");
     execSync(`git merge ${branchName} -m "Merge ${branchName}: ${request.transcript.slice(0, 50)}..."`, {
       cwd: workDir,
       stdio: "inherit"

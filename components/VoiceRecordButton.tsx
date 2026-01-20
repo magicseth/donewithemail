@@ -130,8 +130,6 @@ export function VoiceRecordButton({
       ]}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      onLongPress={handleCancel}
-      delayLongPress={2000}
       disabled={disabled || isProcessing}
       activeOpacity={0.8}
     >

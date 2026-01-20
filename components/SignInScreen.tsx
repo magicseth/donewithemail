@@ -76,8 +76,8 @@ export function SignInScreen() {
 
         {/* Privacy note */}
         <Text style={styles.privacyNote}>
-          We only read your emails to provide summaries.{"\n"}
-          Your data is never shared.
+          We only read your emails so you don't have to.{"\n"}
+          Your data is piped to Anthropic, and OpenAI, and is stored at rest encrypted at Convex.
         </Text>
       </View>
 
