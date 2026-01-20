@@ -229,7 +229,7 @@ export const getMine = query({
 });
 
 /**
- * Cancel a pending feature request
+ * Cancel a pending or processing feature request
  */
 export const cancel = mutation({
   args: {
@@ -264,13 +264,17 @@ export const cancel = mutation({
       throw new Error("Not authorized to cancel this request");
     }
 
-    // Only allow cancelling pending requests
-    if (request.status !== "pending") {
-      throw new Error("Can only cancel pending requests");
+    // Only allow cancelling pending or processing requests
+    if (request.status !== "pending" && request.status !== "processing") {
+      throw new Error("Can only cancel pending or processing requests");
     }
 
-    // Delete the request
-    await ctx.db.delete(args.id);
+    // Mark as cancelled (use "failed" status with specific error message)
+    await ctx.db.patch(args.id, {
+      status: "failed",
+      completedAt: Date.now(),
+      error: "Cancelled by user",
+    });
 
     return { success: true };
   },

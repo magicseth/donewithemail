@@ -917,7 +917,7 @@ export default function SettingsScreen() {
                         </Text>
                       )}
                     </View>
-                    {req.status === "pending" ? (
+                    {(req.status === "pending" || req.status === "processing") ? (
                       <TouchableOpacity
                         style={styles.featureRequestCancelButton}
                         onPress={() => handleCancelFeatureRequest(req._id)}
@@ -931,7 +931,7 @@ export default function SettingsScreen() {
                       </TouchableOpacity>
                     ) : (
                       <Text style={styles.featureRequestStatusText}>
-                        {req.status === "processing" ? req.progressStep || "processing" : req.status}
+                        {req.status}
                       </Text>
                     )}
                   </View>
