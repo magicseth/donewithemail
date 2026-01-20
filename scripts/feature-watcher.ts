@@ -70,6 +70,19 @@ async function processFeatureRequest(request: {
   console.log(`\n📝 Processing feature request: ${request._id}`);
   console.log(`   Transcript: "${request.transcript}"`);
 
+  const updateProgress = async (
+    step: "cloning" | "implementing" | "pushing" | "merging" | "deploying_backend" | "uploading" | "ready",
+    message: string,
+    extra?: { branchName?: string; commitHash?: string }
+  ) => {
+    await client.mutation(api.featureRequests.updateProgress, {
+      id: request._id as any,
+      progressStep: step,
+      progressMessage: message,
+      ...extra,
+    });
+  };
+
   try {
     // Mark as processing
     await client.mutation(api.featureRequests.markProcessing, {
@@ -78,6 +91,7 @@ async function processFeatureRequest(request: {
 
     // Clone the repo (fresh copy)
     console.log(`\n📦 Cloning repo to ${workDir}...`);
+    await updateProgress("cloning", "Cloning repository...");
     if (fs.existsSync(workDir)) {
       fs.rmSync(workDir, { recursive: true });
     }
@@ -90,6 +104,7 @@ async function processFeatureRequest(request: {
 
     // Run Claude Code with the feature description
     console.log(`\n🤖 Running Claude Code...`);
+    await updateProgress("implementing", "Claude is implementing your feature...", { branchName });
     const prompt = `Implement this feature request from the user:
 
 "${request.transcript}"
@@ -112,10 +127,12 @@ Important: This is a React Native Expo app. Follow existing patterns in the code
 
     // Push the feature branch (for reference)
     console.log(`\n📤 Pushing feature branch...`);
+    await updateProgress("pushing", "Pushing feature branch...", { commitHash });
     execSync(`git push -u origin ${branchName}`, { cwd: workDir, stdio: "inherit" });
 
     // Merge into voice-preview branch
     console.log(`\n🔀 Merging into voice-preview...`);
+    await updateProgress("merging", "Merging into voice-preview branch...");
     execSync(`git fetch origin voice-preview`, { cwd: workDir, stdio: "inherit" });
     execSync(`git checkout voice-preview`, { cwd: workDir, stdio: "inherit" });
     execSync(`git merge ${branchName} -m "Merge ${branchName}: ${request.transcript.slice(0, 50)}..."`, {
@@ -126,25 +143,31 @@ Important: This is a React Native Expo app. Follow existing patterns in the code
 
     // Deploy Convex changes
     console.log(`\n☁️ Deploying Convex...`);
+    await updateProgress("deploying_backend", "Deploying backend changes...");
     execSync(`npx convex dev --once`, { cwd: workDir, stdio: "inherit" });
 
     // Run EAS update on voice-preview channel
     console.log(`\n📱 Running EAS update for voice-preview...`);
+    await updateProgress("uploading", "Uploading to Expo (EAS Update)...");
     const easOutput = execSync(
       `npx eas update --branch voice-preview --message "Feature: ${request.transcript.slice(0, 50)}..."`,
       { cwd: workDir, encoding: "utf-8" }
     );
 
-    // Extract update ID from output (if possible)
-    const updateIdMatch = easOutput.match(/Update ID:\s*(\S+)/);
-    const easUpdateId = updateIdMatch ? updateIdMatch[1] : undefined;
+    // Extract update ID and dashboard URL from output
+    const updateGroupMatch = easOutput.match(/Update group ID\s+(\S+)/);
+    const easUpdateId = updateGroupMatch ? updateGroupMatch[1] : undefined;
+    const dashboardMatch = easOutput.match(/EAS Dashboard\s+(https:\/\/\S+)/);
+    const easDashboardUrl = dashboardMatch ? dashboardMatch[1] : undefined;
 
     // Mark as completed
     await client.mutation(api.featureRequests.markCompleted, {
       id: request._id as any,
       commitHash,
+      branchName,
       easUpdateId,
       easUpdateMessage: `Feature: ${request.transcript.slice(0, 50)}...`,
+      easDashboardUrl,
     });
 
     console.log(`\n🎉 Feature request completed!`);
@@ -152,6 +175,9 @@ Important: This is a React Native Expo app. Follow existing patterns in the code
     console.log(`   Branch: ${branchName}`);
     if (easUpdateId) {
       console.log(`   EAS Update: ${easUpdateId}`);
+    }
+    if (easDashboardUrl) {
+      console.log(`   Dashboard: ${easDashboardUrl}`);
     }
 
     // Cleanup

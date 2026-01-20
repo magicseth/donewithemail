@@ -870,11 +870,28 @@ export default function SettingsScreen() {
                       req.status === "processing" && styles.featureRequestStatusProcessing,
                       req.status === "failed" && styles.featureRequestStatusFailed,
                     ]} />
-                    <Text style={styles.featureRequestText} numberOfLines={2}>
-                      {req.transcript}
-                    </Text>
+                    <View style={styles.featureRequestContent}>
+                      <Text style={styles.featureRequestText} numberOfLines={2}>
+                        {req.transcript}
+                      </Text>
+                      {req.status === "processing" && req.progressMessage && (
+                        <Text style={styles.featureRequestProgress}>
+                          {req.progressMessage}
+                        </Text>
+                      )}
+                      {req.status === "completed" && req.easDashboardUrl && (
+                        <Text style={styles.featureRequestReady}>
+                          Ready to test in voice-preview
+                        </Text>
+                      )}
+                      {req.status === "failed" && req.error && (
+                        <Text style={styles.featureRequestError} numberOfLines={1}>
+                          {req.error}
+                        </Text>
+                      )}
+                    </View>
                     <Text style={styles.featureRequestStatusText}>
-                      {req.status}
+                      {req.status === "processing" ? req.progressStep || "processing" : req.status}
                     </Text>
                   </View>
                 ))}
@@ -1157,10 +1174,13 @@ const styles = StyleSheet.create({
   },
   featureRequestRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
+  },
+  featureRequestContent: {
+    flex: 1,
   },
   featureRequestStatus: {
     width: 8,
@@ -1179,9 +1199,25 @@ const styles = StyleSheet.create({
     backgroundColor: "#EF4444",
   },
   featureRequestText: {
-    flex: 1,
     fontSize: 13,
     color: "#333",
+  },
+  featureRequestProgress: {
+    fontSize: 11,
+    color: "#6366F1",
+    marginTop: 4,
+    fontStyle: "italic",
+  },
+  featureRequestReady: {
+    fontSize: 11,
+    color: "#10B981",
+    marginTop: 4,
+    fontWeight: "500",
+  },
+  featureRequestError: {
+    fontSize: 11,
+    color: "#EF4444",
+    marginTop: 4,
   },
   featureRequestStatusText: {
     fontSize: 11,

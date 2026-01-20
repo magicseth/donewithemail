@@ -262,14 +262,27 @@ export default defineSchema({
       v.literal("completed"),         // Done, EAS update pushed
       v.literal("failed")             // Something went wrong
     ),
+    // Progress tracking
+    progressStep: v.optional(v.union(
+      v.literal("cloning"),           // Cloning repo
+      v.literal("implementing"),      // Claude Code working
+      v.literal("pushing"),           // Pushing feature branch
+      v.literal("merging"),           // Merging to voice-preview
+      v.literal("deploying_backend"), // Running convex dev --once
+      v.literal("uploading"),         // Running EAS update
+      v.literal("ready")              // Ready for testing
+    )),
+    progressMessage: v.optional(v.string()),  // Human-readable status
     createdAt: v.number(),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
     error: v.optional(v.string()),
     // Output from Claude Code
     commitHash: v.optional(v.string()),
+    branchName: v.optional(v.string()),
     easUpdateId: v.optional(v.string()),
     easUpdateMessage: v.optional(v.string()),
+    easDashboardUrl: v.optional(v.string()),
   })
     .index("by_status", ["status", "createdAt"])
     .index("by_user", ["userId", "createdAt"]),

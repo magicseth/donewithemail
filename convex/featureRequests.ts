@@ -73,22 +73,58 @@ export const markProcessing = mutation({
 });
 
 /**
+ * Update progress on a feature request (called by local watcher)
+ */
+export const updateProgress = mutation({
+  args: {
+    id: v.id("featureRequests"),
+    progressStep: v.union(
+      v.literal("cloning"),
+      v.literal("implementing"),
+      v.literal("pushing"),
+      v.literal("merging"),
+      v.literal("deploying_backend"),
+      v.literal("uploading"),
+      v.literal("ready")
+    ),
+    progressMessage: v.string(),
+    branchName: v.optional(v.string()),
+    commitHash: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const updates: Record<string, unknown> = {
+      progressStep: args.progressStep,
+      progressMessage: args.progressMessage,
+    };
+    if (args.branchName) updates.branchName = args.branchName;
+    if (args.commitHash) updates.commitHash = args.commitHash;
+    await ctx.db.patch(args.id, updates);
+  },
+});
+
+/**
  * Mark a feature request as completed
  */
 export const markCompleted = mutation({
   args: {
     id: v.id("featureRequests"),
     commitHash: v.optional(v.string()),
+    branchName: v.optional(v.string()),
     easUpdateId: v.optional(v.string()),
     easUpdateMessage: v.optional(v.string()),
+    easDashboardUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, {
       status: "completed",
+      progressStep: "ready",
+      progressMessage: "Ready for testing!",
       completedAt: Date.now(),
       commitHash: args.commitHash,
+      branchName: args.branchName,
       easUpdateId: args.easUpdateId,
       easUpdateMessage: args.easUpdateMessage,
+      easDashboardUrl: args.easDashboardUrl,
     });
   },
 });
