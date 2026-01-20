@@ -9,9 +9,9 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  Share,
 } from "react-native";
 import { router } from "expo-router";
-import * as Clipboard from "expo-clipboard";
 import { useAuth } from "../../lib/authContext";
 import { useQuery, useAction, useMutation } from "convex/react";
 import * as Updates from "expo-updates";
@@ -660,11 +660,10 @@ export default function SettingsScreen() {
                   navigator.clipboard?.writeText(logText);
                   alert("Copied to clipboard");
                 } else {
-                  await Clipboard.setStringAsync(logText);
-                  Alert.alert("Copied", "Logs copied to clipboard");
+                  await Share.share({ message: logText });
                 }
               }}>
-                <Text style={{ color: "#6366F1", fontSize: 14 }}>Copy All</Text>
+                <Text style={{ color: "#6366F1", fontSize: 14 }}>Share</Text>
               </TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: 300, padding: 8 }} nestedScrollEnabled>
