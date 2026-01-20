@@ -64,9 +64,10 @@ export default function SettingsScreen() {
         setUpdateInfo(prev => prev + " (up to date)");
         Alert.alert("Up to Date", "No new updates available.");
       }
-    } catch (e: any) {
-      setUpdateInfo(`Error: ${e.message}`);
-      Alert.alert("Update Error", e.message);
+    } catch (e: unknown) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      setUpdateInfo(`Error: ${errorMessage}`);
+      Alert.alert("Update Error", errorMessage);
     } finally {
       setIsCheckingUpdate(false);
     }

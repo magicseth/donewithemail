@@ -26,10 +26,10 @@ Notifications.setNotificationHandler({
 
 export function usePushNotifications() {
   const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
-  const [notification, setNotification] = useState<any | null>(null);
+  const [notification, setNotification] = useState<Notifications.Notification | null>(null);
   const [pendingNavigation, setPendingNavigation] = useState<{ type: string; emailId?: string } | null>(null);
-  const notificationListener = useRef<any | null>(null);
-  const responseListener = useRef<any | null>(null);
+  const notificationListener = useRef<Notifications.Subscription | null>(null);
+  const responseListener = useRef<Notifications.Subscription | null>(null);
 
   const router = useRouter();
   const { isAuthenticated, isLoading } = useConvexAuth();

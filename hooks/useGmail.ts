@@ -4,6 +4,7 @@ import { api } from "../convex/_generated/api";
 import { useAuth } from "../lib/authContext";
 
 // Module-level cache persists across component mounts/unmounts
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Cache stores raw Convex query results
 let lastEmailsCache: any[] | null = null;
 
 // Module-level flag to prevent multiple simultaneous auth refresh attempts
@@ -161,9 +162,9 @@ export function useGmail(sessionStart?: number) {
         nextPageToken = result.nextPageToken;
 
         // Summarize emails that don't have summaries yet
-        const emailsNeedingSummary = result.emails.filter((e: any) => !e.summary);
+        const emailsNeedingSummary = result.emails.filter((e) => !e.summary);
         if (emailsNeedingSummary.length > 0) {
-          const emailIds = emailsNeedingSummary.map((e: any) => e.id);
+          const emailIds = emailsNeedingSummary.map((e) => e.id);
           console.log(`Summarizing ${emailIds.length} emails`);
           summarizeEmails(emailIds);
         }
@@ -196,9 +197,9 @@ export function useGmail(sessionStart?: number) {
         nextPageToken = result.nextPageToken;
 
         // Summarize new emails
-        const emailsNeedingSummary = result.emails.filter((e: any) => !e.summary);
+        const emailsNeedingSummary = result.emails.filter((e) => !e.summary);
         if (emailsNeedingSummary.length > 0) {
-          summarizeEmails(emailsNeedingSummary.map((e: any) => e.id));
+          summarizeEmails(emailsNeedingSummary.map((e) => e.id));
         }
       } catch (e) {
         console.error("Failed to load more emails:", e);
@@ -210,6 +211,7 @@ export function useGmail(sessionStart?: number) {
   );
 
   // Transform emails to match expected format (use stale data if fresh not ready)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Convex query types don't match interface exactly
   const emails: GmailEmail[] = (emailsToUse || []).map((email: any) => ({
     _id: email._id,
     externalId: email.externalId,

@@ -10,6 +10,8 @@ import {
   RefreshControl,
   ActivityIndicator,
   Platform,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import Animated from "react-native-reanimated";
 import { useTriageContext } from "../triage";
@@ -20,7 +22,7 @@ interface TriageListWrapperProps {
   flatListRef: React.RefObject<FlatList | null>;
   emails: InboxEmail[];
   renderItem: ({ item, index }: { item: InboxEmail; index: number }) => React.ReactElement;
-  extraData: any;
+  extraData: unknown;
   refreshing: boolean;
   onRefresh: () => void;
   onEndReached: () => void;
@@ -46,7 +48,7 @@ export const TriageListWrapper = React.memo(function TriageListWrapper({
   const triage = useTriageContext();
 
   // Update scroll position in new context
-  const handleScroll = useCallback((event: any) => {
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const y = event.nativeEvent.contentOffset.y;
     triage.setScrollY(y);
   }, [triage]);
