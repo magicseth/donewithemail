@@ -48,6 +48,8 @@ export default function SettingsScreen() {
   // Feature request
   const [isSubmittingFeature, setIsSubmittingFeature] = useState(false);
   const [featureTranscript, setFeatureTranscript] = useState<string | null>(null);
+  const [streamingTranscript, setStreamingTranscript] = useState<string | null>(null);
+  const [isRecordingFeature, setIsRecordingFeature] = useState(false);
   const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
   const submitFeatureRequest = useMutation(api.featureRequests.submit);
   const cancelFeatureRequest = useMutation(api.featureRequests.cancel);
@@ -357,7 +359,23 @@ export default function SettingsScreen() {
   }, [submitFeatureRequest]);
 
   const handleFeatureError = useCallback((error: string) => {
+    setIsRecordingFeature(false);
+    setStreamingTranscript(null);
     Platform.OS === "web" ? window.alert(error) : Alert.alert("Error", error);
+  }, []);
+
+  const handleFeatureStreamingTranscript = useCallback((transcript: string) => {
+    setStreamingTranscript(transcript);
+  }, []);
+
+  const handleFeatureRecordingStart = useCallback(() => {
+    setIsRecordingFeature(true);
+    setStreamingTranscript(null);
+    setFeatureTranscript(null);
+  }, []);
+
+  const handleFeatureRecordingEnd = useCallback(() => {
+    setIsRecordingFeature(false);
   }, []);
 
   const handleCancelFeatureRequest = useCallback(async (requestId: string) => {
@@ -867,16 +885,24 @@ export default function SettingsScreen() {
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
               <Text style={styles.settingLabel}>Add Feature</Text>
-              <Text style={styles.settingDescription}>
+              <Text style={[
+                styles.settingDescription,
+                isRecordingFeature && streamingTranscript && styles.streamingTranscript
+              ]}>
                 {isSubmittingFeature
                   ? "Submitting..."
-                  : featureTranscript
-                    ? featureTranscript
-                    : "Press and hold to describe a feature"}
+                  : isRecordingFeature
+                    ? (streamingTranscript || "Listening...")
+                    : featureTranscript
+                      ? featureTranscript
+                      : "Press and hold to describe a feature"}
               </Text>
             </View>
             <VoiceRecordButton
               onTranscript={handleFeatureTranscript}
+              onStreamingTranscript={handleFeatureStreamingTranscript}
+              onRecordingStart={handleFeatureRecordingStart}
+              onRecordingEnd={handleFeatureRecordingEnd}
               onError={handleFeatureError}
               disabled={isSubmittingFeature}
               size="medium"
@@ -1085,6 +1111,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#666",
     marginTop: 4,
+  },
+  streamingTranscript: {
+    color: "#EF4444",
+    fontStyle: "italic",
   },
   divider: {
     height: 1,

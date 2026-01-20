@@ -11,6 +11,7 @@ import { useVoiceRecording } from "../hooks/useDailyVoice";
 
 interface VoiceRecordButtonProps {
   onTranscript: (transcript: string) => void;
+  onStreamingTranscript?: (transcript: string) => void;
   onError?: (error: string) => void;
   onRecordingStart?: () => void;
   onRecordingEnd?: () => void;
@@ -22,6 +23,7 @@ interface VoiceRecordButtonProps {
 
 export function VoiceRecordButton({
   onTranscript,
+  onStreamingTranscript,
   onError,
   onRecordingStart,
   onRecordingEnd,
@@ -45,10 +47,13 @@ export function VoiceRecordButton({
   // Keep a ref to the transcript so we can capture it before stopping
   const transcriptRef = useRef<string>("");
 
-  // Update ref whenever transcript changes
+  // Update ref whenever transcript changes and notify streaming callback
   React.useEffect(() => {
     transcriptRef.current = transcript;
-  }, [transcript]);
+    if (isRecording && transcript && onStreamingTranscript) {
+      onStreamingTranscript(transcript);
+    }
+  }, [transcript, isRecording, onStreamingTranscript]);
 
   const handlePressIn = useCallback(async () => {
     if (disabled || isRecording || isProcessing) return;
