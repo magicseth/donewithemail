@@ -1,5 +1,7 @@
 import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
+import { useAuth } from "../../lib/authContext";
+import { SignInScreen } from "../../components/SignInScreen";
 
 // Simple icon components (replace with proper icons later)
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
@@ -20,6 +22,13 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
 }
 
 export default function TabsLayout() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  // Show sign-in screen when not authenticated
+  if (!isLoading && !isAuthenticated) {
+    return <SignInScreen />;
+  }
+
   return (
     <Tabs
       screenOptions={{
