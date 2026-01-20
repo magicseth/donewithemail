@@ -1,7 +1,7 @@
 "use node";
 
 import { v } from "convex/values";
-import { action, ActionCtx } from "./_generated/server";
+import { action, internalAction, ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { emailQAAgent } from "./agents/emailQA";
 import { Doc } from "./_generated/dataModel";
@@ -89,16 +89,15 @@ export const continueChat = action({
   },
 });
 
-// Backfill embeddings for existing emails (admin/debug action)
-export const backfillEmbeddings = action({
+// Backfill embeddings for existing emails (internal action - run via CLI or dashboard)
+export const backfillEmbeddings = internalAction({
   args: {
+    userId: v.id("users"),
     batchSize: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{ processed: number }> => {
-    const user = await getAuthenticatedUser(ctx);
-
     const result: { processed: number } = await ctx.runAction(internal.emailEmbeddings.backfillEmbeddings, {
-      userId: user._id,
+      userId: args.userId,
       batchSize: args.batchSize,
     });
 

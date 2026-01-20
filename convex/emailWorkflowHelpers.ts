@@ -90,7 +90,7 @@ export const getMostUrgentEmailDetails = internalQuery({
   },
 });
 
-// Filter out subscription/newsletter emails from a list of external IDs
+// Filter out subscription/newsletter/marketing emails from a list of external IDs
 export const filterOutSubscriptions = internalQuery({
   args: { externalIds: v.array(v.string()) },
   handler: async (ctx, args): Promise<string[]> => {
@@ -102,10 +102,28 @@ export const filterOutSubscriptions = internalQuery({
           q.eq("externalId", externalId).eq("provider", "gmail")
         )
         .first();
-      // Keep email if it's not marked as a subscription
-      if (email && !email.isSubscription) {
-        nonSubscriptionIds.push(externalId);
+
+      if (!email) continue;
+
+      // Skip if marked as subscription (has List-Unsubscribe header)
+      if (email.isSubscription) {
+        console.log(`[Filter] Skipping subscription: ${email.subject}`);
+        continue;
       }
+
+      // Skip if AI determined it's FYI/none (newsletters, marketing, etc.)
+      if (email.actionRequired === "fyi" || email.actionRequired === "none") {
+        console.log(`[Filter] Skipping FYI/none email: ${email.subject}`);
+        continue;
+      }
+
+      // Skip if urgency score is very low (likely marketing that slipped through)
+      if (email.urgencyScore !== undefined && email.urgencyScore < 40) {
+        console.log(`[Filter] Skipping low urgency (${email.urgencyScore}): ${email.subject}`);
+        continue;
+      }
+
+      nonSubscriptionIds.push(externalId);
     }
     return nonSubscriptionIds;
   },

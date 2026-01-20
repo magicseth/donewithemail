@@ -1,6 +1,14 @@
 import { v } from "convex/values";
-import { mutation, internalQuery } from "./_generated/server";
+import { mutation, internalQuery, query } from "./_generated/server";
 import { authedQuery, authedMutation } from "./functions";
+
+// Debug: list all users (for CLI/dashboard use)
+export const listAll = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("users").collect();
+  },
+});
 
 // =============================================================================
 // Auth Flow Functions (used by WorkOS callback)
