@@ -62,6 +62,7 @@ export interface BatchTriageResult {
   markCategoryDone: (category: BatchCategory) => Promise<{ triaged: number; errors: string[] }>;
   acceptCalendar: (emailId: string) => Promise<void>;
   unsubscribe: (emailId: string) => Promise<void>;
+  untriage: (emailId: string) => Promise<void>;
 
   // Processing state
   processingCategory: BatchCategory | null;
@@ -80,6 +81,7 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
 
   // Mutations and actions
   const batchTriageMutation = useMutation(api.emails.batchTriageMyEmails);
+  const untriageMutation = useMutation(api.emails.untriagedMyEmail);
   const batchCalendarAction = useAction(api.calendar.batchAddToCalendar);
 
   // Local state
@@ -88,7 +90,20 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
   const [acceptingIds, setAcceptingIds] = useState<Set<string>>(new Set());
   const [unsubscribingIds, setUnsubscribingIds] = useState<Set<string>>(new Set());
 
-  // Categories data
+  // Sort emails by sender name within each category
+  const sortBySender = useCallback((emails: BatchEmailPreview[]) => {
+    return [...emails].sort((a, b) => {
+      const nameA = (a.fromName || a.fromContact?.name || a.fromContact?.email || "").toLowerCase();
+      const nameB = (b.fromName || b.fromContact?.name || b.fromContact?.email || "").toLowerCase();
+      // Primary sort by sender name
+      const nameCompare = nameA.localeCompare(nameB);
+      if (nameCompare !== 0) return nameCompare;
+      // Secondary sort by receivedAt (newer first) for same sender
+      return b.receivedAt - a.receivedAt;
+    });
+  }, []);
+
+  // Categories data sorted by sender
   const categoriesData = useMemo(() => {
     if (!batchPreview) {
       return {
@@ -100,8 +115,15 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
         pending: [],
       };
     }
-    return batchPreview;
-  }, [batchPreview]);
+    return {
+      done: sortBySender(batchPreview.done),
+      humanWaiting: sortBySender(batchPreview.humanWaiting),
+      actionNeeded: sortBySender(batchPreview.actionNeeded),
+      calendar: sortBySender(batchPreview.calendar),
+      lowConfidence: sortBySender(batchPreview.lowConfidence),
+      pending: batchPreview.pending, // Don't sort pending - keep processing order
+    };
+  }, [batchPreview, sortBySender]);
 
   // Toggle punt state for an email
   const togglePuntEmail = useCallback((emailId: string) => {
@@ -264,6 +286,11 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
     }
   }, [batchTriageMutation]);
 
+  // Untriage an email (undo triage action)
+  const untriage = useCallback(async (emailId: string) => {
+    await untriageMutation({ emailId: emailId as Id<"emails"> });
+  }, [untriageMutation]);
+
   return {
     categories: categoriesData,
     total: batchPreview?.total ?? 0,
@@ -273,6 +300,7 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
     markCategoryDone,
     acceptCalendar,
     unsubscribe,
+    untriage,
     processingCategory,
     acceptingIds,
     unsubscribingIds,

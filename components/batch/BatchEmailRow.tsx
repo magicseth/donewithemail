@@ -96,6 +96,8 @@ interface BatchEmailRowProps {
   expandReplyByDefault?: boolean;
   /** If true, this email is currently being recorded for */
   isRecording?: boolean;
+  /** Whether deepgram is connected and streaming */
+  isRecordingConnected?: boolean;
   /** Live transcript while recording */
   transcript?: string;
   onPunt: () => void;
@@ -108,8 +110,12 @@ interface BatchEmailRowProps {
   /** Called when send button is tapped after recording */
   onSendTranscript?: () => void;
   onUnsubscribe?: () => void;
+  /** Called when "Needs Reply" button is tapped - toggles TODO state */
+  onNeedsReplyPress?: () => void;
   isAccepting?: boolean;
   isUnsubscribing?: boolean;
+  /** If true, hide the TODO button (for FYI, Needs Review, Action Needed categories) */
+  hideTodoButton?: boolean;
 }
 
 export const BatchEmailRow = memo(function BatchEmailRow({
@@ -118,6 +124,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   isSubscription,
   expandReplyByDefault = false,
   isRecording = false,
+  isRecordingConnected = false,
   transcript,
   onPunt,
   onAccept,
@@ -126,8 +133,10 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   onMicPressOut,
   onSendTranscript,
   onUnsubscribe,
+  onNeedsReplyPress,
   isAccepting,
   isUnsubscribing,
+  hideTodoButton = false,
 }: BatchEmailRowProps) {
   const [showReplyOptions, setShowReplyOptions] = useState(expandReplyByDefault);
   const [showPreview, setShowPreview] = useState(false);
@@ -178,22 +187,6 @@ export const BatchEmailRow = memo(function BatchEmailRow({
     >
       {/* Top row: avatar, sender/subject, action buttons */}
       <View style={styles.topRow}>
-        {/* Unsubscribe button (for subscriptions only) */}
-        {isSubscription && onUnsubscribe && (
-          <TouchableOpacity
-            style={[styles.unsubButton, isUnsubscribing && styles.buttonDisabled]}
-            onPress={(e) => { e.stopPropagation(); onUnsubscribe(); }}
-            disabled={isUnsubscribing}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            {isUnsubscribing ? (
-              <ActivityIndicator size="small" color="#EF4444" />
-            ) : (
-              <Text style={styles.unsubButtonText}>Unsub</Text>
-            )}
-          </TouchableOpacity>
-        )}
-
         {/* Avatar */}
         <View style={styles.avatarContainer}>
           {email.fromContact?.avatarUrl ? (
@@ -226,8 +219,21 @@ export const BatchEmailRow = memo(function BatchEmailRow({
 
         {/* Action buttons */}
         <View style={styles.actionButtons}>
-          {/* Reply button - only if quick replies or mic available AND not expanded by default */}
-          {(hasQuickReplies || onMicPressIn) && !expandReplyByDefault && (
+          {/* Needs Reply button - toggles TODO state via onNeedsReplyPress */}
+          {onNeedsReplyPress && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.replyButton, isPunted && styles.replyButtonActive]}
+              onPress={onNeedsReplyPress}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            >
+              <Text style={[styles.actionButtonText, styles.replyButtonText, isPunted && styles.replyButtonTextActive]}>
+                Needs Reply
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Reply expansion toggle - only if quick replies or mic available AND not expanded by default */}
+          {(hasQuickReplies || onMicPressIn) && !expandReplyByDefault && !onNeedsReplyPress && (
             <TouchableOpacity
               style={[styles.actionButton, styles.replyButton, showReplyOptions && styles.replyButtonActive]}
               onPress={handleReplyToggle}
@@ -255,24 +261,41 @@ export const BatchEmailRow = memo(function BatchEmailRow({
             </TouchableOpacity>
           )}
 
-          {/* Save button - always visible, far right */}
-          <TouchableOpacity
-            style={[styles.actionButton, styles.saveButton, isPunted && styles.saveButtonActive]}
-            onPress={onPunt}
-            hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-          >
-            <Text style={[styles.actionButtonText, styles.saveButtonText, isPunted && styles.saveButtonTextActive]}>
-              {isPunted ? "Saved" : "Save"}
-            </Text>
-          </TouchableOpacity>
+          {/* TODO button - toggles punted state, hidden in some categories */}
+          {!hideTodoButton && (
+            <TouchableOpacity
+              style={[styles.actionButton, styles.saveButton, isPunted && styles.saveButtonActive]}
+              onPress={onPunt}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            >
+              <Text style={[styles.actionButtonText, styles.saveButtonText, isPunted && styles.saveButtonTextActive]}>
+                {isPunted ? "In TODO" : "TODO"}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
-      {/* Summary row - spans full width below avatar */}
+      {/* Summary row with optional unsubscribe button */}
       <View style={styles.summaryRow}>
-        <Text style={styles.summary} numberOfLines={2}>
+        <Text style={[styles.summary, isSubscription && onUnsubscribe && styles.summaryWithUnsub]} numberOfLines={2}>
           {email.summary || decodeHtmlEntities(email.bodyPreview)}
         </Text>
+        {/* Unsubscribe button (for subscriptions only) - positioned right of summary */}
+        {isSubscription && onUnsubscribe && (
+          <TouchableOpacity
+            style={[styles.unsubButton, isUnsubscribing && styles.buttonDisabled]}
+            onPress={(e) => { e.stopPropagation(); onUnsubscribe(); }}
+            disabled={isUnsubscribing}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            {isUnsubscribing ? (
+              <ActivityIndicator size="small" color="#EF4444" />
+            ) : (
+              <Text style={styles.unsubButtonText}>Unsub</Text>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Expanded reply options */}
@@ -401,20 +424,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 12,
   },
-  unsubButton: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: "#FEE2E2",
-    borderRadius: 4,
-    marginRight: 8,
-  },
   buttonDisabled: {
     opacity: 0.6,
-  },
-  unsubButtonText: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#EF4444",
   },
   avatarContainer: {
     marginRight: 10,
@@ -459,13 +470,31 @@ const styles = StyleSheet.create({
     color: "#1a1a1a",
   },
   summaryRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
     paddingHorizontal: 12,
     paddingTop: 6,
   },
   summary: {
+    flex: 1,
     fontSize: 13,
     color: "#666",
     lineHeight: 18,
+  },
+  summaryWithUnsub: {
+    marginRight: 8,
+  },
+  unsubButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: "#FEE2E2",
+    borderRadius: 4,
+    alignSelf: "flex-start",
+  },
+  unsubButtonText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#EF4444",
   },
   actionButtons: {
     flexDirection: "row",

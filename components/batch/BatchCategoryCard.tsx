@@ -20,8 +20,8 @@ interface CategoryConfig {
 
 const CATEGORY_CONFIG: Record<BatchCategory, CategoryConfig> = {
   done: {
-    icon: "✓",
-    title: "DONE",
+    icon: "📬",
+    title: "FYI",
     subtitle: "Newsletters, FYIs, receipts",
     color: "#10B981",
     backgroundColor: "#ECFDF5",
@@ -75,11 +75,14 @@ interface BatchCategoryCardProps {
   onMicPressOut?: (emailId: string) => void;
   onSendTranscript?: (emailId: string) => void;
   onUnsubscribe?: (emailId: string) => void;
+  onNeedsReplyPress?: () => void;
   acceptingIds?: Set<string>;
   unsubscribingIds?: Set<string>;
   isProcessing?: boolean;
   /** ID of email currently being recorded for */
   recordingForId?: string | null;
+  /** Whether deepgram is connected and streaming */
+  isRecordingConnected?: boolean;
   /** ID of email that has a pending transcript to send */
   pendingTranscriptForId?: string | null;
   /** Live transcript while recording or pending */
@@ -98,10 +101,12 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
   onMicPressOut,
   onSendTranscript,
   onUnsubscribe,
+  onNeedsReplyPress,
   acceptingIds,
   unsubscribingIds,
   isProcessing,
   recordingForId,
+  isRecordingConnected,
   pendingTranscriptForId,
   transcript,
 }: BatchCategoryCardProps) {
@@ -159,6 +164,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
               isSubscription={email.isSubscription}
               expandReplyByDefault={category === "humanWaiting"}
               isRecording={recordingForId === email._id}
+              isRecordingConnected={isRecordingConnected}
               transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
               onPunt={() => onPuntEmail(email._id)}
               onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
@@ -167,8 +173,10 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
               onMicPressOut={onMicPressOut ? () => onMicPressOut(email._id) : undefined}
               onSendTranscript={onSendTranscript ? () => onSendTranscript(email._id) : undefined}
               onUnsubscribe={onUnsubscribe ? () => onUnsubscribe(email._id) : undefined}
+              onNeedsReplyPress={onNeedsReplyPress}
               isAccepting={acceptingIds?.has(email._id)}
               isUnsubscribing={unsubscribingIds?.has(email._id)}
+              hideTodoButton={category === "done" || category === "lowConfidence" || category === "actionNeeded"}
             />
           ))}
 

@@ -532,38 +532,51 @@ export const getMyBatchTriagePreview = authedQuery({
       (e) => e.direction !== "outgoing"
     );
 
-    // Fetch contact and summary data for all emails
-    const emailsWithData = await Promise.all(
-      untriagedEmails.map(async (email) => {
-        const fromContact = await ctx.db.get(email.from);
-        const summaryData = await getSummaryForEmail(ctx.db, email._id);
-        return {
-          _id: email._id,
-          subject: email.subject,
-          bodyPreview: email.bodyPreview,
-          receivedAt: email.receivedAt,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          actionRequired: summaryData?.actionRequired,
-          quickReplies: summaryData?.quickReplies,
-          calendarEvent: summaryData?.calendarEvent,
-          shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
-          isSubscription: email.isSubscription,
-          fromName: email.fromName,
-          fromContact: fromContact ? {
-            _id: fromContact._id,
-            email: fromContact.email,
-            name: fromContact.name,
-            avatarUrl: fromContact.avatarUrl,
-          } : null,
-          aiProcessedAt: summaryData?.createdAt,
-        } as BatchEmailPreview;
-      })
-    );
+    // Also get triaged emails marked as reply_needed (TODO) for Human Waiting section
+    const todoEmails = await ctx.db
+      .query("emails")
+      .withIndex("by_user_reply_needed", (q) =>
+        q.eq("userId", ctx.userId).eq("triageAction", "reply_needed")
+      )
+      .order("desc")
+      .take(limit);
+
+    // Helper to convert email to BatchEmailPreview
+    const emailToPreview = async (email: typeof untriagedEmails[0]): Promise<BatchEmailPreview> => {
+      const fromContact = await ctx.db.get(email.from);
+      const summaryData = await getSummaryForEmail(ctx.db, email._id);
+      return {
+        _id: email._id,
+        subject: email.subject,
+        bodyPreview: email.bodyPreview,
+        receivedAt: email.receivedAt,
+        summary: summaryData?.summary,
+        urgencyScore: summaryData?.urgencyScore,
+        actionRequired: summaryData?.actionRequired,
+        quickReplies: summaryData?.quickReplies,
+        calendarEvent: summaryData?.calendarEvent,
+        shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
+        isSubscription: email.isSubscription,
+        fromName: email.fromName,
+        fromContact: fromContact ? {
+          _id: fromContact._id,
+          email: fromContact.email,
+          name: fromContact.name,
+          avatarUrl: fromContact.avatarUrl,
+        } : null,
+        aiProcessedAt: summaryData?.createdAt,
+      } as BatchEmailPreview;
+    };
+
+    // Fetch contact and summary data for untriaged emails
+    const emailsWithData = await Promise.all(untriagedEmails.map(emailToPreview));
+
+    // Fetch contact and summary data for TODO emails (already triaged as reply_needed)
+    const todoEmailsWithData = await Promise.all(todoEmails.map(emailToPreview));
 
     // Group emails by AI recommendation
     const done: BatchEmailPreview[] = [];
-    const humanWaiting: BatchEmailPreview[] = [];
+    const humanWaiting: BatchEmailPreview[] = [...todoEmailsWithData]; // Start with already-triaged TODO emails
     const actionNeeded: BatchEmailPreview[] = [];
     const calendar: BatchEmailPreview[] = [];
     const lowConfidence: BatchEmailPreview[] = [];
@@ -613,7 +626,7 @@ export const getMyBatchTriagePreview = authedQuery({
       calendar,
       lowConfidence,
       pending,
-      total: emailsWithData.length,
+      total: emailsWithData.length + todoEmailsWithData.length,
     };
   },
 });
@@ -708,5 +721,31 @@ export const resetMyTriagedEmails = authedMutation({
 
     console.log(`[Untriage] Reset ${triagedEmails.length} emails for user ${ctx.userId}, hasMore: ${hasMore}`);
     return { success: true, count: triagedEmails.length, hasMore };
+  },
+});
+
+/**
+ * Untriage a single email (undo triage action)
+ */
+export const untriagedMyEmail = authedMutation({
+  args: {
+    emailId: v.id("emails"),
+  },
+  handler: async (ctx, args) => {
+    const email = await ctx.db.get(args.emailId);
+    if (!email) {
+      throw new Error("Email not found");
+    }
+    if (email.userId !== ctx.userId) {
+      throw new Error("Email does not belong to you");
+    }
+
+    await ctx.db.patch(args.emailId, {
+      isTriaged: false,
+      triageAction: undefined,
+      triagedAt: undefined,
+    });
+
+    return { success: true };
   },
 });

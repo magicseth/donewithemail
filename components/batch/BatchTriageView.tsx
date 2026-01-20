@@ -6,6 +6,7 @@ import {
   ScrollView,
   RefreshControl,
   ActivityIndicator,
+  TouchableOpacity,
 } from "react-native";
 import { BatchCategoryCard } from "./BatchCategoryCard";
 import { QuickReplyOption } from "./BatchEmailRow";
@@ -21,6 +22,8 @@ interface BatchTriageViewProps {
   onSendTranscript?: (emailId: string) => void;
   /** ID of email currently being recorded for */
   recordingForId?: string | null;
+  /** Whether deepgram is connected and streaming */
+  isRecordingConnected?: boolean;
   /** ID of email that has a pending transcript to send */
   pendingTranscriptForId?: string | null;
   /** Live transcript while recording or pending */
@@ -36,6 +39,7 @@ export function BatchTriageView({
   onMicPressOut,
   onSendTranscript,
   recordingForId,
+  isRecordingConnected = false,
   pendingTranscriptForId,
   transcript,
 }: BatchTriageViewProps) {
@@ -50,17 +54,43 @@ export function BatchTriageView({
     markCategoryDone,
     acceptCalendar,
     unsubscribe,
+    untriage,
     processingCategory,
     acceptingIds,
     unsubscribingIds,
   } = useBatchTriage(userEmail);
 
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+  // Toast state with optional undo action
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error" | "info";
+    undoEmailId?: string;
+  } | null>(null);
+  const toastTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+  const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info", undoEmailId?: string) => {
+    // Clear existing timeout
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setToast({ message, type, undoEmailId });
+    toastTimeoutRef.current = setTimeout(() => setToast(null), 4000);
   }, []);
+
+  const handleUndo = useCallback(async () => {
+    if (toast?.undoEmailId) {
+      // Clear timeout and toast immediately
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+      setToast(null);
+      try {
+        await untriage(toast.undoEmailId);
+      } catch (err) {
+        showToast("Failed to undo", "error");
+      }
+    }
+  }, [toast?.undoEmailId, untriage, showToast]);
 
   // Handle mark category done
   const handleMarkCategoryDone = useCallback(async (category: BatchCategory) => {
@@ -84,10 +114,10 @@ export function BatchTriageView({
     }
   }, [acceptCalendar, showToast]);
 
-  // Handle unsubscribe
+  // Handle unsubscribe - shows toast with undo option
   const handleUnsubscribe = useCallback(async (emailId: string) => {
     await unsubscribe(emailId);
-    showToast("Unsubscribed", "success");
+    showToast("Unsubscribed", "success", emailId);
   }, [unsubscribe, showToast]);
 
   // Loading state
@@ -139,7 +169,109 @@ export function BatchTriageView({
           </Text>
         </View>
 
-        {/* Pending/analyzing emails (if any) */}
+        {/* FYI category (was "Done") - newsletters, receipts, etc. */}
+        <BatchCategoryCard
+          category="done"
+          emails={categories.done}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
+          onMarkAllDone={() => handleMarkCategoryDone("done")}
+          onQuickReply={onQuickReply}
+          onMicPressIn={onMicPressIn}
+          onMicPressOut={onMicPressOut}
+          onSendTranscript={onSendTranscript}
+          onUnsubscribe={handleUnsubscribe}
+          unsubscribingIds={unsubscribingIds}
+          isProcessing={processingCategory === "done"}
+          recordingForId={recordingForId}
+          isRecordingConnected={isRecordingConnected}
+          pendingTranscriptForId={pendingTranscriptForId}
+          transcript={transcript}
+        />
+
+        {/* Needs Review category (low confidence) */}
+        <BatchCategoryCard
+          category="lowConfidence"
+          emails={categories.lowConfidence}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
+          onMarkAllDone={() => handleMarkCategoryDone("lowConfidence")}
+          onQuickReply={onQuickReply}
+          onMicPressIn={onMicPressIn}
+          onMicPressOut={onMicPressOut}
+          onSendTranscript={onSendTranscript}
+          onUnsubscribe={handleUnsubscribe}
+          unsubscribingIds={unsubscribingIds}
+          isProcessing={processingCategory === "lowConfidence"}
+          recordingForId={recordingForId}
+          isRecordingConnected={isRecordingConnected}
+          pendingTranscriptForId={pendingTranscriptForId}
+          transcript={transcript}
+        />
+
+        {/* Action needed category */}
+        <BatchCategoryCard
+          category="actionNeeded"
+          emails={categories.actionNeeded}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
+          onMarkAllDone={() => handleMarkCategoryDone("actionNeeded")}
+          onQuickReply={onQuickReply}
+          onMicPressIn={onMicPressIn}
+          onMicPressOut={onMicPressOut}
+          onSendTranscript={onSendTranscript}
+          onUnsubscribe={handleUnsubscribe}
+          unsubscribingIds={unsubscribingIds}
+          isProcessing={processingCategory === "actionNeeded"}
+          recordingForId={recordingForId}
+          isRecordingConnected={isRecordingConnected}
+          pendingTranscriptForId={pendingTranscriptForId}
+          transcript={transcript}
+        />
+
+        {/* Human waiting category - emails requiring reply */}
+        <BatchCategoryCard
+          category="humanWaiting"
+          emails={categories.humanWaiting}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
+          onMarkAllDone={() => handleMarkCategoryDone("humanWaiting")}
+          onQuickReply={onQuickReply}
+          onMicPressIn={onMicPressIn}
+          onMicPressOut={onMicPressOut}
+          onSendTranscript={onSendTranscript}
+          onUnsubscribe={handleUnsubscribe}
+          unsubscribingIds={unsubscribingIds}
+          isProcessing={processingCategory === "humanWaiting"}
+          recordingForId={recordingForId}
+          isRecordingConnected={isRecordingConnected}
+          pendingTranscriptForId={pendingTranscriptForId}
+          transcript={transcript}
+        />
+
+        {/* Calendar category */}
+        <BatchCategoryCard
+          category="calendar"
+          emails={categories.calendar}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
+          onMarkAllDone={() => handleMarkCategoryDone("calendar")}
+          onAcceptCalendar={handleAcceptCalendar}
+          onQuickReply={onQuickReply}
+          onMicPressIn={onMicPressIn}
+          onMicPressOut={onMicPressOut}
+          onSendTranscript={onSendTranscript}
+          onUnsubscribe={handleUnsubscribe}
+          acceptingIds={acceptingIds}
+          unsubscribingIds={unsubscribingIds}
+          isProcessing={processingCategory === "calendar"}
+          recordingForId={recordingForId}
+          isRecordingConnected={isRecordingConnected}
+          pendingTranscriptForId={pendingTranscriptForId}
+          transcript={transcript}
+        />
+
+        {/* Pending/analyzing emails (if any) - shown at bottom */}
         {categories.pending.length > 0 && (
           <BatchCategoryCard
             category="pending"
@@ -155,107 +287,11 @@ export function BatchTriageView({
             unsubscribingIds={unsubscribingIds}
             isProcessing={processingCategory === "pending"}
             recordingForId={recordingForId}
+            isRecordingConnected={isRecordingConnected}
             pendingTranscriptForId={pendingTranscriptForId}
             transcript={transcript}
           />
         )}
-
-        {/* Human waiting category - highest priority */}
-        <BatchCategoryCard
-          category="humanWaiting"
-          emails={categories.humanWaiting}
-          puntedEmails={puntedEmails}
-          onPuntEmail={togglePuntEmail}
-          onMarkAllDone={() => handleMarkCategoryDone("humanWaiting")}
-          onQuickReply={onQuickReply}
-          onMicPressIn={onMicPressIn}
-            onMicPressOut={onMicPressOut}
-            onSendTranscript={onSendTranscript}
-          onUnsubscribe={handleUnsubscribe}
-          unsubscribingIds={unsubscribingIds}
-          isProcessing={processingCategory === "humanWaiting"}
-          recordingForId={recordingForId}
-            pendingTranscriptForId={pendingTranscriptForId}
-            transcript={transcript}
-        />
-
-        {/* Action needed category */}
-        <BatchCategoryCard
-          category="actionNeeded"
-          emails={categories.actionNeeded}
-          puntedEmails={puntedEmails}
-          onPuntEmail={togglePuntEmail}
-          onMarkAllDone={() => handleMarkCategoryDone("actionNeeded")}
-          onQuickReply={onQuickReply}
-          onMicPressIn={onMicPressIn}
-            onMicPressOut={onMicPressOut}
-            onSendTranscript={onSendTranscript}
-          onUnsubscribe={handleUnsubscribe}
-          unsubscribingIds={unsubscribingIds}
-          isProcessing={processingCategory === "actionNeeded"}
-          recordingForId={recordingForId}
-            pendingTranscriptForId={pendingTranscriptForId}
-            transcript={transcript}
-        />
-
-        {/* Calendar category */}
-        <BatchCategoryCard
-          category="calendar"
-          emails={categories.calendar}
-          puntedEmails={puntedEmails}
-          onPuntEmail={togglePuntEmail}
-          onMarkAllDone={() => handleMarkCategoryDone("calendar")}
-          onAcceptCalendar={handleAcceptCalendar}
-          onQuickReply={onQuickReply}
-          onMicPressIn={onMicPressIn}
-            onMicPressOut={onMicPressOut}
-            onSendTranscript={onSendTranscript}
-          onUnsubscribe={handleUnsubscribe}
-          acceptingIds={acceptingIds}
-          unsubscribingIds={unsubscribingIds}
-          isProcessing={processingCategory === "calendar"}
-          recordingForId={recordingForId}
-            pendingTranscriptForId={pendingTranscriptForId}
-            transcript={transcript}
-        />
-
-        {/* Done category */}
-        <BatchCategoryCard
-          category="done"
-          emails={categories.done}
-          puntedEmails={puntedEmails}
-          onPuntEmail={togglePuntEmail}
-          onMarkAllDone={() => handleMarkCategoryDone("done")}
-          onQuickReply={onQuickReply}
-          onMicPressIn={onMicPressIn}
-            onMicPressOut={onMicPressOut}
-            onSendTranscript={onSendTranscript}
-          onUnsubscribe={handleUnsubscribe}
-          unsubscribingIds={unsubscribingIds}
-          isProcessing={processingCategory === "done"}
-          recordingForId={recordingForId}
-            pendingTranscriptForId={pendingTranscriptForId}
-            transcript={transcript}
-        />
-
-        {/* Low confidence category */}
-        <BatchCategoryCard
-          category="lowConfidence"
-          emails={categories.lowConfidence}
-          puntedEmails={puntedEmails}
-          onPuntEmail={togglePuntEmail}
-          onMarkAllDone={() => handleMarkCategoryDone("lowConfidence")}
-          onQuickReply={onQuickReply}
-          onMicPressIn={onMicPressIn}
-            onMicPressOut={onMicPressOut}
-            onSendTranscript={onSendTranscript}
-          onUnsubscribe={handleUnsubscribe}
-          unsubscribingIds={unsubscribingIds}
-          isProcessing={processingCategory === "lowConfidence"}
-          recordingForId={recordingForId}
-            pendingTranscriptForId={pendingTranscriptForId}
-            transcript={transcript}
-        />
 
         {/* Bottom spacing */}
         <View style={styles.bottomSpacer} />
@@ -270,7 +306,7 @@ export function BatchTriageView({
         </View>
       )}
 
-      {/* Toast notification */}
+      {/* Toast notification at top with optional undo */}
       {toast && (
         <View style={[
           styles.toast,
@@ -278,6 +314,11 @@ export function BatchTriageView({
           toast.type === "error" && styles.toastError,
         ]}>
           <Text style={styles.toastText}>{toast.message}</Text>
+          {toast.undoEmailId && (
+            <TouchableOpacity style={styles.undoButton} onPress={handleUndo}>
+              <Text style={styles.undoButtonText}>Undo</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </View>
@@ -350,13 +391,16 @@ const styles = StyleSheet.create({
   },
   toast: {
     position: "absolute",
-    bottom: 40,
+    top: 60,
     left: 20,
     right: 20,
     backgroundColor: "#333",
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
@@ -373,6 +417,17 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "500",
-    textAlign: "center",
+  },
+  undoButton: {
+    marginLeft: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 4,
+  },
+  undoButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });
