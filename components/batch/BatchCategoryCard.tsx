@@ -30,6 +30,12 @@ interface SenderGroupHeaderProps {
   emailCount: number;
   /** Number of emails flagged for this sender */
   flaggedCount?: number;
+  /** Whether this sender's emails are subscriptions */
+  isSubscription?: boolean;
+  /** Unsubscribe from this sender */
+  onUnsubscribe?: () => void;
+  /** Whether unsubscribe is in progress */
+  isUnsubscribing?: boolean;
   /** Mark all emails from this sender as done */
   onMarkAllDone?: () => void;
   /** Toggle flag on all emails from this sender */
@@ -42,6 +48,9 @@ function SenderGroupHeader({
   avatarUrl,
   emailCount,
   flaggedCount = 0,
+  isSubscription,
+  onUnsubscribe,
+  isUnsubscribing,
   onMarkAllDone,
   onToggleFlagAll,
 }: SenderGroupHeaderProps) {
@@ -68,6 +77,20 @@ function SenderGroupHeader({
           <Text style={senderStyles.countBadge}>
             {emailCount}
           </Text>
+        )}
+        {isSubscription && onUnsubscribe && (
+          <TouchableOpacity
+            style={[senderStyles.unsubscribeButton, isUnsubscribing && senderStyles.unsubscribeButtonDisabled]}
+            onPress={onUnsubscribe}
+            disabled={isUnsubscribing}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            {isUnsubscribing ? (
+              <ActivityIndicator size="small" color="#DC2626" />
+            ) : (
+              <Text style={senderStyles.unsubscribeText}>Unsub</Text>
+            )}
+          </TouchableOpacity>
         )}
         {showBulkActions && onMarkAllDone && (
           <TouchableOpacity
@@ -170,6 +193,20 @@ const senderStyles = StyleSheet.create({
   flagIconActive: {
     color: "#F59E0B",
   },
+  unsubscribeButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: "#FEE2E2",
+  },
+  unsubscribeButtonDisabled: {
+    opacity: 0.6,
+  },
+  unsubscribeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#DC2626",
+  },
 });
 
 // Group emails by sender
@@ -179,6 +216,10 @@ interface SenderGroup {
   avatarUrl?: string;
   emails: BatchEmailPreview[];
   flaggedCount: number;
+  /** Whether any email from this sender is a subscription */
+  isSubscription: boolean;
+  /** The first subscription email ID (for unsubscribe action) */
+  subscriptionEmailId?: string;
 }
 
 // Category configuration
@@ -320,6 +361,11 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
       if (existing) {
         existing.emails.push(email);
         if (isFlagged) existing.flaggedCount++;
+        // Track first subscription email for unsubscribe
+        if (email.isSubscription && !existing.subscriptionEmailId) {
+          existing.isSubscription = true;
+          existing.subscriptionEmailId = email._id;
+        }
       } else {
         groups.set(senderEmail, {
           senderEmail,
@@ -327,6 +373,8 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
           avatarUrl: email.fromContact?.avatarUrl,
           emails: [email],
           flaggedCount: isFlagged ? 1 : 0,
+          isSubscription: !!email.isSubscription,
+          subscriptionEmailId: email.isSubscription ? email._id : undefined,
         });
       }
     }
@@ -439,6 +487,9 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                       avatarUrl={group.avatarUrl}
                       emailCount={group.emails.length}
                       flaggedCount={group.flaggedCount}
+                      isSubscription={group.isSubscription}
+                      onUnsubscribe={onUnsubscribe && group.subscriptionEmailId ? () => onUnsubscribe(group.subscriptionEmailId!) : undefined}
+                      isUnsubscribing={group.subscriptionEmailId ? unsubscribingIds?.has(group.subscriptionEmailId) : false}
                       onMarkAllDone={onMarkSenderDone ? () => onMarkSenderDone(group.senderEmail) : undefined}
                       onToggleFlagAll={onToggleSenderFlag ? () => onToggleSenderFlag(group.senderEmail) : undefined}
                     />
@@ -511,6 +562,9 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                   avatarUrl={section.avatarUrl}
                   emailCount={section.emails.length}
                   flaggedCount={section.flaggedCount}
+                  isSubscription={section.isSubscription}
+                  onUnsubscribe={onUnsubscribe && section.subscriptionEmailId ? () => onUnsubscribe(section.subscriptionEmailId!) : undefined}
+                  isUnsubscribing={section.subscriptionEmailId ? unsubscribingIds?.has(section.subscriptionEmailId) : false}
                   onMarkAllDone={onMarkSenderDone ? () => onMarkSenderDone(section.senderEmail) : undefined}
                   onToggleFlagAll={onToggleSenderFlag ? () => onToggleSenderFlag(section.senderEmail) : undefined}
                 />

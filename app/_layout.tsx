@@ -10,16 +10,10 @@ import * as Updates from "expo-updates";
 import { AuthProvider, useAuth } from "../lib/authContext";
 import { AuthErrorProvider } from "../lib/AuthErrorBoundary";
 import { usePushNotifications } from "../hooks/usePushNotifications";
+import { getLastAuthRefreshSignal } from "../lib/authSignal";
 import * as SecureStore from "expo-secure-store";
 
 const AUTH_STORAGE_KEY = "donewith_auth";
-
-// Signal for auth refresh - when set, the adapter will briefly clear token to force Convex re-auth
-let lastAuthRefreshSignal = 0;
-export function signalAuthRefresh() {
-  lastAuthRefreshSignal = Date.now();
-  console.log("[AuthAdapter] Auth refresh signaled at", lastAuthRefreshSignal);
-}
 
 // Decode JWT to check expiration (no logging - called frequently)
 function debugJwt(token: string): { valid: boolean; exp?: number; iss?: string; error?: string } {
@@ -88,9 +82,10 @@ function useAuthAdapter() {
       try {
         // Check if there's a new refresh signal - force Convex to re-authenticate
         // by briefly clearing the token, then setting the new one
-        if (lastAuthRefreshSignal > lastProcessedSignal.current) {
+        const currentSignal = getLastAuthRefreshSignal();
+        if (currentSignal > lastProcessedSignal.current) {
           console.log("[AuthAdapter] Detected refresh signal, forcing re-auth");
-          lastProcessedSignal.current = lastAuthRefreshSignal;
+          lastProcessedSignal.current = currentSignal;
 
           // Clear token first to force Convex to re-authenticate
           if (token !== null) {
