@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -55,10 +55,18 @@ export function BatchTriageView({
     acceptCalendar,
     unsubscribe,
     untriage,
+    clearSenderCache,
     processingCategory,
     acceptingIds,
     unsubscribingIds,
   } = useBatchTriage(userEmail);
+
+  // Clear sender cache when component unmounts (switching to swipe mode or leaving tab)
+  useEffect(() => {
+    return () => {
+      clearSenderCache();
+    };
+  }, [clearSenderCache]);
 
   // Toast state with optional undo action
   const [toast, setToast] = useState<{
@@ -121,13 +129,35 @@ export function BatchTriageView({
   }, [unsubscribe, showToast]);
 
   // Handle needs reply toggle - toggles TODO state and shows toast
-  const handleNeedsReplyPress = useCallback((emailId: string) => {
-    const wasPunted = puntedEmails.has(emailId);
-    togglePuntEmail(emailId);
-    if (!wasPunted) {
-      showToast("Added to the list!", "success");
+  const handleNeedsReplyPress = useCallback(async (emailId: string) => {
+    // Find the email to check if it's already in TODO
+    const allEmails = [
+      ...categories.done,
+      ...categories.humanWaiting,
+      ...categories.actionNeeded,
+      ...categories.calendar,
+      ...categories.lowConfidence,
+      ...categories.pending,
+    ];
+    const email = allEmails.find(e => e._id === emailId);
+
+    if (email?.isInTodo) {
+      // Email is already triaged as reply_needed - untriage it
+      try {
+        await untriage(emailId);
+        showToast("Removed from list", "success");
+      } catch (err) {
+        showToast("Failed to remove", "error");
+      }
+    } else {
+      // Email not yet triaged - toggle local punted state
+      const wasPunted = puntedEmails.has(emailId);
+      togglePuntEmail(emailId);
+      if (!wasPunted) {
+        showToast("Added to the list!", "success");
+      }
     }
-  }, [puntedEmails, togglePuntEmail, showToast]);
+  }, [categories, puntedEmails, togglePuntEmail, untriage, showToast]);
 
   // Loading state
   if (isLoading) {

@@ -306,7 +306,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
             {isRecording || transcript ? (
               <View style={styles.transcriptContainer}>
                 <Text style={styles.transcriptText} numberOfLines={2}>
-                  {isRecording ? (transcript || "Listening...") : transcript}
+                  {isRecording ? (transcript || (isRecordingConnected ? "Listening..." : "Connecting...")) : transcript}
                 </Text>
               </View>
             ) : (

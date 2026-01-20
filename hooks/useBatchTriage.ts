@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { useQuery, useMutation, useAction, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
@@ -39,6 +39,8 @@ export interface BatchEmailPreview {
     avatarUrl?: string;
   } | null;
   aiProcessedAt?: number;
+  /** True if this email is already triaged as reply_needed (in TODO list) */
+  isInTodo?: boolean;
 }
 
 export interface BatchTriageResult {
@@ -63,6 +65,8 @@ export interface BatchTriageResult {
   acceptCalendar: (emailId: string) => Promise<void>;
   unsubscribe: (emailId: string) => Promise<void>;
   untriage: (emailId: string) => Promise<void>;
+  /** Clear the sender timestamp cache - call when leaving the view */
+  clearSenderCache: () => void;
 
   // Processing state
   processingCategory: BatchCategory | null;
@@ -90,18 +94,54 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
   const [acceptingIds, setAcceptingIds] = useState<Set<string>>(new Set());
   const [unsubscribingIds, setUnsubscribingIds] = useState<Set<string>>(new Set());
 
-  // Sort emails by sender name within each category
+  // Cache for sender timestamps - prevents order from jumping during triage
+  // Key: sender identifier (name/email), Value: most recent timestamp from that sender
+  const senderTimestampCache = useRef<Map<string, number>>(new Map());
+
+  // Helper to get sender identifier
+  const getSenderKey = useCallback((email: BatchEmailPreview): string => {
+    return (email.fromName || email.fromContact?.name || email.fromContact?.email || "unknown").toLowerCase();
+  }, []);
+
+  // Build sender timestamp cache from all emails (only when cache is empty)
+  const buildSenderCache = useCallback((allEmails: BatchEmailPreview[]) => {
+    if (senderTimestampCache.current.size > 0) {
+      // Cache already built, don't rebuild to prevent order jumping
+      return;
+    }
+    for (const email of allEmails) {
+      const senderKey = getSenderKey(email);
+      const existingTimestamp = senderTimestampCache.current.get(senderKey);
+      if (!existingTimestamp || email.receivedAt > existingTimestamp) {
+        senderTimestampCache.current.set(senderKey, email.receivedAt);
+      }
+    }
+  }, [getSenderKey]);
+
+  // Clear sender cache - call when leaving the view or switching tabs
+  const clearSenderCache = useCallback(() => {
+    senderTimestampCache.current.clear();
+  }, []);
+
+  // Sort emails by sender's cached timestamp (most recent sender first), then group same sender together
   const sortBySender = useCallback((emails: BatchEmailPreview[]) => {
     return [...emails].sort((a, b) => {
-      const nameA = (a.fromName || a.fromContact?.name || a.fromContact?.email || "").toLowerCase();
-      const nameB = (b.fromName || b.fromContact?.name || b.fromContact?.email || "").toLowerCase();
-      // Primary sort by sender name
-      const nameCompare = nameA.localeCompare(nameB);
-      if (nameCompare !== 0) return nameCompare;
-      // Secondary sort by receivedAt (newer first) for same sender
+      const keyA = getSenderKey(a);
+      const keyB = getSenderKey(b);
+
+      // Get cached timestamps (fall back to email timestamp if not in cache)
+      const timestampA = senderTimestampCache.current.get(keyA) ?? a.receivedAt;
+      const timestampB = senderTimestampCache.current.get(keyB) ?? b.receivedAt;
+
+      // Primary sort: by sender's most recent email timestamp (descending - most recent first)
+      if (keyA !== keyB) {
+        return timestampB - timestampA;
+      }
+
+      // Secondary sort: for same sender, by individual email receivedAt (newer first)
       return b.receivedAt - a.receivedAt;
     });
-  }, []);
+  }, [getSenderKey]);
 
   // Categories data sorted by sender
   const categoriesData = useMemo(() => {
@@ -115,6 +155,18 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
         pending: [],
       };
     }
+
+    // Build sender cache from all emails (only if cache is empty)
+    const allEmails = [
+      ...batchPreview.done,
+      ...batchPreview.humanWaiting,
+      ...batchPreview.actionNeeded,
+      ...batchPreview.calendar,
+      ...batchPreview.lowConfidence,
+      ...batchPreview.pending,
+    ];
+    buildSenderCache(allEmails);
+
     return {
       done: sortBySender(batchPreview.done),
       humanWaiting: sortBySender(batchPreview.humanWaiting),
@@ -123,7 +175,7 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
       lowConfidence: sortBySender(batchPreview.lowConfidence),
       pending: batchPreview.pending, // Don't sort pending - keep processing order
     };
-  }, [batchPreview, sortBySender]);
+  }, [batchPreview, sortBySender, buildSenderCache]);
 
   // Toggle punt state for an email
   const togglePuntEmail = useCallback((emailId: string) => {
@@ -301,6 +353,7 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
     acceptCalendar,
     unsubscribe,
     untriage,
+    clearSenderCache,
     processingCategory,
     acceptingIds,
     unsubscribingIds,

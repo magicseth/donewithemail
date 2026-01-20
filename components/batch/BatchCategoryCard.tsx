@@ -118,7 +118,8 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
   }, []);
 
   // Count how many are NOT punted (will be marked done)
-  const unpuntedCount = emails.filter(e => !puntedEmails.has(e._id)).length;
+  // Include isInTodo emails as "punted" since they're already in TODO
+  const unpuntedCount = emails.filter(e => !puntedEmails.has(e._id) && !e.isInTodo).length;
   const puntedCount = emails.length - unpuntedCount;
 
   // Don't render if category is empty
@@ -160,7 +161,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
             <BatchEmailRow
               key={email._id}
               email={email}
-              isPunted={puntedEmails.has(email._id)}
+              isPunted={puntedEmails.has(email._id) || !!email.isInTodo}
               isSubscription={email.isSubscription}
               expandReplyByDefault={category === "humanWaiting"}
               isRecording={recordingForId === email._id}
@@ -191,7 +192,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
                 <Text style={styles.markDoneButtonText}>
-                  Mark {unpuntedCount} as Done
+                  Done with {unpuntedCount} emails
                 </Text>
               )}
             </TouchableOpacity>

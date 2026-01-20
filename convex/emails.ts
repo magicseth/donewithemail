@@ -498,6 +498,8 @@ interface BatchEmailPreview {
     avatarUrl?: string;
   } | null;
   aiProcessedAt?: number;
+  /** True if this email is already triaged as reply_needed (in TODO list) */
+  isInTodo?: boolean;
 }
 
 /**
@@ -576,7 +578,8 @@ export const getMyBatchTriagePreview = authedQuery({
 
     // Group emails by AI recommendation
     const done: BatchEmailPreview[] = [];
-    const humanWaiting: BatchEmailPreview[] = [...todoEmailsWithData]; // Start with already-triaged TODO emails
+    // Start with already-triaged TODO emails, mark them with isInTodo flag
+    const humanWaiting: BatchEmailPreview[] = todoEmailsWithData.map(e => ({ ...e, isInTodo: true }));
     const actionNeeded: BatchEmailPreview[] = [];
     const calendar: BatchEmailPreview[] = [];
     const lowConfidence: BatchEmailPreview[] = [];
