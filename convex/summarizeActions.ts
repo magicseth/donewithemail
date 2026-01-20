@@ -275,6 +275,11 @@ Respond with only valid JSON, no markdown or explanation.`,
       deadlineDescription: sanitizedDeadlineDescription,
     });
 
+    // Generate embedding for semantic search (async, don't block)
+    ctx.scheduler.runAfter(0, internal.emailEmbeddings.generateEmbedding, {
+      emailId: args.emailId,
+    });
+
     return result;
   },
 });
@@ -528,6 +533,11 @@ Respond with only valid JSON, no markdown or explanation.`,
               facts: result.suggestedFacts,
             });
           }
+
+          // Generate embedding for semantic search (async, don't block)
+          ctx.scheduler.runAfter(0, internal.emailEmbeddings.generateEmbedding, {
+            emailId: email._id,
+          });
 
           return { externalId, success: true, result };
         } catch (error) {
