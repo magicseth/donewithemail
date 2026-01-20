@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
 } from "react-native";
+import { replaceDatePlaceholders } from "../lib/datePlaceholders";
 
 interface AISummaryProps {
   summary: string;
@@ -25,6 +26,9 @@ export function AISummary({
 }: AISummaryProps) {
   const [expanded, setExpanded] = useState(!compact);
 
+  // Replace date placeholders with relative dates
+  const displaySummary = useMemo(() => replaceDatePlaceholders(summary), [summary]);
+
   const urgencyLabel = getUrgencyLabel(urgencyScore);
   const urgencyColor = getUrgencyColor(urgencyScore);
 
@@ -38,7 +42,7 @@ export function AISummary({
           <Text style={styles.aiIconText}>AI</Text>
         </View>
         <Text style={styles.compactSummary} numberOfLines={2}>
-          {summary}
+          {displaySummary}
         </Text>
         {urgencyScore !== undefined && (
           <View style={[styles.urgencyBadge, { backgroundColor: urgencyColor }]}>
@@ -63,7 +67,7 @@ export function AISummary({
         )}
       </View>
 
-      <Text style={styles.summaryText}>{summary}</Text>
+      <Text style={styles.summaryText}>{displaySummary}</Text>
 
       {urgencyScore !== undefined && (
         <View style={styles.urgencyContainer}>

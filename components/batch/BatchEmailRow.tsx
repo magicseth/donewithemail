@@ -1,4 +1,4 @@
-import React, { useCallback, memo, useState, useRef, useEffect } from "react";
+import React, { useCallback, memo, useState, useRef, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import type { BatchEmailPreview } from "../../hooks/useBatchTriage";
+import { replaceDatePlaceholders } from "../../lib/datePlaceholders";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -197,6 +198,12 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   const initials = getInitials(fromName);
   const timeAgo = formatTimeAgo(email.receivedAt);
 
+  // Replace date placeholders with relative dates
+  const displaySummary = useMemo(() => {
+    const text = email.summary || decodeHtmlEntities(email.bodyPreview);
+    return replaceDatePlaceholders(text);
+  }, [email.summary, email.bodyPreview]);
+
   const hasCalendar = !!email.calendarEvent;
 
   const handlePress = useCallback(() => {
@@ -277,20 +284,6 @@ export const BatchEmailRow = memo(function BatchEmailRow({
 
         {/* Action buttons - stop (unsubscribe), checkmark (done), flag (keep/needs review) */}
         <View style={styles.actionButtons}>
-          {/* Stop sign - unsubscribe (for subscriptions only) */}
-          {isSubscription && onUnsubscribe && (
-            <TouchableOpacity
-              style={[styles.iconButton, isUnsubscribing && styles.iconButtonDisabled]}
-              onPress={onUnsubscribe}
-              disabled={isUnsubscribing}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={[styles.stopIcon, !isUnsubscribing && styles.stopIconGray]}>
-                {isUnsubscribing ? "🛑" : "⊘"}
-              </Text>
-            </TouchableOpacity>
-          )}
-
           {/* Checkmark - mark as done (gray until clicked) */}
           {onMarkDone && hasAnimated && (
             <TouchableOpacity
@@ -318,7 +311,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
       {/* Summary row */}
       <View style={styles.summaryRow}>
         <Text style={styles.summary} numberOfLines={2}>
-          {email.summary || decodeHtmlEntities(email.bodyPreview)}
+          {displaySummary}
         </Text>
       </View>
 

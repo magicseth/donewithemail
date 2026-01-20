@@ -1,7 +1,7 @@
 /**
  * EmailRow component - memoized email row for FlatList performance.
  */
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import {
   formatTimeAgo,
   formatEventTime,
 } from "./utils";
+import { replaceDatePlaceholders } from "../../lib/datePlaceholders";
 
 // Transcript preview component
 const TranscriptPreview = React.memo(function TranscriptPreview({ transcript }: { transcript: string }) {
@@ -67,6 +68,12 @@ export const EmailRow = React.memo(function EmailRow({
   const timeAgo = formatTimeAgo(item.receivedAt);
   const isSending = sendingReplyFor === item._id;
   const isRecordingThis = recordingFor === item._id;
+
+  // Replace date placeholders with relative dates
+  const displaySummary = useMemo(() => {
+    const text = item.summary || decodeHtmlEntities(item.bodyPreview);
+    return replaceDatePlaceholders(text);
+  }, [item.summary, item.bodyPreview]);
 
   // Debug logging for recording state
   if (isRecordingThis) {
@@ -150,7 +157,7 @@ export const EmailRow = React.memo(function EmailRow({
 
         {/* Full-width summary */}
         <Text style={[styles.preview, styles.previewFullWidth, isTriaged && styles.triagedContent]} numberOfLines={2}>
-          {item.summary || decodeHtmlEntities(item.bodyPreview)}
+          {displaySummary}
         </Text>
 
         {/* Calendar event - full width, two rows */}

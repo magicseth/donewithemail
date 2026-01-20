@@ -204,19 +204,26 @@ SUMMARY GUIDELINES:
 - Use "you" to address the user directly
 - Can use emojis sparingly
 
+DATE REFERENCES:
+- NEVER use relative date words like "today", "yesterday", "tomorrow", "this week" directly
+- Instead, use date placeholders in the format {{DATE:YYYY-MM-DD}}
+- Examples: "Meeting {{DATE:2025-01-20}}" instead of "Meeting today"
+- Examples: "Deadline {{DATE:2025-01-22}}" instead of "Deadline on Wednesday"
+- The placeholders will be converted to relative dates at display time
+
 FIELDS:
-1. summary: Super short (<240 chars) decision-ready synopsis. DO NOT repeat sender, subject, or calendar details.
+1. summary: Super short (<240 chars) decision-ready synopsis. DO NOT repeat sender, subject, or calendar details. Use {{DATE:YYYY-MM-DD}} for any date references.
    BAD: "Meeting invite for Thursday 2pm at Conference Room A"
    GOOD: "Quarterly planning session - need to discuss Q2 budget priorities"
    BAD: "John from Acme wants to meet with you"
    GOOD: "Wants to sync on partnership proposal before board meeting"
    BAD: "A newsletter about sales"
-   GOOD: "🛒 20% off camping gear + free shipping >$50, ends Sunday"
+   GOOD: "🛒 20% off camping gear + free shipping >$50, ends {{DATE:2025-01-26}}"
 2. urgencyScore: 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
    IMPORTANT: Marketing emails, promotional offers, newsletters, and subscriptions should NEVER score above 30, even if they have "expiring" offers or time-sensitive language. Only personal emails from real individuals warrant high urgency.
 3. urgencyReason: Brief explanation
 4. actionRequired: "reply" | "action" | "fyi" | "none"
-5. actionDescription: Specific action needed if any
+5. actionDescription: Specific action needed if any. Use {{DATE:YYYY-MM-DD}} for any date references.
 6. quickReplies: If reply needed, up to 3 options as [{label, body}] - label max 20 chars, body is full reply
 7. calendarEvent: If meeting/event mentioned, extract {title, startTime, endTime, location, description, recurrence, recurrenceDescription}. Use ISO 8601 format for startTime/endTime (e.g., "2025-01-20T14:00:00"). For recurring events, include BOTH:
    - recurrence: RRULE format WITHOUT "RRULE:" prefix (e.g., "FREQ=WEEKLY;BYDAY=TU", "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU" for bi-weekly, "FREQ=MONTHLY;BYMONTHDAY=15")
@@ -447,19 +454,26 @@ SUMMARY GUIDELINES:
 - Use "you" to address the user directly
 - Can use emojis sparingly
 
+DATE REFERENCES:
+- NEVER use relative date words like "today", "yesterday", "tomorrow", "this week" directly
+- Instead, use date placeholders in the format {{DATE:YYYY-MM-DD}}
+- Examples: "Meeting {{DATE:2025-01-20}}" instead of "Meeting today"
+- Examples: "Deadline {{DATE:2025-01-22}}" instead of "Deadline on Wednesday"
+- The placeholders will be converted to relative dates at display time
+
 FIELDS:
-1. summary: Super short (<240 chars) decision-ready synopsis. DO NOT repeat sender, subject, or calendar details.
+1. summary: Super short (<240 chars) decision-ready synopsis. DO NOT repeat sender, subject, or calendar details. Use {{DATE:YYYY-MM-DD}} for any date references.
    BAD: "Meeting invite for Thursday 2pm at Conference Room A"
    GOOD: "Quarterly planning session - need to discuss Q2 budget priorities"
    BAD: "John from Acme wants to meet with you"
    GOOD: "Wants to sync on partnership proposal before board meeting"
    BAD: "A newsletter about sales"
-   GOOD: "🛒 20% off camping gear + free shipping >$50, ends Sunday"
+   GOOD: "🛒 20% off camping gear + free shipping >$50, ends {{DATE:2025-01-26}}"
 2. urgencyScore: 0-100 (0-20 low, 21-50 normal, 51-80 important, 81-100 urgent)
    IMPORTANT: Marketing emails, promotional offers, newsletters, and subscriptions should NEVER score above 30, even if they have "expiring" offers or time-sensitive language. Only personal emails from real individuals warrant high urgency.
 3. urgencyReason: Brief explanation
 4. actionRequired: "reply" | "action" | "fyi" | "none"
-5. actionDescription: Specific action needed if any
+5. actionDescription: Specific action needed if any. Use {{DATE:YYYY-MM-DD}} for any date references.
 6. quickReplies: If reply needed, up to 3 options as [{label, body}] - label max 20 chars, body is full reply
 7. calendarEvent: If meeting/event mentioned, extract {title, startTime, endTime, location, description, recurrence, recurrenceDescription}. Use ISO 8601 format for startTime/endTime (e.g., "2025-01-20T14:00:00"). For recurring events, include BOTH:
    - recurrence: RRULE format WITHOUT "RRULE:" prefix (e.g., "FREQ=WEEKLY;BYDAY=TU", "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU" for bi-weekly, "FREQ=MONTHLY;BYMONTHDAY=15")

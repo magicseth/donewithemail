@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useRef } from "react";
+import React, { useCallback, useState, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -32,6 +32,7 @@ import Animated, {
 import { api } from "../../convex/_generated/api";
 import { useAuth } from "../../lib/authContext";
 import { Id } from "../../convex/_generated/dataModel";
+import { replaceDatePlaceholders } from "../../lib/datePlaceholders";
 
 // Swipe threshold for done action
 const SWIPE_THRESHOLD = 100;
@@ -202,6 +203,12 @@ const EmailRow = React.memo(function EmailRow({
   const initials = getInitials(fromName);
   const timeAgo = formatTimeAgo(item.receivedAt);
 
+  // Replace date placeholders with relative dates
+  const displaySummary = useMemo(() => {
+    const text = item.summary || decodeHtmlEntities(item.bodyPreview);
+    return replaceDatePlaceholders(text);
+  }, [item.summary, item.bodyPreview]);
+
   const handleSwipeRight = useCallback(() => {
     onSwipeToDone(item);
   }, [item, onSwipeToDone]);
@@ -248,7 +255,7 @@ const EmailRow = React.memo(function EmailRow({
 
           {/* Summary or preview */}
           <Text style={styles.preview} numberOfLines={2}>
-            {item.summary || decodeHtmlEntities(item.bodyPreview)}
+            {displaySummary}
           </Text>
         </View>
 
