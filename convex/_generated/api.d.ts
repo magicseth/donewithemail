@@ -9,11 +9,15 @@
  */
 
 import type * as agents_autoResponder from "../agents/autoResponder.js";
+import type * as agents_emailQA from "../agents/emailQA.js";
 import type * as agents_summarizer from "../agents/summarizer.js";
 import type * as auth from "../auth.js";
 import type * as calendar from "../calendar.js";
 import type * as contacts from "../contacts.js";
 import type * as crons from "../crons.js";
+import type * as emailAgent from "../emailAgent.js";
+import type * as emailEmbeddings from "../emailEmbeddings.js";
+import type * as emailEmbeddingsHelpers from "../emailEmbeddingsHelpers.js";
 import type * as emailSync from "../emailSync.js";
 import type * as emailSyncHelpers from "../emailSyncHelpers.js";
 import type * as emailWorkflow from "../emailWorkflow.js";
@@ -48,11 +52,15 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "agents/autoResponder": typeof agents_autoResponder;
+  "agents/emailQA": typeof agents_emailQA;
   "agents/summarizer": typeof agents_summarizer;
   auth: typeof auth;
   calendar: typeof calendar;
   contacts: typeof contacts;
   crons: typeof crons;
+  emailAgent: typeof emailAgent;
+  emailEmbeddings: typeof emailEmbeddings;
+  emailEmbeddingsHelpers: typeof emailEmbeddingsHelpers;
   emailSync: typeof emailSync;
   emailSyncHelpers: typeof emailSyncHelpers;
   emailWorkflow: typeof emailWorkflow;

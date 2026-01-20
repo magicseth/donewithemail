@@ -70,21 +70,26 @@ export const searchSimilarEmails = internalAction({
     receivedAt: number;
     score: number;
   }>> => {
+    console.log(`[SearchSimilarEmails] Query: "${args.query}", userId: ${args.userId}`);
     const limit = args.limit ?? 5;
 
     // Generate embedding for the query
+    console.log(`[SearchSimilarEmails] Generating embedding...`);
     const openai = new OpenAI();
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: args.query,
     });
     const queryEmbedding = response.data[0].embedding;
+    console.log(`[SearchSimilarEmails] Embedding generated, dimensions: ${queryEmbedding.length}`);
 
     // Vector search on emailSummaries
+    console.log(`[SearchSimilarEmails] Running vector search...`);
     const results = await ctx.vectorSearch("emailSummaries", "by_embedding", {
       vector: queryEmbedding,
       limit: limit * 2, // Get more to filter by user
     });
+    console.log(`[SearchSimilarEmails] Vector search returned ${results.length} results`);
 
     // Filter results by userId and get full email details
     const filteredResults: Array<{

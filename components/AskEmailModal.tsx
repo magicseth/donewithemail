@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -13,6 +13,9 @@ import {
 } from "react-native";
 import { useAction } from "convex/react";
 import { api } from "../convex/_generated/api";
+import Markdown from "react-native-markdown-display";
+import { useRouter } from "expo-router";
+import { Id } from "../convex/_generated/dataModel";
 
 interface Message {
   id: string;
@@ -31,9 +34,25 @@ export function AskEmailModal({ visible, onClose }: AskEmailModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
+  const router = useRouter();
 
   const startChat = useAction(api.emailAgent.startChat);
   const continueChat = useAction(api.emailAgent.continueChat);
+
+  // Handle link presses in markdown - intercept email: links
+  const handleLinkPress = useCallback(
+    (url: string) => {
+      if (url.startsWith("email:")) {
+        const emailId = url.replace("email:", "") as Id<"emails">;
+        // Close modal and navigate to email
+        onClose();
+        router.push(`/email/${emailId}`);
+        return false; // Prevent default link handling
+      }
+      return true; // Allow default handling for other links
+    },
+    [onClose, router]
+  );
 
   const handleSend = useCallback(async () => {
     const trimmedInput = input.trim();
@@ -98,21 +117,82 @@ export function AskEmailModal({ visible, onClose }: AskEmailModalProps) {
     onClose();
   }, [onClose]);
 
-  const renderMessage = useCallback(({ item }: { item: Message }) => {
-    const isUser = item.role === "user";
-    return (
-      <View
-        style={[
-          styles.messageBubble,
-          isUser ? styles.userBubble : styles.assistantBubble,
-        ]}
-      >
-        <Text style={[styles.messageText, isUser && styles.userMessageText]}>
-          {item.content}
-        </Text>
-      </View>
-    );
-  }, []);
+  // Markdown styles for assistant messages
+  const markdownStyles = useMemo(
+    () => ({
+      body: {
+        color: "#1a1a1a",
+        fontSize: 15,
+        lineHeight: 22,
+      },
+      strong: {
+        fontWeight: "800" as const,
+        color: "#7C3AED",
+      },
+      em: {
+        fontStyle: "italic" as const,
+      },
+      bullet_list: {
+        marginVertical: 4,
+      },
+      ordered_list: {
+        marginVertical: 4,
+      },
+      list_item: {
+        marginVertical: 2,
+      },
+      paragraph: {
+        marginVertical: 4,
+      },
+      heading1: {
+        fontSize: 18,
+        fontWeight: "700" as const,
+        marginVertical: 6,
+      },
+      heading2: {
+        fontSize: 17,
+        fontWeight: "600" as const,
+        marginVertical: 5,
+      },
+      heading3: {
+        fontSize: 16,
+        fontWeight: "600" as const,
+        marginVertical: 4,
+      },
+      link: {
+        color: "#6366F1",
+        textDecorationLine: "underline" as const,
+        fontWeight: "600" as const,
+      },
+    }),
+    []
+  );
+
+  const renderMessage = useCallback(
+    ({ item }: { item: Message }) => {
+      const isUser = item.role === "user";
+      console.log("[AskEmailModal] Rendering message:", { role: item.role, isUser, contentPreview: item.content.substring(0, 50) });
+      return (
+        <View
+          style={[
+            styles.messageBubble,
+            isUser ? styles.userBubble : styles.assistantBubble,
+          ]}
+        >
+          {isUser ? (
+            <Text style={[styles.messageText, styles.userMessageText]}>
+              {item.content}
+            </Text>
+          ) : (
+            <Markdown style={markdownStyles} onLinkPress={handleLinkPress}>
+              {item.content}
+            </Markdown>
+          )}
+        </View>
+      );
+    },
+    [markdownStyles, handleLinkPress]
+  );
 
   const exampleQuestions = [
     "When is my iFly reservation?",

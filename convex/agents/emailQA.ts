@@ -32,30 +32,42 @@ const searchEmailsTool = createTool({
       .describe("What to search for, e.g. 'ifly reservation' or 'dentist appointment' or 'amazon order'"),
   }),
   handler: async (ctx: EmailToolCtx, args): Promise<{ error: string } | { message: string } | { emails: Array<{ emailId: Id<"emails">; subject: string; summary: string; from: string; receivedAt: string; relevanceScore: number }> }> => {
+    console.log(`[SearchEmailsTool] Called with query: "${args.query}", userId: ${ctx.userId}`);
+
     if (!ctx.userId) {
+      console.log(`[SearchEmailsTool] Error: User not authenticated`);
       return { error: "User not authenticated" };
     }
 
-    const results: SearchResult[] = await ctx.runAction(internal.emailEmbeddings.searchSimilarEmails, {
-      query: args.query,
-      userId: ctx.userId as Id<"users">,
-      limit: 5,
-    });
+    try {
+      console.log(`[SearchEmailsTool] Calling searchSimilarEmails action...`);
+      const results: SearchResult[] = await ctx.runAction(internal.emailEmbeddings.searchSimilarEmails, {
+        query: args.query,
+        userId: ctx.userId as Id<"users">,
+        limit: 5,
+      });
 
-    if (results.length === 0) {
-      return { message: "No relevant emails found for that search." };
-    }
+      console.log(`[SearchEmailsTool] Got ${results.length} results`);
 
-    return {
-      emails: results.map((r: SearchResult) => ({
+      if (results.length === 0) {
+        return { message: "No relevant emails found for that search." };
+      }
+
+      const mapped = results.map((r: SearchResult) => ({
         emailId: r.emailId,
         subject: r.subject,
         summary: r.summary,
         from: r.fromName || r.fromEmail || "Unknown",
         receivedAt: new Date(r.receivedAt).toLocaleDateString(),
         relevanceScore: r.score,
-      })),
-    };
+      }));
+
+      console.log(`[SearchEmailsTool] Returning emails:`, mapped.map(e => e.subject));
+      return { emails: mapped };
+    } catch (error) {
+      console.error(`[SearchEmailsTool] Error:`, error);
+      throw error;
+    }
   },
 });
 
@@ -130,7 +142,11 @@ Guidelines:
 - Quote relevant parts of emails when helpful (dates, times, confirmation numbers, etc.)
 - If the user asks about reservations, appointments, or events, look for dates, times, and confirmation details
 - If you find multiple relevant emails, summarize the key information from each
-- Always cite which email the information came from
+- IMPORTANT: When citing an email, use a markdown link with the format [Email Subject](email:EMAIL_ID) where EMAIL_ID is the emailId from the search results. This allows users to tap and view the original email.
+
+Example of citing an email:
+- "Based on your [iFLY Portland Order Confirmation](email:abc123xyz), your reservation is for..."
+- "I found this in [Amazon Order #123](email:def456)..."
 
 Example questions you can help with:
 - "When is my ifly reservation?"

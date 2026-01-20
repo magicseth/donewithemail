@@ -5,6 +5,7 @@ import { action, ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { emailQAAgent } from "./agents/emailQA";
 import { Doc } from "./_generated/dataModel";
+import { stepCountIs } from "@convex-dev/agent";
 
 // Helper to get authenticated user in actions
 async function getAuthenticatedUser(ctx: ActionCtx): Promise<Doc<"users">> {
@@ -40,16 +41,28 @@ export const startChat = action({
 
     // Generate response using the agent's generateText method directly
     // Note: Using 'as any' to bypass complex generic type inference issues with tools
-    const result = await emailQAAgent.generateText(
-      ctx,
-      { threadId, userId: user._id },
-      { prompt: args.message } as any
-    );
+    console.log(`[EmailAgent] Starting chat for user ${user._id}, threadId: ${threadId}`);
+    console.log(`[EmailAgent] User message: ${args.message}`);
 
-    return {
-      threadId,
-      response: result.text,
-    };
+    try {
+      const result = await emailQAAgent.generateText(
+        ctx,
+        { threadId, userId: user._id },
+        { prompt: args.message, stopWhen: stepCountIs(5) } as any
+      );
+
+      console.log(`[EmailAgent] Got response (full):`, result.text);
+      console.log(`[EmailAgent] Steps:`, result.steps?.length ?? 0);
+      console.log(`[EmailAgent] Tool calls:`, result.toolCalls?.length ?? 0);
+      console.log(`[EmailAgent] Tool results:`, result.toolResults?.length ?? 0);
+      return {
+        threadId,
+        response: result.text,
+      };
+    } catch (error) {
+      console.error(`[EmailAgent] Error generating response:`, error);
+      throw error;
+    }
   },
 });
 
@@ -67,7 +80,7 @@ export const continueChat = action({
     const result = await emailQAAgent.generateText(
       ctx,
       { threadId: args.threadId, userId: user._id },
-      { prompt: args.message } as any
+      { prompt: args.message, stopWhen: stepCountIs(5) } as any
     );
 
     return {
