@@ -22,7 +22,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { api } from "../../convex/_generated/api";
 import { useGmail } from "../../hooks/useGmail";
 import { useVoiceRecording } from "../../hooks/useDailyVoice";
-import { BatchTriageView } from "../../components/batch";
+import { BatchTriageView, VoiceEmailData } from "../../components/batch";
 
 import {
   ReplyDraft,
@@ -85,7 +85,7 @@ export default function InboxScreen() {
   const [recordingFor, setRecordingFor] = useState<string | null>(null);
   const [pendingTranscriptFor, setPendingTranscriptFor] = useState<string | null>(null);
   // Store the email being recorded so we don't lose it if it gets triaged during recording
-  const [pendingTranscriptEmail, setPendingTranscriptEmail] = useState<typeof gmailEmails[number] | null>(null);
+  const [pendingTranscriptEmail, setPendingTranscriptEmail] = useState<VoiceEmailData | null>(null);
   const [replyDraft, setReplyDraft] = useState<ReplyDraft | null>(null);
 
   // Toast state
@@ -159,7 +159,7 @@ export default function InboxScreen() {
     setReplyDraft({ email, body: reply.body, subject });
   }, [gmailEmails]);
 
-  const handleBatchMicPressIn = useCallback((emailId: string) => {
+  const handleBatchMicPressIn = useCallback((emailId: string, email: VoiceEmailData) => {
     if (recordingFor === emailId) return;
 
     if (recordingFor && recordingFor !== emailId) {
@@ -174,18 +174,13 @@ export default function InboxScreen() {
       setPendingTranscriptEmail(null);
     }
 
-    // Store the email now, so we don't lose it if it gets triaged during recording
-    const email = gmailEmails.find(e => e._id === emailId);
-    if (!email) {
-      showAlert("Error", "Email not found");
-      return;
-    }
-
+    // Email data is now passed directly from BatchTriageView, avoiding lookup issues
+    // when the email gets triaged during recording and disappears from query results
     setRecordingFor(emailId);
     setPendingTranscriptFor(null);
     setPendingTranscriptEmail(email);
     startRecording();
-  }, [recordingFor, pendingTranscriptFor, gmailEmails, startRecording, cancelRecording]);
+  }, [recordingFor, pendingTranscriptFor, startRecording, cancelRecording]);
 
   const handleBatchMicPressOut = useCallback(async (emailId: string) => {
     if (recordingFor !== emailId) return;
@@ -212,13 +207,9 @@ export default function InboxScreen() {
   }, [recordingFor, transcript, stopRecording, playStopSound, showToast]);
 
   const handleBatchSendTranscript = useCallback((emailId: string) => {
-    // Use the stored email (captured when recording started), not the current gmailEmails array
+    // Use the stored email (captured when recording started)
     // This prevents "Email not found" errors if the email was triaged during recording
-    const email = pendingTranscriptEmail?._id === emailId
-      ? pendingTranscriptEmail
-      : gmailEmails.find(e => e._id === emailId);
-
-    if (!email) {
+    if (!pendingTranscriptEmail || pendingTranscriptEmail._id !== emailId) {
       showAlert("Error", "Email not found");
       return;
     }
@@ -228,11 +219,19 @@ export default function InboxScreen() {
       return;
     }
 
-    const subject = email.subject.startsWith("Re:")
-      ? email.subject
-      : `Re: ${email.subject}`;
+    const subject = pendingTranscriptEmail.subject.startsWith("Re:")
+      ? pendingTranscriptEmail.subject
+      : `Re: ${pendingTranscriptEmail.subject}`;
 
-    setReplyDraft({ email, body: transcript.trim(), subject });
+    // Build a minimal email object for ReplyDraft that has what we need
+    // The reply modal only uses _id, subject, and fromContact
+    const emailForDraft = {
+      _id: pendingTranscriptEmail._id,
+      subject: pendingTranscriptEmail.subject,
+      fromContact: pendingTranscriptEmail.fromContact,
+    } as typeof gmailEmails[number];
+
+    setReplyDraft({ email: emailForDraft, body: transcript.trim(), subject });
     setPendingTranscriptFor(null);
     setPendingTranscriptEmail(null);
   }, [pendingTranscriptEmail, gmailEmails, transcript, showToast]);

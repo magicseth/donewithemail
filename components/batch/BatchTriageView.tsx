@@ -61,12 +61,25 @@ const WebScrollView = forwardRef<HTMLDivElement, {
   }
 );
 
+/** Email data passed to voice handlers to avoid lookup issues */
+export interface VoiceEmailData {
+  _id: string;
+  subject: string;
+  fromContact?: {
+    _id: string;
+    email: string;
+    name?: string;
+    avatarUrl?: string;
+  } | null;
+}
+
 interface BatchTriageViewProps {
   userEmail: string | undefined;
   onRefresh?: () => void;
   refreshing?: boolean;
   onQuickReply?: (emailId: string, reply: QuickReplyOption) => void;
-  onMicPressIn?: (emailId: string) => void;
+  /** Pass email data directly to avoid lookup issues when email gets triaged during recording */
+  onMicPressIn?: (emailId: string, email: VoiceEmailData) => void;
   onMicPressOut?: (emailId: string) => void;
   onSendTranscript?: (emailId: string) => void;
   /** ID of email currently being recorded for */

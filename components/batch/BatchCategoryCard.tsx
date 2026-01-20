@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { BatchEmailRow, QuickReplyOption } from "./BatchEmailRow";
 import type { BatchEmailPreview, BatchCategory } from "../../hooks/useBatchTriage";
+import type { VoiceEmailData } from "./BatchTriageView";
 
 // Get initials from name for avatar placeholder
 function getInitials(name: string): string {
@@ -289,7 +290,8 @@ interface BatchCategoryCardProps {
   onToggleSenderFlag?: (senderEmail: string) => void;
   onAcceptCalendar?: (emailId: string) => void;
   onQuickReply?: (emailId: string, reply: QuickReplyOption) => void;
-  onMicPressIn?: (emailId: string) => void;
+  /** Pass email data directly to avoid lookup issues when email gets triaged during recording */
+  onMicPressIn?: (emailId: string, email: VoiceEmailData) => void;
   onMicPressOut?: (emailId: string) => void;
   onSendTranscript?: (emailId: string) => void;
   onUnsubscribe?: (emailId: string) => void;
@@ -509,7 +511,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                           onMarkDone={onMarkEmailDone ? () => onMarkEmailDone(email._id) : undefined}
                           onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
                           onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
-                          onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id) : undefined}
+                          onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id, { _id: email._id, subject: email.subject, fromContact: email.fromContact }) : undefined}
                           onMicPressOut={onMicPressOut ? () => onMicPressOut(email._id) : undefined}
                           onSendTranscript={onSendTranscript ? () => onSendTranscript(email._id) : undefined}
                           onUnsubscribe={onUnsubscribe ? () => onUnsubscribe(email._id) : undefined}
@@ -590,7 +592,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                       onMarkDone={onMarkEmailDone ? () => onMarkEmailDone(email._id) : undefined}
                       onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
                       onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
-                      onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id) : undefined}
+                      onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id, { _id: email._id, subject: email.subject, fromContact: email.fromContact }) : undefined}
                       onMicPressOut={onMicPressOut ? () => onMicPressOut(email._id) : undefined}
                       onSendTranscript={onSendTranscript ? () => onSendTranscript(email._id) : undefined}
                       onUnsubscribe={onUnsubscribe ? () => onUnsubscribe(email._id) : undefined}
