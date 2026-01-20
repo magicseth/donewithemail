@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import * as Updates from "expo-updates";
 import Constants from "expo-constants";
 import { api } from "../../convex/_generated/api";
 import { useAppLogs, appLogger } from "../../lib/appLogger";
+import { useVoiceRecording } from "../../hooks/useDailyVoice";
 
 export default function SettingsScreen() {
   const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
@@ -42,6 +43,20 @@ export default function SettingsScreen() {
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const logs = useAppLogs();
+
+  // Feature request voice recording
+  const {
+    startRecording: startVoiceRecording,
+    stopRecording: stopVoiceRecording,
+    cancelRecording: cancelVoiceRecording,
+    transcript: voiceTranscript,
+    isConnecting: isVoiceConnecting,
+    isConnected: isVoiceConnected,
+  } = useVoiceRecording();
+  const [isRecordingFeature, setIsRecordingFeature] = useState(false);
+  const [isSubmittingFeature, setIsSubmittingFeature] = useState(false);
+  const submitFeatureRequest = useMutation(api.featureRequests.submit);
+  const myFeatureRequests = useQuery(api.featureRequests.getMine);
 
   const checkForUpdates = async () => {
     if (Platform.OS === "web") return;
@@ -283,6 +298,40 @@ export default function SettingsScreen() {
       );
     }
   };
+
+  const handleFeatureRecordStart = useCallback(async () => {
+    setIsRecordingFeature(true);
+    await startVoiceRecording();
+  }, [startVoiceRecording]);
+
+  const handleFeatureRecordStop = useCallback(async () => {
+    const transcript = await stopVoiceRecording();
+    setIsRecordingFeature(false);
+
+    if (!transcript || !transcript.trim()) {
+      const msg = "No speech detected. Please try again.";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Error", msg);
+      return;
+    }
+
+    // Submit the feature request
+    setIsSubmittingFeature(true);
+    try {
+      await submitFeatureRequest({ transcript: transcript.trim() });
+      const msg = `Feature request submitted!\n\n"${transcript.trim()}"`;
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Submitted", msg);
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : "Unknown error";
+      Platform.OS === "web" ? window.alert(`Error: ${errorMsg}`) : Alert.alert("Error", errorMsg);
+    } finally {
+      setIsSubmittingFeature(false);
+    }
+  }, [stopVoiceRecording, submitFeatureRequest]);
+
+  const handleFeatureRecordCancel = useCallback(() => {
+    cancelVoiceRecording();
+    setIsRecordingFeature(false);
+  }, [cancelVoiceRecording]);
 
   const handleSignOut = async () => {
     const doSignOut = async () => {
@@ -738,6 +787,67 @@ export default function SettingsScreen() {
         )}
       </View>
 
+      {/* Add Feature Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Developer</Text>
+        <View style={styles.card}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Add Feature</Text>
+              <Text style={styles.settingDescription}>
+                {isRecordingFeature
+                  ? voiceTranscript || (isVoiceConnected ? "Listening..." : "Connecting...")
+                  : "Press and hold to describe a feature"}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.recordButton,
+                isRecordingFeature && styles.recordButtonActive,
+                isSubmittingFeature && styles.recordButtonDisabled,
+              ]}
+              onPressIn={handleFeatureRecordStart}
+              onPressOut={handleFeatureRecordStop}
+              disabled={isSubmittingFeature}
+            >
+              {isSubmittingFeature ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.recordButtonText}>
+                  {isRecordingFeature ? "🎙️" : "🎤"}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Show recent feature requests */}
+          {myFeatureRequests && myFeatureRequests.length > 0 && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.featureRequestsContainer}>
+                <Text style={styles.featureRequestsTitle}>Recent Requests</Text>
+                {myFeatureRequests.slice(0, 3).map((req) => (
+                  <View key={req._id} style={styles.featureRequestRow}>
+                    <View style={[
+                      styles.featureRequestStatus,
+                      req.status === "completed" && styles.featureRequestStatusCompleted,
+                      req.status === "processing" && styles.featureRequestStatusProcessing,
+                      req.status === "failed" && styles.featureRequestStatusFailed,
+                    ]} />
+                    <Text style={styles.featureRequestText} numberOfLines={2}>
+                      {req.transcript}
+                    </Text>
+                    <Text style={styles.featureRequestStatusText}>
+                      {req.status}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+        </View>
+      </View>
+
       {/* Sign Out */}
       <View style={styles.section}>
         <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
@@ -980,5 +1090,66 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 18,
     fontWeight: "600",
+  },
+  // Add Feature styles
+  recordButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#EF4444",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  recordButtonActive: {
+    backgroundColor: "#DC2626",
+    transform: [{ scale: 1.1 }],
+  },
+  recordButtonDisabled: {
+    opacity: 0.6,
+  },
+  recordButtonText: {
+    fontSize: 20,
+  },
+  featureRequestsContainer: {
+    padding: 16,
+  },
+  featureRequestsTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 8,
+  },
+  featureRequestRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  featureRequestStatus: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#FFA500",
+    marginRight: 8,
+  },
+  featureRequestStatusCompleted: {
+    backgroundColor: "#10B981",
+  },
+  featureRequestStatusProcessing: {
+    backgroundColor: "#6366F1",
+  },
+  featureRequestStatusFailed: {
+    backgroundColor: "#EF4444",
+  },
+  featureRequestText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#333",
+  },
+  featureRequestStatusText: {
+    fontSize: 11,
+    color: "#999",
+    marginLeft: 8,
   },
 });

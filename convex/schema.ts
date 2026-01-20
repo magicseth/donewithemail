@@ -251,4 +251,26 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_sender", ["userId", "senderEmail"])
     .index("by_user_last_email", ["userId", "lastEmailAt"]),
+
+  // Feature requests from voice recording (processed by local Claude Code)
+  featureRequests: defineTable({
+    userId: v.id("users"),
+    transcript: v.string(),           // Voice transcript
+    status: v.union(
+      v.literal("pending"),           // Waiting for local processor
+      v.literal("processing"),        // Claude Code is working on it
+      v.literal("completed"),         // Done, EAS update pushed
+      v.literal("failed")             // Something went wrong
+    ),
+    createdAt: v.number(),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    error: v.optional(v.string()),
+    // Output from Claude Code
+    commitHash: v.optional(v.string()),
+    easUpdateId: v.optional(v.string()),
+    easUpdateMessage: v.optional(v.string()),
+  })
+    .index("by_status", ["status", "createdAt"])
+    .index("by_user", ["userId", "createdAt"]),
 });
