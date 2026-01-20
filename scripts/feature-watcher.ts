@@ -297,26 +297,34 @@ function runClaudeCode(cwd: string, prompt: string): Promise<ClaudeResult> {
       }
 
       // Check if Claude indicated success in its output
+      // Strip ANSI codes for cleaner matching
+      const cleanOutput = fullOutput.replace(/\x1b\[[0-9;]*m/g, "");
+
       const successIndicators = [
-        /done\.?\s/i,
-        /fixed/i,
-        /implemented/i,
-        /completed/i,
+        /\bdone\b\.?/i,           // "Done" or "Done."
+        /\bfixed\b/i,             // "fixed" as whole word
+        /\bimplemented\b/i,
+        /\bcompleted\b/i,
         /commit.*made/i,
         /ready.*push/i,
         /changes.*committed/i,
+        /has been (created|made|committed)/i,
+        /successfully/i,
       ];
 
+      // Be more specific about failure - look for phrases that indicate Claude failed
       const failureIndicators = [
-        /failed/i,
-        /error.*occurred/i,
-        /could not/i,
-        /unable to/i,
-        /cannot/i,
+        /\bfailed to\b/i,         // "failed to" not just "failed"
+        /\berror occurred\b/i,
+        /\bcould not (implement|fix|complete)/i,
+        /\bunable to (implement|fix|complete)/i,
+        /\bcannot (implement|fix|complete)/i,
+        /i('m| am) (unable|not able)/i,
+        /did not succeed/i,
       ];
 
-      const hasSuccessIndicator = successIndicators.some((re) => re.test(fullOutput));
-      const hasFailureIndicator = failureIndicators.some((re) => re.test(fullOutput));
+      const hasSuccessIndicator = successIndicators.some((re) => re.test(cleanOutput));
+      const hasFailureIndicator = failureIndicators.some((re) => re.test(cleanOutput));
       const success = code === 0 && hasSuccessIndicator && !hasFailureIndicator;
 
       resolve({
