@@ -13,6 +13,7 @@ import type * as agents_emailQA from "../agents/emailQA.js";
 import type * as agents_summarizer from "../agents/summarizer.js";
 import type * as auth from "../auth.js";
 import type * as calendar from "../calendar.js";
+import type * as chatHistory from "../chatHistory.js";
 import type * as contacts from "../contacts.js";
 import type * as crons from "../crons.js";
 import type * as emailAgent from "../emailAgent.js";
@@ -56,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   "agents/summarizer": typeof agents_summarizer;
   auth: typeof auth;
   calendar: typeof calendar;
+  chatHistory: typeof chatHistory;
   contacts: typeof contacts;
   crons: typeof crons;
   emailAgent: typeof emailAgent;
