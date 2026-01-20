@@ -159,7 +159,7 @@ ${bodyText}
     const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
     const today = `${dayOfWeek}, ${now.toISOString().split("T")[0]}`; // e.g., "Saturday, 2025-01-18"
     const { text } = await generateText({
-      model: anthropic("claude-opus-4-5-20251101"),
+      model: anthropic("claude-sonnet-4-20250514"),
       prompt: `Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
 
 TODAY'S DATE: ${today}
@@ -405,7 +405,7 @@ ${bodyText}`.trim();
           const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
           const today = `${dayOfWeek}, ${now.toISOString().split("T")[0]}`; // e.g., "Saturday, 2025-01-18"
           const { text } = await generateText({
-            model: anthropic("claude-opus-4-5-20251101"),
+            model: anthropic("claude-sonnet-4-20250514"),
             prompt: `Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
 
 TODAY'S DATE: ${today}
