@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Stack } from "expo-router";
 import { ConvexReactClient, ConvexProviderWithAuth } from "convex/react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -9,6 +9,13 @@ import { usePushNotifications } from "../hooks/usePushNotifications";
 import * as SecureStore from "expo-secure-store";
 
 const AUTH_STORAGE_KEY = "tokmail_auth";
+
+// Signal for auth refresh - when set, the adapter will briefly clear token to force Convex re-auth
+let lastAuthRefreshSignal = 0;
+export function signalAuthRefresh() {
+  lastAuthRefreshSignal = Date.now();
+  console.log("[AuthAdapter] Auth refresh signaled at", lastAuthRefreshSignal);
+}
 
 // Initialize Convex client
 const convex = new ConvexReactClient(
@@ -48,6 +55,8 @@ const storage = {
 function useAuthAdapter() {
   const [isLoading, setIsLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
+  // Track the last refresh signal we processed
+  const lastProcessedSignal = useRef(0);
 
   // Load token from storage on mount and when storage changes
   useEffect(() => {
@@ -57,6 +66,16 @@ function useAuthAdapter() {
 
     const loadToken = async () => {
       try {
+        // Check if there's a new refresh signal - if so, briefly clear token to force Convex re-auth
+        if (lastAuthRefreshSignal > lastProcessedSignal.current) {
+          console.log("[AuthAdapter] Detected refresh signal, forcing Convex re-auth");
+          lastProcessedSignal.current = lastAuthRefreshSignal;
+          // Briefly clear token to force Convex to re-authenticate
+          setToken(null);
+          // On next poll, we'll read the new token from storage
+          return;
+        }
+
         const stored = await storage.getItem(AUTH_STORAGE_KEY);
         if (!isMounted) return;
 

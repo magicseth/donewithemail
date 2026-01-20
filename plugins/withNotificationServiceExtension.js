@@ -14,6 +14,25 @@ const withNotificationServiceExtension = (config) => {
     const bundleIdentifier = config.ios?.bundleIdentifier || "com.tokmail.app";
     const extensionName = "NotificationServiceExtension";
     const extensionBundleId = `${bundleIdentifier}.${extensionName}`;
+
+    // Copy extension files from native/ to ios/
+    const projectRoot = config.modRequest.projectRoot;
+    const sourceDir = path.join(projectRoot, "native", extensionName);
+    const destDir = path.join(config.modRequest.platformProjectRoot, extensionName);
+
+    if (fs.existsSync(sourceDir)) {
+      console.log(`[NotificationServiceExtension] Copying files from ${sourceDir} to ${destDir}`);
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+      }
+      const files = fs.readdirSync(sourceDir);
+      for (const file of files) {
+        fs.copyFileSync(path.join(sourceDir, file), path.join(destDir, file));
+        console.log(`[NotificationServiceExtension] Copied ${file}`);
+      }
+    } else {
+      console.warn(`[NotificationServiceExtension] Source directory not found: ${sourceDir}`);
+    }
     
     // Check if the extension target already exists
     const existingTarget = xcodeProject.pbxTargetByName(extensionName);
@@ -47,18 +66,18 @@ const withNotificationServiceExtension = (config) => {
     xcodeProject.addToPbxGroup(groupKey, mainGroupKey);
 
     // Add files to the group and build phase
+    // Note: Use just filename since the group already has the extension path
     for (const file of sourceFiles) {
-      const filePath = path.join(extensionName, file);
       xcodeProject.addSourceFile(
-        filePath,
+        file,
         { target: extensionTarget.uuid },
         groupKey
       );
     }
 
-    // Add Info.plist
+    // Add Info.plist (just filename, group has the path)
     xcodeProject.addFile(
-      `${extensionName}/Info.plist`,
+      "Info.plist",
       groupKey,
       { lastKnownFileType: "text.plist.xml" }
     );
@@ -75,7 +94,7 @@ const withNotificationServiceExtension = (config) => {
         buildSettings.TARGETED_DEVICE_FAMILY = '"1,2"';
         buildSettings.INFOPLIST_FILE = `${extensionName}/Info.plist`;
         buildSettings.CODE_SIGN_STYLE = "Automatic";
-        buildSettings.DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
+        buildSettings.DEVELOPMENT_TEAM = '"$(DEVELOPMENT_TEAM)"';
         buildSettings.IPHONEOS_DEPLOYMENT_TARGET = "13.0";
         buildSettings.PRODUCT_BUNDLE_IDENTIFIER = extensionBundleId;
         buildSettings.SKIP_INSTALL = "YES";

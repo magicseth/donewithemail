@@ -56,7 +56,8 @@
           "mode": "development"
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "./plugins/withNotificationServiceExtension.js"
     ],
     "experiments": {
       "typedRoutes": true

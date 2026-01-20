@@ -5,6 +5,7 @@ import { api } from "../convex/_generated/api";
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import * as SecureStore from "expo-secure-store";
+import { signalAuthRefresh } from "../app/_layout";
 
 // Complete any pending auth sessions on mount
 WebBrowser.maybeCompleteAuthSession();
@@ -279,6 +280,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setRefreshToken(result.refreshToken);
           setExpiresAt(newExpiresAt);
           console.log("[Auth] Token refreshed successfully, expires at:", new Date(newExpiresAt).toISOString());
+          // Signal the auth adapter to force Convex re-authentication
+          signalAuthRefresh();
           return result.accessToken;
         }
       }
