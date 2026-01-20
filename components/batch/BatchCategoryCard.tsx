@@ -122,11 +122,9 @@ const senderStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
-    paddingTop: 12,
+    paddingTop: 10,
     paddingBottom: 4,
     backgroundColor: "#F9FAFB",
-    borderTopWidth: 1,
-    borderTopColor: "#E5E7EB",
     // Sticky positioning for web
     ...(Platform.OS === "web" ? {
       position: "sticky" as const,
@@ -480,7 +478,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
               {senderGroups.map((group, sectionIndex) => {
                 const prevItemsCount = senderGroups.slice(0, sectionIndex).reduce((sum, g) => sum + g.emails.length, 0);
                 return (
-                  <View key={group.senderEmail}>
+                  <View key={group.senderEmail} style={styles.senderGroupContainer}>
                     <SenderGroupHeader
                       senderName={group.senderName}
                       senderEmail={group.senderEmail}
@@ -556,47 +554,52 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
               keyExtractor={(item) => item._id}
               stickySectionHeadersEnabled={true}
               renderSectionHeader={({ section }) => (
-                <SenderGroupHeader
-                  senderName={section.senderName}
-                  senderEmail={section.senderEmail}
-                  avatarUrl={section.avatarUrl}
-                  emailCount={section.emails.length}
-                  flaggedCount={section.flaggedCount}
-                  isSubscription={section.isSubscription}
-                  onUnsubscribe={onUnsubscribe && section.subscriptionEmailId ? () => onUnsubscribe(section.subscriptionEmailId!) : undefined}
-                  isUnsubscribing={section.subscriptionEmailId ? unsubscribingIds?.has(section.subscriptionEmailId) : false}
-                  onMarkAllDone={onMarkSenderDone ? () => onMarkSenderDone(section.senderEmail) : undefined}
-                  onToggleFlagAll={onToggleSenderFlag ? () => onToggleSenderFlag(section.senderEmail) : undefined}
-                />
+                <View style={styles.senderGroupHeader}>
+                  <SenderGroupHeader
+                    senderName={section.senderName}
+                    senderEmail={section.senderEmail}
+                    avatarUrl={section.avatarUrl}
+                    emailCount={section.emails.length}
+                    flaggedCount={section.flaggedCount}
+                    isSubscription={section.isSubscription}
+                    onUnsubscribe={onUnsubscribe && section.subscriptionEmailId ? () => onUnsubscribe(section.subscriptionEmailId!) : undefined}
+                    isUnsubscribing={section.subscriptionEmailId ? unsubscribingIds?.has(section.subscriptionEmailId) : false}
+                    onMarkAllDone={onMarkSenderDone ? () => onMarkSenderDone(section.senderEmail) : undefined}
+                    onToggleFlagAll={onToggleSenderFlag ? () => onToggleSenderFlag(section.senderEmail) : undefined}
+                  />
+                </View>
               )}
               renderItem={({ item: email, index, section }) => {
                 const sectionIndex = senderGroups.findIndex(g => g.senderEmail === section.senderEmail);
                 const prevItemsCount = senderGroups.slice(0, sectionIndex).reduce((sum, g) => sum + g.emails.length, 0);
                 const globalIndex = prevItemsCount + index;
+                const isLastInSection = index === section.emails.length - 1;
                 return (
-                  <BatchEmailRow
-                    email={email}
-                    isPunted={puntedEmails.has(email._id) || !!email.isInTodo}
-                    isSubscription={email.isSubscription}
-                    expandReplyByDefault={category === "humanWaiting"}
-                    isRecording={recordingForId === email._id}
-                    isRecordingConnected={isRecordingConnected}
-                    transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
-                    switchAnimationDelay={200 + globalIndex * 150}
-                    triggerSwitchAnimation={isExpanded}
-                    onPunt={() => onPuntEmail(email._id)}
-                    onMarkDone={onMarkEmailDone ? () => onMarkEmailDone(email._id) : undefined}
-                    onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
-                    onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
-                    onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id) : undefined}
-                    onMicPressOut={onMicPressOut ? () => onMicPressOut(email._id) : undefined}
-                    onSendTranscript={onSendTranscript ? () => onSendTranscript(email._id) : undefined}
-                    onUnsubscribe={onUnsubscribe ? () => onUnsubscribe(email._id) : undefined}
-                    onNeedsReplyPress={onNeedsReplyPress ? () => onNeedsReplyPress(email._id) : undefined}
-                    isAccepting={acceptingIds?.has(email._id)}
-                    isUnsubscribing={unsubscribingIds?.has(email._id)}
-                    compact={true}
-                  />
+                  <View style={[styles.senderGroupItem, isLastInSection && styles.senderGroupItemLast]}>
+                    <BatchEmailRow
+                      email={email}
+                      isPunted={puntedEmails.has(email._id) || !!email.isInTodo}
+                      isSubscription={email.isSubscription}
+                      expandReplyByDefault={category === "humanWaiting"}
+                      isRecording={recordingForId === email._id}
+                      isRecordingConnected={isRecordingConnected}
+                      transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
+                      switchAnimationDelay={200 + globalIndex * 150}
+                      triggerSwitchAnimation={isExpanded}
+                      onPunt={() => onPuntEmail(email._id)}
+                      onMarkDone={onMarkEmailDone ? () => onMarkEmailDone(email._id) : undefined}
+                      onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
+                      onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
+                      onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id) : undefined}
+                      onMicPressOut={onMicPressOut ? () => onMicPressOut(email._id) : undefined}
+                      onSendTranscript={onSendTranscript ? () => onSendTranscript(email._id) : undefined}
+                      onUnsubscribe={onUnsubscribe ? () => onUnsubscribe(email._id) : undefined}
+                      onNeedsReplyPress={onNeedsReplyPress ? () => onNeedsReplyPress(email._id) : undefined}
+                      isAccepting={acceptingIds?.has(email._id)}
+                      isUnsubscribing={unsubscribingIds?.has(email._id)}
+                      compact={true}
+                    />
+                  </View>
                 );
               }}
               ListFooterComponent={
@@ -729,5 +732,42 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#6366F1",
     fontWeight: "500",
+  },
+  // Sender group styling with left/right borders
+  senderGroupContainer: {
+    borderLeftWidth: 3,
+    borderRightWidth: 3,
+    borderLeftColor: "#E5E7EB",
+    borderRightColor: "#E5E7EB",
+    marginHorizontal: 4,
+    marginBottom: 8,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  // For native SectionList - header wrapper
+  senderGroupHeader: {
+    borderLeftWidth: 3,
+    borderRightWidth: 3,
+    borderLeftColor: "#E5E7EB",
+    borderRightColor: "#E5E7EB",
+    marginHorizontal: 4,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+    overflow: "hidden",
+  },
+  // For native SectionList - item wrapper
+  senderGroupItem: {
+    borderLeftWidth: 3,
+    borderRightWidth: 3,
+    borderLeftColor: "#E5E7EB",
+    borderRightColor: "#E5E7EB",
+    marginHorizontal: 4,
+  },
+  // Last item in section gets bottom radius and margin
+  senderGroupItemLast: {
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 4,
+    marginBottom: 8,
+    overflow: "hidden",
   },
 });
