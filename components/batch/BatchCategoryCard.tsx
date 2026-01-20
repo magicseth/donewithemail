@@ -174,7 +174,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
               isRecording={recordingForId === email._id}
               isRecordingConnected={isRecordingConnected}
               transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
-              switchAnimationDelay={index * 100}
+              switchAnimationDelay={200 + index * 150}
               triggerSwitchAnimation={isExpanded}
               onPunt={() => onPuntEmail(email._id)}
               onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
