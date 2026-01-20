@@ -237,9 +237,6 @@ export const BatchEmailRow = memo(function BatchEmailRow({
           {/* Done switch - ON by default (done), OFF = needs reply/TODO */}
           {onNeedsReplyPress && (
             <View style={styles.doneSwitchContainer}>
-              <Text style={[styles.doneSwitchLabel, isPunted && styles.doneSwitchLabelActive]}>
-                {isPunted ? "Reply" : "Done"}
-              </Text>
               <Switch
                 value={!isPunted}
                 onValueChange={(isDone) => {
@@ -257,6 +254,9 @@ export const BatchEmailRow = memo(function BatchEmailRow({
                 thumbColor={isPunted ? "#fff" : "#fff"}
                 ios_backgroundColor="#D1D5DB"
               />
+              <Text style={[styles.doneSwitchLabel, isPunted && styles.doneSwitchLabelActive]}>
+                {isPunted ? "Reply" : "Done"}
+              </Text>
             </View>
           )}
 
