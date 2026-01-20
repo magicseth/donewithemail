@@ -50,8 +50,25 @@ const REPO_URL = "https://github.com/magicseth/donewithemail.git"; // Adjust to 
 const POLL_INTERVAL = 5000; // 5 seconds
 const WORKTREE_BASE = path.join(os.tmpdir(), "tokmail-features");
 
+// Get Convex deployment from environment or .env.local
+let CONVEX_DEPLOYMENT = process.env.CONVEX_DEPLOYMENT;
+if (!CONVEX_DEPLOYMENT) {
+  const envPath = path.join(__dirname, "..", ".env.local");
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, "utf-8");
+    const match = envContent.match(/CONVEX_DEPLOYMENT=([^\s#]+)/);
+    if (match) {
+      CONVEX_DEPLOYMENT = match[1].trim();
+    }
+  }
+}
+if (!CONVEX_DEPLOYMENT) {
+  console.error("Warning: CONVEX_DEPLOYMENT not found. Convex deploy may prompt interactively.");
+}
+
 console.log("🔄 Feature Request Watcher starting...");
 console.log(`   Convex URL: ${convexUrl}`);
+console.log(`   Convex Deployment: ${CONVEX_DEPLOYMENT || "(not set)"}`);
 console.log(`   Repo: ${REPO_URL}`);
 console.log(`   Worktree base: ${WORKTREE_BASE}`);
 console.log("");
@@ -164,7 +181,14 @@ Important: This is a React Native Expo app. Follow existing patterns in the code
     // Deploy Convex changes
     console.log(`\n☁️ Deploying Convex...`);
     await updateProgress("deploying_backend", "Deploying backend changes...");
-    execSync(`npx convex dev --once`, { cwd: workDir, stdio: "inherit" });
+    execSync(`npx convex dev --once`, {
+      cwd: workDir,
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        CONVEX_DEPLOYMENT: CONVEX_DEPLOYMENT || "",
+      },
+    });
 
     // Run EAS update on voice-preview channel
     console.log(`\n📱 Running EAS update for voice-preview...`);
