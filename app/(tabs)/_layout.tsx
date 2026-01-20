@@ -2,6 +2,7 @@ import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
 import { useAuth } from "../../lib/authContext";
 import { SignInScreen } from "../../components/SignInScreen";
+import { AddFeatureButton } from "../../components/AddFeatureButton";
 
 // Simple icon components (replace with proper icons later)
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
@@ -39,6 +40,7 @@ export default function TabsLayout() {
         headerShown: true,
         headerStyle: styles.header,
         headerTitleStyle: styles.headerTitle,
+        headerRight: () => <AddFeatureButton />,
       }}
     >
       <Tabs.Screen
