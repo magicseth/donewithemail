@@ -111,15 +111,21 @@ export const filterOutSubscriptions = internalQuery({
         continue;
       }
 
+      // Get the AI summary for this email
+      const summary = await ctx.db
+        .query("emailSummaries")
+        .withIndex("by_email", (q) => q.eq("emailId", email._id))
+        .first();
+
       // Skip if AI determined it's FYI/none (newsletters, marketing, etc.)
-      if (email.actionRequired === "fyi" || email.actionRequired === "none") {
+      if (summary?.actionRequired === "fyi" || summary?.actionRequired === "none") {
         console.log(`[Filter] Skipping FYI/none email: ${email.subject}`);
         continue;
       }
 
       // Skip if urgency score is very low (likely marketing that slipped through)
-      if (email.urgencyScore !== undefined && email.urgencyScore < 40) {
-        console.log(`[Filter] Skipping low urgency (${email.urgencyScore}): ${email.subject}`);
+      if (summary?.urgencyScore !== undefined && summary.urgencyScore < 40) {
+        console.log(`[Filter] Skipping low urgency (${summary.urgencyScore}): ${email.subject}`);
         continue;
       }
 

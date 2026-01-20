@@ -62,7 +62,10 @@ export const authenticate = action({
     }
 
     const data = await response.json();
-    console.log("WorkOS authenticate response:", JSON.stringify(data, null, 2));
+    console.log("WorkOS authenticate response keys:", Object.keys(data));
+    console.log("WorkOS access_token:", data.access_token ? "present" : "MISSING");
+    console.log("WorkOS refresh_token:", data.refresh_token ? "present" : "MISSING");
+    console.log("WorkOS expires_in:", data.expires_in);
 
     // Extract user info
     const user = data.user;
@@ -101,8 +104,8 @@ export const authenticate = action({
       },
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
-      // Access tokens expire in 5 minutes (300 seconds)
-      expiresIn: 300,
+      // Use expires_in from WorkOS response, or default to 1 hour
+      expiresIn: data.expires_in || 3600,
       hasGmailAccess: !!googleAccessToken,
     };
   },
@@ -214,8 +217,8 @@ export const refreshToken = action({
       success: true,
       accessToken: data.access_token,
       refreshToken: data.refresh_token || args.refreshToken,
-      // Access tokens typically expire in 5 minutes (300 seconds)
-      expiresIn: 300,
+      // Use expires_in from WorkOS response, or default to 1 hour
+      expiresIn: data.expires_in || 3600,
     };
   },
 });
