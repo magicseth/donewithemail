@@ -57,6 +57,7 @@
         }
       ],
       "expo-asset",
+      ["./plugins/withDevelopmentTeam.js", { "teamId": "TCU64E3XV4" }],
       "./plugins/withNotificationServiceExtension.js"
     ],
     "experiments": {
