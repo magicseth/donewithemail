@@ -7,6 +7,7 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
     todos: "📋",
     inbox: "📥",
     settings: "⚙️",
+    ask: "💬",
   };
 
   return (
@@ -44,6 +45,14 @@ export default function TabsLayout() {
           title: "TODOs",
           headerTitle: "TODOs",
           tabBarIcon: ({ focused }) => <TabIcon name="todos" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="ask"
+        options={{
+          title: "Ask",
+          headerTitle: "Ask My Email",
+          tabBarIcon: ({ focused }) => <TabIcon name="ask" focused={focused} />,
         }}
       />
       <Tabs.Screen
