@@ -1,4 +1,4 @@
-import React, { useCallback, memo, useState } from "react";
+import React, { useCallback, memo, useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -83,6 +83,20 @@ function formatTimeAgo(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
+// Animated dots for "processing" indicator
+function PulsingDots() {
+  const [dots, setDots] = useState("...");
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDots(prev => prev.length >= 3 ? "." : prev + ".");
+    }, 400);
+    return () => clearInterval(interval);
+  }, []);
+
+  return <Text style={{ color: "#6366F1", fontWeight: "600" }}>{dots}</Text>;
+}
+
 export interface QuickReplyOption {
   label: string;
   body: string;
@@ -137,6 +151,9 @@ export const BatchEmailRow = memo(function BatchEmailRow({
 }: BatchEmailRowProps) {
   const [showReplyOptions, setShowReplyOptions] = useState(expandReplyByDefault);
   const [showPreview, setShowPreview] = useState(false);
+
+  // Track mic press state for native responder system
+  const micPressActive = useRef(false);
 
   // Fetch full body only when preview is shown
   const emailBody = useQuery(
@@ -332,7 +349,9 @@ export const BatchEmailRow = memo(function BatchEmailRow({
             {isRecording || transcript ? (
               <View style={styles.transcriptContainer}>
                 <Text style={styles.transcriptText} numberOfLines={2}>
-                  {isRecording ? (transcript || (isRecordingConnected ? "Listening..." : "Connecting...")) : transcript}
+                  {isRecording
+                    ? (transcript ? <>{transcript}<PulsingDots /></> : <PulsingDots />)
+                    : transcript}
                 </Text>
               </View>
             ) : (
@@ -351,20 +370,43 @@ export const BatchEmailRow = memo(function BatchEmailRow({
             )}
 
             {/* Mic button - always rightmost, press and hold to talk */}
+            {/* Using native responder system instead of Pressable to avoid re-render issues */}
             {onMicPressIn && (
-              <Pressable
-                style={({ pressed }) => [
+              <View
+                style={[
                   styles.micButton,
                   isRecording && styles.micButtonRecording,
-                  pressed && !isRecording && styles.micButtonPressed,
                 ]}
-                onPressIn={onMicPressIn}
-                onPressOut={onMicPressOut}
-                // Large offset so press stays active even when finger moves away
-                pressRetentionOffset={{ top: 500, bottom: 500, left: 500, right: 500 }}
+                onStartShouldSetResponder={() => true}
+                onMoveShouldSetResponder={() => true}
+                onResponderGrant={() => {
+                  console.log(`[Responder] onResponderGrant for ${email._id}`);
+                  micPressActive.current = true;
+                  onMicPressIn?.();
+                }}
+                onResponderRelease={() => {
+                  console.log(`[Responder] onResponderRelease for ${email._id}, active=${micPressActive.current}`);
+                  if (micPressActive.current) {
+                    micPressActive.current = false;
+                    onMicPressOut?.();
+                  }
+                }}
+                onResponderTerminate={() => {
+                  // Another responder took over (e.g., scroll) - treat as release
+                  console.log(`[Responder] onResponderTerminate for ${email._id}, active=${micPressActive.current}`);
+                  if (micPressActive.current) {
+                    micPressActive.current = false;
+                    onMicPressOut?.();
+                  }
+                }}
+                onResponderTerminationRequest={() => {
+                  // Don't give up responder while recording
+                  console.log(`[Responder] onResponderTerminationRequest - denying`);
+                  return false;
+                }}
               >
                 <Text style={styles.micButtonText}>{isRecording ? "🎙️" : "🎤"}</Text>
-              </Pressable>
+              </View>
             )}
           </View>
 
@@ -430,6 +472,38 @@ export const BatchEmailRow = memo(function BatchEmailRow({
     </Modal>
     </>
   );
+}, (prevProps, nextProps) => {
+  // Custom comparison to prevent re-renders during recording
+  // Only compare non-function props and whether functions are defined
+  // This prevents re-renders when parent passes new function references
+
+  // Always re-render if recording state changes
+  if (prevProps.isRecording !== nextProps.isRecording) return false;
+  if (prevProps.isRecordingConnected !== nextProps.isRecordingConnected) return false;
+  if (prevProps.transcript !== nextProps.transcript) return false;
+
+  // Check data props
+  if (prevProps.email._id !== nextProps.email._id) return false;
+  if (prevProps.email.subject !== nextProps.email.subject) return false;
+  if (prevProps.email.fromName !== nextProps.email.fromName) return false;
+  if (prevProps.email.summary !== nextProps.email.summary) return false;
+  if (prevProps.isPunted !== nextProps.isPunted) return false;
+  if (prevProps.isSubscription !== nextProps.isSubscription) return false;
+  if (prevProps.expandReplyByDefault !== nextProps.expandReplyByDefault) return false;
+  if (prevProps.isAccepting !== nextProps.isAccepting) return false;
+  if (prevProps.isUnsubscribing !== nextProps.isUnsubscribing) return false;
+
+  // For functions, only check if defined status changed (not reference)
+  if (!!prevProps.onAccept !== !!nextProps.onAccept) return false;
+  if (!!prevProps.onQuickReply !== !!nextProps.onQuickReply) return false;
+  if (!!prevProps.onMicPressIn !== !!nextProps.onMicPressIn) return false;
+  if (!!prevProps.onMicPressOut !== !!nextProps.onMicPressOut) return false;
+  if (!!prevProps.onSendTranscript !== !!nextProps.onSendTranscript) return false;
+  if (!!prevProps.onUnsubscribe !== !!nextProps.onUnsubscribe) return false;
+  if (!!prevProps.onNeedsReplyPress !== !!nextProps.onNeedsReplyPress) return false;
+
+  // Props are equal, don't re-render
+  return true;
 });
 
 const styles = StyleSheet.create({

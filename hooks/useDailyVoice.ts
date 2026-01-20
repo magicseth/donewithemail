@@ -76,6 +76,11 @@ function useDeepgramNative(): UseVoiceResult {
     setTranscript("");
     transcriptRef.current = "";
 
+    // Buffer to hold audio chunks until WebSocket connects
+    const audioBuffer: ArrayBuffer[] = [];
+    let wsConnected = false;
+    let ws: WebSocket | null = null;
+
     try {
       // Request microphone permission on Android
       if (Platform.OS === "android") {
@@ -94,92 +99,132 @@ function useDeepgramNative(): UseVoiceResult {
         }
       }
 
-      // Get Deepgram API key from backend
+      // Start audio capture IMMEDIATELY (before WebSocket connects)
+      console.log("Starting audio capture immediately...");
+      try {
+        LiveAudioStream.stop();
+      } catch {
+        // Ignore if not running
+      }
+
+      LiveAudioStream.init({
+        sampleRate: 16000,
+        channels: 1,
+        bitsPerSample: 16,
+        audioSource: 6, // VOICE_RECOGNITION on Android
+        bufferSize: 4096,
+        wavFile: "", // Not saving to file, streaming only
+      });
+
+      // Set up audio data handler - buffers until WS ready, then streams
+      let chunkCount = 0;
+      let totalBytesSent = 0;
+      LiveAudioStream.on("data", (base64Data: string) => {
+        chunkCount++;
+        const arrayBuffer = base64ToArrayBuffer(base64Data);
+
+        if (wsConnected && ws && ws.readyState === WebSocket.OPEN) {
+          // WebSocket ready - send directly
+          totalBytesSent += arrayBuffer.byteLength;
+          if (chunkCount <= 5 || chunkCount % 25 === 0) {
+            console.log(`[Audio] chunk #${chunkCount}, bytes=${arrayBuffer.byteLength}, totalSent=${totalBytesSent}`);
+          }
+          ws.send(arrayBuffer);
+        } else {
+          // Buffer until WebSocket connects
+          audioBuffer.push(arrayBuffer);
+          if (chunkCount <= 5) {
+            console.log(`[Audio] buffering chunk #${chunkCount}, bytes=${arrayBuffer.byteLength}, buffered=${audioBuffer.length}`);
+          }
+        }
+      });
+
+      LiveAudioStream.start();
+      isStreamingRef.current = true;
+      console.log("Audio capture started, connecting to Deepgram...");
+
+      // Get Deepgram API key from backend (in parallel with audio capture)
       const { apiKey } = await getDeepgramKey();
 
-      // Connect to Deepgram WebSocket using subprotocol authentication
+      // Connect to Deepgram WebSocket
       const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&model=nova-2&smart_format=true&interim_results=true`;
-
-      console.log("Connecting to Deepgram...");
-
-      // Deepgram supports authentication via WebSocket subprotocols: ["token", "YOUR_API_KEY"]
-      const ws = new WebSocket(wsUrl, ["token", apiKey]);
+      ws = new WebSocket(wsUrl, ["token", apiKey]);
+      ws.binaryType = "arraybuffer";
 
       ws.onopen = () => {
-        console.log("Deepgram WebSocket connected successfully");
+        console.log(`Deepgram connected, sending ${audioBuffer.length} buffered chunks...`);
         setIsConnecting(false);
         setIsConnected(true);
+        wsConnected = true;
 
-        // Initialize and start live audio stream after WebSocket is connected
-        LiveAudioStream.init({
-          sampleRate: 16000,
-          channels: 1,
-          bitsPerSample: 16,
-          audioSource: 6, // VOICE_RECOGNITION on Android
-          bufferSize: 4096,
-          wavFile: "", // Not saving to file, streaming only
-        });
-
-        // Set up audio data handler - this fires with each audio chunk
-        let chunkCount = 0;
-        LiveAudioStream.on("data", (base64Data: string) => {
-          chunkCount++;
-          if (chunkCount <= 3 || chunkCount % 50 === 0) {
-            console.log(`Audio chunk #${chunkCount}, size: ${base64Data.length} chars`);
-          }
-          if (ws.readyState === WebSocket.OPEN) {
-            // Convert base64 to ArrayBuffer and send to Deepgram
-            const arrayBuffer = base64ToArrayBuffer(base64Data);
-            ws.send(arrayBuffer);
-          }
-        });
-
-        LiveAudioStream.start();
-        isStreamingRef.current = true;
-        console.log("Live audio streaming started");
+        // Send all buffered audio first
+        for (const chunk of audioBuffer) {
+          totalBytesSent += chunk.byteLength;
+          ws!.send(chunk);
+        }
+        console.log(`Sent ${audioBuffer.length} buffered chunks (${totalBytesSent} bytes), now streaming live`);
+        audioBuffer.length = 0; // Clear buffer
       };
 
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          // Log Deepgram responses for debugging
-          if (data.type) {
-            console.log("Deepgram message type:", data.type);
-          }
-          if (data.channel?.alternatives?.[0]?.transcript) {
-            const text = data.channel.alternatives[0].transcript;
-            const isFinal = data.is_final;
-            console.log(`Deepgram transcript (final=${isFinal}):`, text);
+          // Log all Deepgram responses for debugging
+          console.log("[Deepgram] Received message:", JSON.stringify(data).slice(0, 200));
 
-            if (isFinal && text.trim()) {
-              transcriptRef.current = transcriptRef.current
-                ? `${transcriptRef.current} ${text}`
-                : text;
-              setTranscript(transcriptRef.current);
-            } else if (!isFinal && text.trim()) {
-              // Show interim results in real-time
-              setTranscript(
-                transcriptRef.current
-                  ? `${transcriptRef.current} ${text}`
-                  : text
-              );
+          if (data.type === "Metadata") {
+            console.log("[Deepgram] Metadata received - audio processing started");
+          } else if (data.type === "Results") {
+            const transcript = data.channel?.alternatives?.[0]?.transcript || "";
+            const isFinal = data.is_final;
+            const speechFinal = data.speech_final;
+            console.log(`[Deepgram] Results: final=${isFinal}, speechFinal=${speechFinal}, transcript="${transcript}"`);
+
+            if (transcript.trim()) {
+              if (isFinal) {
+                transcriptRef.current = transcriptRef.current
+                  ? `${transcriptRef.current} ${transcript}`
+                  : transcript;
+                setTranscript(transcriptRef.current);
+                console.log(`[Deepgram] Updated final transcript: "${transcriptRef.current}"`);
+              } else {
+                // Show interim results in real-time
+                const interimDisplay = transcriptRef.current
+                  ? `${transcriptRef.current} ${transcript}`
+                  : transcript;
+                setTranscript(interimDisplay);
+                console.log(`[Deepgram] Interim transcript: "${interimDisplay}"`);
+              }
+            } else if (isFinal) {
+              console.log("[Deepgram] Empty final result (silence detected)");
             }
+          } else if (data.type === "SpeechStarted") {
+            console.log("[Deepgram] Speech detected!");
+          } else if (data.type === "UtteranceEnd") {
+            console.log("[Deepgram] Utterance ended");
           }
         } catch (e) {
-          console.error("Error parsing Deepgram message:", e);
+          console.error("[Deepgram] Error parsing message:", e);
+          console.error("[Deepgram] Raw event data:", event.data);
         }
       };
 
       ws.onerror = (e) => {
-        console.error("WebSocket error:", e);
+        console.error("[Deepgram Native] WebSocket error:", e);
         setError("Connection error");
         setIsConnecting(false);
         setIsConnected(false);
       };
 
       ws.onclose = (e) => {
-        console.log("WebSocket closed:", { code: e.code, reason: e.reason });
+        console.log(`[Deepgram Native] WebSocket closed: code=${e.code}, reason="${e.reason}"`);
         setIsConnected(false);
+        // Stop audio stream if still running
+        if (isStreamingRef.current) {
+          console.log("[Deepgram Native] Stopping LiveAudioStream due to WebSocket close");
+          LiveAudioStream.stop();
+          isStreamingRef.current = false;
+        }
       };
 
       wsRef.current = ws;
@@ -191,17 +236,41 @@ function useDeepgramNative(): UseVoiceResult {
   }, [getDeepgramKey]);
 
   const stopRecording = useCallback(async (): Promise<string> => {
-    const finalTranscript = transcriptRef.current;
+    console.log("[Voice] stopRecording called");
+    const initialTranscript = transcriptRef.current;
 
     // Stop live audio stream
     if (isStreamingRef.current) {
       LiveAudioStream.stop();
       isStreamingRef.current = false;
-      console.log("Live audio streaming stopped");
+      console.log("[Voice] Live audio streaming stopped");
     }
 
-    // Wait a bit for final transcription before closing WebSocket
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Signal to Deepgram that we're done sending audio
+    // Send an empty ArrayBuffer to indicate end of stream
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      console.log("[Voice] Sending end-of-stream signal to Deepgram");
+      wsRef.current.send(new ArrayBuffer(0));
+    }
+
+    // Wait for Deepgram to finish processing and send final transcript
+    // Use a longer timeout and check for transcript updates
+    console.log("[Voice] Waiting for final transcript...");
+    const startWait = Date.now();
+    const maxWaitMs = 2000; // Wait up to 2 seconds for final transcript
+
+    while (Date.now() - startWait < maxWaitMs) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // If transcript changed, Deepgram is still processing
+      if (transcriptRef.current !== initialTranscript) {
+        console.log("[Voice] Transcript updated, waiting a bit more...");
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        break;
+      }
+    }
+
+    const finalTranscript = transcriptRef.current;
+    console.log(`[Voice] Final transcript: "${finalTranscript}"`);
 
     if (wsRef.current) {
       wsRef.current.close();
@@ -209,11 +278,13 @@ function useDeepgramNative(): UseVoiceResult {
     }
 
     setIsConnected(false);
-    return transcriptRef.current || finalTranscript;
+    return finalTranscript || initialTranscript;
   }, []);
 
   const cancelRecording = useCallback(() => {
+    console.log("[Voice] cancelRecording called");
     if (isStreamingRef.current) {
+      console.log("[Voice] Cancelling active stream");
       LiveAudioStream.stop();
       isStreamingRef.current = false;
     }

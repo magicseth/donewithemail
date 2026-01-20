@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useRef, useEffect, Component, ErrorInfo, ReactNode } from "react";
+import React, { useCallback, useState, useRef, useEffect, Component, ErrorInfo, ReactNode, useDeferredValue } from "react";
 import {
   View,
   Text,
@@ -313,14 +313,12 @@ const useMicSounds = () => {
     }
 
     try {
-      // Play sound + haptic feedback
-      startPlayer.seekTo(0);
-      startPlayer.play();
+      // On native, only use haptic feedback - playing audio interrupts LiveAudioStream recording
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch (e) {
-      console.log("Sound/haptic error:", e);
+      console.log("Haptic error:", e);
     }
-  }, [startPlayer]);
+  }, []);
 
   const playStopSound = useCallback(async () => {
     if (Platform.OS === "web") {
@@ -1329,8 +1327,17 @@ export default function InboxScreen() {
 
   // Handle mic press in from batch mode - start recording
   const handleBatchMicPressIn = useCallback((emailId: string) => {
+    console.log(`[Mic] handleBatchMicPressIn called for ${emailId}, recordingFor=${recordingFor}`);
+
+    // Already recording for this email - ignore duplicate
+    if (recordingFor === emailId) {
+      console.log(`[Mic] Already recording for this email - ignoring duplicate`);
+      return;
+    }
+
     // If recording for a different email, cancel that first
     if (recordingFor && recordingFor !== emailId) {
+      console.log(`[Mic] Switching from ${recordingFor} to ${emailId}`);
       cancelRecording();
       setRecordingFor(null);
       setPendingTranscriptFor(null);
@@ -1342,6 +1349,7 @@ export default function InboxScreen() {
     }
 
     // Start recording for this email (sound plays when isConnected becomes true)
+    console.log(`[Mic] Starting recording for ${emailId}`);
     setRecordingFor(emailId);
     setPendingTranscriptFor(null); // Clear pending while recording
     startRecording();
@@ -1349,10 +1357,18 @@ export default function InboxScreen() {
 
   // Handle mic press out from batch mode - stop recording
   const handleBatchMicPressOut = useCallback(async (emailId: string) => {
-    if (recordingFor !== emailId) return;
+    console.log(`[Mic] handleBatchMicPressOut called for ${emailId}, recordingFor=${recordingFor}`);
+    if (recordingFor !== emailId) {
+      console.log(`[Mic] Ignoring - not recording for this email`);
+      return;
+    }
 
     // Play stop sound immediately on touch up (before async operations)
+    console.log(`[Mic] Stopping recording for ${emailId}`);
     playStopSound();
+
+    // Set pending immediately so transcript stays visible during processing
+    setPendingTranscriptFor(emailId);
     setRecordingFor(null);
 
     // Capture current transcript before stopping (stopRecording may return stale data)
@@ -1366,13 +1382,11 @@ export default function InboxScreen() {
         ? currentTranscript.trim()
         : null;
 
-    if (actualTranscript) {
-      // Keep the transcript pending for this email
-      setPendingTranscriptFor(emailId);
-    } else {
+    if (!actualTranscript) {
       showToast("No speech detected", "error");
       setPendingTranscriptFor(null);
     }
+    // If we have a transcript, pendingTranscriptFor is already set
   }, [recordingFor, transcript, stopRecording, playStopSound, showToast]);
 
   // Handle send transcript from batch mode - create draft and show modal
@@ -1527,6 +1541,7 @@ export default function InboxScreen() {
           onMicPressOut={handleBatchMicPressOut}
           onSendTranscript={handleBatchSendTranscript}
           recordingForId={recordingFor}
+          isRecordingConnected={isConnected}
           pendingTranscriptForId={pendingTranscriptFor}
           transcript={transcript}
         />

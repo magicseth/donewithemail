@@ -211,11 +211,22 @@ export const storeEmailInternal = internalMutation({
       return { emailId: existing._id, isNew: false };
     }
 
+    // Extract bodyFull from args - it goes into emailBodies table, not emails
+    const { bodyFull, ...emailArgs } = args;
+
     const emailId = await ctx.db.insert("emails", {
-      ...args,
+      ...emailArgs,
       isTriaged: false,
       direction: args.direction || "incoming",
     });
+
+    // Store body in separate emailBodies table
+    if (bodyFull) {
+      await ctx.db.insert("emailBodies", {
+        emailId,
+        bodyFull,
+      });
+    }
 
     return { emailId, isNew: true };
   },
