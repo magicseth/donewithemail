@@ -162,29 +162,50 @@ export const getMyUntriagedEmails = authedQuery({
       .sort((a, b) => b.receivedAt - a.receivedAt)
       .slice(0, limit);
 
-    // Fetch contact and summary data
-    const emailsWithData = await Promise.all(
-      emails.map(async (email) => {
-        const fromContact = await ctx.db.get(email.from);
-        const summaryData = await getSummaryForEmail(ctx.db, email._id);
-        return {
-          ...email,
-          fromContact,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          urgencyReason: summaryData?.urgencyReason,
-          suggestedReply: summaryData?.suggestedReply,
-          actionRequired: summaryData?.actionRequired,
-          actionDescription: summaryData?.actionDescription,
-          quickReplies: summaryData?.quickReplies,
-          calendarEvent: summaryData?.calendarEvent,
-          shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-          aiProcessedAt: summaryData?.createdAt,
-        };
-      })
+    // Batch fetch contacts - deduplicate IDs first
+    const contactIds = [...new Set(emails.map((e) => e.from))];
+    const contactsArray = await Promise.all(
+      contactIds.map((id) => ctx.db.get(id))
     );
+    const contactsMap = new Map(
+      contactIds.map((id, i) => [id, contactsArray[i]])
+    );
+
+    // Batch fetch summaries in parallel
+    const emailIds = emails.map((e) => e._id);
+    const summariesArray = await Promise.all(
+      emailIds.map((id) =>
+        ctx.db
+          .query("emailSummaries")
+          .withIndex("by_email", (q) => q.eq("emailId", id))
+          .first()
+      )
+    );
+    const summariesMap = new Map(
+      emailIds.map((id, i) => [id, summariesArray[i]])
+    );
+
+    // Map emails with pre-fetched data (no more queries)
+    const emailsWithData = emails.map((email) => {
+      const fromContact = contactsMap.get(email.from);
+      const summaryData = summariesMap.get(email._id);
+      return {
+        ...email,
+        fromContact,
+        summary: summaryData?.summary,
+        urgencyScore: summaryData?.urgencyScore,
+        urgencyReason: summaryData?.urgencyReason,
+        suggestedReply: summaryData?.suggestedReply,
+        actionRequired: summaryData?.actionRequired,
+        actionDescription: summaryData?.actionDescription,
+        quickReplies: summaryData?.quickReplies,
+        calendarEvent: summaryData?.calendarEvent,
+        shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
+        calendarEventId: summaryData?.calendarEventId,
+        calendarEventLink: summaryData?.calendarEventLink,
+        aiProcessedAt: summaryData?.createdAt,
+      };
+    });
 
     return emailsWithData;
   },
@@ -207,28 +228,49 @@ export const getMyTodoEmails = authedQuery({
       .filter((q) => q.eq(q.field("triageAction"), "reply_needed"))
       .take(limit);
 
-    const emailsWithData = await Promise.all(
-      emails.map(async (email) => {
-        const fromContact = await ctx.db.get(email.from);
-        const summaryData = await getSummaryForEmail(ctx.db, email._id);
-        return {
-          ...email,
-          fromContact,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          urgencyReason: summaryData?.urgencyReason,
-          suggestedReply: summaryData?.suggestedReply,
-          actionRequired: summaryData?.actionRequired,
-          actionDescription: summaryData?.actionDescription,
-          quickReplies: summaryData?.quickReplies,
-          calendarEvent: summaryData?.calendarEvent,
-          shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-          aiProcessedAt: summaryData?.createdAt,
-        };
-      })
+    // Batch fetch contacts
+    const contactIds = [...new Set(emails.map((e) => e.from))];
+    const contactsArray = await Promise.all(
+      contactIds.map((id) => ctx.db.get(id))
     );
+    const contactsMap = new Map(
+      contactIds.map((id, i) => [id, contactsArray[i]])
+    );
+
+    // Batch fetch summaries
+    const emailIds = emails.map((e) => e._id);
+    const summariesArray = await Promise.all(
+      emailIds.map((id) =>
+        ctx.db
+          .query("emailSummaries")
+          .withIndex("by_email", (q) => q.eq("emailId", id))
+          .first()
+      )
+    );
+    const summariesMap = new Map(
+      emailIds.map((id, i) => [id, summariesArray[i]])
+    );
+
+    const emailsWithData = emails.map((email) => {
+      const fromContact = contactsMap.get(email.from);
+      const summaryData = summariesMap.get(email._id);
+      return {
+        ...email,
+        fromContact,
+        summary: summaryData?.summary,
+        urgencyScore: summaryData?.urgencyScore,
+        urgencyReason: summaryData?.urgencyReason,
+        suggestedReply: summaryData?.suggestedReply,
+        actionRequired: summaryData?.actionRequired,
+        actionDescription: summaryData?.actionDescription,
+        quickReplies: summaryData?.quickReplies,
+        calendarEvent: summaryData?.calendarEvent,
+        shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
+        calendarEventId: summaryData?.calendarEventId,
+        calendarEventLink: summaryData?.calendarEventLink,
+        aiProcessedAt: summaryData?.createdAt,
+      };
+    });
 
     return emailsWithData;
   },
@@ -384,28 +426,49 @@ export const searchMyEmails = authedQuery({
       )
       .take(limit);
 
-    const emailsWithData = await Promise.all(
-      emails.map(async (email) => {
-        const fromContact = await ctx.db.get(email.from);
-        const summaryData = await getSummaryForEmail(ctx.db, email._id);
-        return {
-          ...email,
-          fromContact,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          urgencyReason: summaryData?.urgencyReason,
-          suggestedReply: summaryData?.suggestedReply,
-          actionRequired: summaryData?.actionRequired,
-          actionDescription: summaryData?.actionDescription,
-          quickReplies: summaryData?.quickReplies,
-          calendarEvent: summaryData?.calendarEvent,
-          shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-          aiProcessedAt: summaryData?.createdAt,
-        };
-      })
+    // Batch fetch contacts
+    const contactIds = [...new Set(emails.map((e) => e.from))];
+    const contactsArray = await Promise.all(
+      contactIds.map((id) => ctx.db.get(id))
     );
+    const contactsMap = new Map(
+      contactIds.map((id, i) => [id, contactsArray[i]])
+    );
+
+    // Batch fetch summaries
+    const emailIds = emails.map((e) => e._id);
+    const summariesArray = await Promise.all(
+      emailIds.map((id) =>
+        ctx.db
+          .query("emailSummaries")
+          .withIndex("by_email", (q) => q.eq("emailId", id))
+          .first()
+      )
+    );
+    const summariesMap = new Map(
+      emailIds.map((id, i) => [id, summariesArray[i]])
+    );
+
+    const emailsWithData = emails.map((email) => {
+      const fromContact = contactsMap.get(email.from);
+      const summaryData = summariesMap.get(email._id);
+      return {
+        ...email,
+        fromContact,
+        summary: summaryData?.summary,
+        urgencyScore: summaryData?.urgencyScore,
+        urgencyReason: summaryData?.urgencyReason,
+        suggestedReply: summaryData?.suggestedReply,
+        actionRequired: summaryData?.actionRequired,
+        actionDescription: summaryData?.actionDescription,
+        quickReplies: summaryData?.quickReplies,
+        calendarEvent: summaryData?.calendarEvent,
+        shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
+        calendarEventId: summaryData?.calendarEventId,
+        calendarEventLink: summaryData?.calendarEventLink,
+        aiProcessedAt: summaryData?.createdAt,
+      };
+    });
 
     return emailsWithData;
   },
@@ -452,25 +515,46 @@ export const getMyThreadEmails = authedQuery({
       .order("asc")
       .collect();
 
-    const emailsWithData = await Promise.all(
-      threadEmails.map(async (e) => {
-        const fromContact = await ctx.db.get(e.from);
-        const summaryData = await getSummaryForEmail(ctx.db, e._id);
-        return {
-          ...e,
-          fromContact,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          urgencyReason: summaryData?.urgencyReason,
-          suggestedReply: summaryData?.suggestedReply,
-          calendarEvent: summaryData?.calendarEvent,
-          shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
-          calendarEventId: summaryData?.calendarEventId,
-          calendarEventLink: summaryData?.calendarEventLink,
-          aiProcessedAt: summaryData?.createdAt,
-        };
-      })
+    // Batch fetch contacts
+    const contactIds = [...new Set(threadEmails.map((e) => e.from))];
+    const contactsArray = await Promise.all(
+      contactIds.map((id) => ctx.db.get(id))
     );
+    const contactsMap = new Map(
+      contactIds.map((id, i) => [id, contactsArray[i]])
+    );
+
+    // Batch fetch summaries
+    const emailIds = threadEmails.map((e) => e._id);
+    const summariesArray = await Promise.all(
+      emailIds.map((id) =>
+        ctx.db
+          .query("emailSummaries")
+          .withIndex("by_email", (q) => q.eq("emailId", id))
+          .first()
+      )
+    );
+    const summariesMap = new Map(
+      emailIds.map((id, i) => [id, summariesArray[i]])
+    );
+
+    const emailsWithData = threadEmails.map((e) => {
+      const fromContact = contactsMap.get(e.from);
+      const summaryData = summariesMap.get(e._id);
+      return {
+        ...e,
+        fromContact,
+        summary: summaryData?.summary,
+        urgencyScore: summaryData?.urgencyScore,
+        urgencyReason: summaryData?.urgencyReason,
+        suggestedReply: summaryData?.suggestedReply,
+        calendarEvent: summaryData?.calendarEvent,
+        shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
+        calendarEventId: summaryData?.calendarEventId,
+        calendarEventLink: summaryData?.calendarEventLink,
+        aiProcessedAt: summaryData?.createdAt,
+      };
+    });
 
     return emailsWithData;
   },
@@ -556,10 +640,36 @@ export const getMyBatchTriagePreview = authedQuery({
       .order("desc")
       .take(limit);
 
-    // Helper to convert email to BatchEmailPreview
-    const emailToPreview = async (email: typeof untriagedEmails[0]): Promise<BatchEmailPreview> => {
-      const fromContact = await ctx.db.get(email.from);
-      const summaryData = await getSummaryForEmail(ctx.db, email._id);
+    // Combine all emails for batch lookups
+    const allEmails = [...untriagedEmails, ...todoEmails];
+
+    // Batch fetch contacts
+    const contactIds = [...new Set(allEmails.map((e) => e.from))];
+    const contactsArray = await Promise.all(
+      contactIds.map((id) => ctx.db.get(id))
+    );
+    const contactsMap = new Map(
+      contactIds.map((id, i) => [id, contactsArray[i]])
+    );
+
+    // Batch fetch summaries
+    const emailIds = allEmails.map((e) => e._id);
+    const summariesArray = await Promise.all(
+      emailIds.map((id) =>
+        ctx.db
+          .query("emailSummaries")
+          .withIndex("by_email", (q) => q.eq("emailId", id))
+          .first()
+      )
+    );
+    const summariesMap = new Map(
+      emailIds.map((id, i) => [id, summariesArray[i]])
+    );
+
+    // Helper to convert email to BatchEmailPreview using pre-fetched data
+    const emailToPreview = (email: typeof untriagedEmails[0]): BatchEmailPreview => {
+      const fromContact = contactsMap.get(email.from);
+      const summaryData = summariesMap.get(email._id);
       return {
         _id: email._id,
         subject: email.subject,
@@ -583,11 +693,9 @@ export const getMyBatchTriagePreview = authedQuery({
       } as BatchEmailPreview;
     };
 
-    // Fetch contact and summary data for untriaged emails
-    const emailsWithData = await Promise.all(untriagedEmails.map(emailToPreview));
-
-    // Fetch contact and summary data for TODO emails (already triaged as reply_needed)
-    const todoEmailsWithData = await Promise.all(todoEmails.map(emailToPreview));
+    // Map emails with pre-fetched data (no more queries)
+    const emailsWithData = untriagedEmails.map(emailToPreview);
+    const todoEmailsWithData = todoEmails.map(emailToPreview);
 
     // Group emails by AI recommendation
     const done: BatchEmailPreview[] = [];

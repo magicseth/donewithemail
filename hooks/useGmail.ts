@@ -61,6 +61,9 @@ export function useGmail(sessionStart?: number) {
   const [error, setError] = useState<string | null>(null);
   const nextPageTokenRef = useRef<string | undefined>(undefined);
 
+  // Stale-while-revalidate: keep last known good data to show instantly
+  const lastEmailsRef = useRef<any[] | null>(null);
+
   // Query for cached untriaged emails - this is INSTANT from Convex
   // Now using getMyUntriagedEmails (authenticated) to only show emails that haven't been triaged
   // If sessionStart is provided, also includes emails triaged after that time
@@ -71,6 +74,14 @@ export function useGmail(sessionStart?: number) {
       ? { limit: 50, sessionStart }
       : "skip"
   );
+
+  // Update the stale cache when we get fresh data
+  if (cachedEmails !== undefined) {
+    lastEmailsRef.current = cachedEmails;
+  }
+
+  // Use fresh data if available, otherwise show stale data
+  const emailsToUse = cachedEmails ?? lastEmailsRef.current;
 
   // Actions for syncing with Gmail (only on explicit refresh)
   const fetchEmailsAction = useAction(api.gmailSync.fetchEmails);
@@ -165,8 +176,8 @@ export function useGmail(sessionStart?: number) {
     [isAuthenticated, user?.email, fetchEmailsAction, summarizeEmails]
   );
 
-  // Transform cached emails to match expected format
-  const emails: GmailEmail[] = (cachedEmails || []).map((email: any) => ({
+  // Transform emails to match expected format (use stale data if fresh not ready)
+  const emails: GmailEmail[] = (emailsToUse || []).map((email: any) => ({
     _id: email._id,
     externalId: email.externalId,
     threadId: email.threadId,
@@ -194,7 +205,8 @@ export function useGmail(sessionStart?: number) {
   return {
     isAuthenticated,
     emails,
-    isLoading: cachedEmails === undefined, // Loading from Convex cache
+    // Only show loading if we have NO data (fresh or stale)
+    isLoading: cachedEmails === undefined && lastEmailsRef.current === null,
     isSyncing, // Syncing with Gmail
     isSummarizing,
     error,
