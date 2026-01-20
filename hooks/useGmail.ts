@@ -1,7 +1,10 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useAction, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../lib/authContext";
+
+// Module-level cache persists across component mounts/unmounts
+let lastEmailsCache: any[] | null = null;
 
 export interface QuickReply {
   label: string;
@@ -52,6 +55,9 @@ export interface GmailEmail {
   };
 }
 
+// Track next page token at module level too
+let nextPageToken: string | undefined = undefined;
+
 export function useGmail(sessionStart?: number) {
   const { user, isAuthenticated } = useAuth();
   // Use Convex auth state for query timing (ensures token is ready)
@@ -59,10 +65,6 @@ export function useGmail(sessionStart?: number) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const nextPageTokenRef = useRef<string | undefined>(undefined);
-
-  // Stale-while-revalidate: keep last known good data to show instantly
-  const lastEmailsRef = useRef<any[] | null>(null);
 
   // Query for cached untriaged emails - this is INSTANT from Convex
   // Now using getMyUntriagedEmails (authenticated) to only show emails that haven't been triaged
@@ -75,13 +77,13 @@ export function useGmail(sessionStart?: number) {
       : "skip"
   );
 
-  // Update the stale cache when we get fresh data
+  // Update module-level cache when we get fresh data
   if (cachedEmails !== undefined) {
-    lastEmailsRef.current = cachedEmails;
+    lastEmailsCache = cachedEmails;
   }
 
-  // Use fresh data if available, otherwise show stale data
-  const emailsToUse = cachedEmails ?? lastEmailsRef.current;
+  // Use fresh data if available, otherwise show stale data from module cache
+  const emailsToUse = cachedEmails ?? lastEmailsCache;
 
   // Actions for syncing with Gmail (only on explicit refresh)
   const fetchEmailsAction = useAction(api.gmailSync.fetchEmails);
@@ -125,7 +127,7 @@ export function useGmail(sessionStart?: number) {
           userEmail: user.email,
           maxResults,
         });
-        nextPageTokenRef.current = result.nextPageToken;
+        nextPageToken = result.nextPageToken;
 
         // Summarize emails that don't have summaries yet
         const emailsNeedingSummary = result.emails.filter((e: any) => !e.summary);
@@ -148,7 +150,7 @@ export function useGmail(sessionStart?: number) {
   // Load more from Gmail
   const loadMore = useCallback(
     async (maxResults = 50) => {
-      if (!isAuthenticated || !user?.email || !nextPageTokenRef.current) {
+      if (!isAuthenticated || !user?.email || !nextPageToken) {
         return;
       }
 
@@ -158,9 +160,9 @@ export function useGmail(sessionStart?: number) {
         const result = await fetchEmailsAction({
           userEmail: user.email,
           maxResults,
-          pageToken: nextPageTokenRef.current,
+          pageToken: nextPageToken,
         });
-        nextPageTokenRef.current = result.nextPageToken;
+        nextPageToken = result.nextPageToken;
 
         // Summarize new emails
         const emailsNeedingSummary = result.emails.filter((e: any) => !e.summary);
@@ -206,11 +208,11 @@ export function useGmail(sessionStart?: number) {
     isAuthenticated,
     emails,
     // Only show loading if we have NO data (fresh or stale)
-    isLoading: cachedEmails === undefined && lastEmailsRef.current === null,
+    isLoading: cachedEmails === undefined && lastEmailsCache === null,
     isSyncing, // Syncing with Gmail
     isSummarizing,
     error,
-    hasMore: !!nextPageTokenRef.current,
+    hasMore: !!nextPageToken,
     syncWithGmail, // Call this on pull-to-refresh
     loadMore,
     summarizeEmails,
