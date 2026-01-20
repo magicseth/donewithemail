@@ -285,9 +285,9 @@ export const BatchEmailRow = memo(function BatchEmailRow({
                     setShowReplyOptions(true);
                   }
                 }}
-                trackColor={{ false: "#6366F1", true: "#D1D5DB" }}
+                trackColor={{ false: "#6366F1", true: "#10B981" }}
                 thumbColor="#fff"
-                ios_backgroundColor="#D1D5DB"
+                ios_backgroundColor="#6366F1"
               />
               <Text style={[
                 styles.doneSwitchLabel,
