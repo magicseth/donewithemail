@@ -231,6 +231,38 @@ export const getMine = query({
 });
 
 /**
+ * Mark a feature request as combined into another request
+ */
+export const markCombined = mutation({
+  args: {
+    id: v.id("featureRequests"),
+    combinedIntoId: v.id("featureRequests"),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      status: "combined",
+      combinedIntoId: args.combinedIntoId,
+      completedAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * Update transcript for a feature request (used when combining requests)
+ */
+export const updateTranscript = mutation({
+  args: {
+    id: v.id("featureRequests"),
+    transcript: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      transcript: args.transcript,
+    });
+  },
+});
+
+/**
  * Cancel a pending or processing feature request
  */
 export const cancel = mutation({

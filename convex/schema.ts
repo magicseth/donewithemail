@@ -260,7 +260,8 @@ export default defineSchema({
       v.literal("pending"),           // Waiting for local processor
       v.literal("processing"),        // Claude Code is working on it
       v.literal("completed"),         // Done, EAS update pushed
-      v.literal("failed")             // Something went wrong
+      v.literal("failed"),            // Something went wrong
+      v.literal("combined")           // Combined into another request
     ),
     // Progress tracking
     progressStep: v.optional(v.union(
@@ -287,6 +288,8 @@ export default defineSchema({
     easDashboardUrl: v.optional(v.string()),
     // Debug logs from the app when the request was submitted
     debugLogs: v.optional(v.string()),
+    // If this request was combined into another, reference to the combined request
+    combinedIntoId: v.optional(v.id("featureRequests")),
   })
     .index("by_status", ["status", "createdAt"])
     .index("by_user", ["userId", "createdAt"]),

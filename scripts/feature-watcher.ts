@@ -24,6 +24,8 @@ import { spawn, execSync } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
+import { generateText } from "ai";
+import { createAnthropic } from "@ai-sdk/anthropic";
 
 // Load environment
 const CONVEX_URL = process.env.CONVEX_URL || process.env.VITE_CONVEX_URL;
@@ -46,6 +48,7 @@ if (!convexUrl) {
 }
 
 const client = new ConvexHttpClient(convexUrl);
+const anthropic = createAnthropic();
 const REPO_URL = "https://github.com/magicseth/donewithemail.git"; // Adjust to your repo
 const POLL_INTERVAL = 5000; // 5 seconds
 const WORKTREE_BASE = path.join(os.tmpdir(), "tokmail-features");
@@ -360,6 +363,88 @@ function runClaudeCode(cwd: string, prompt: string): Promise<ClaudeResult> {
   });
 }
 
+interface PendingRequest {
+  _id: string;
+  transcript: string;
+}
+
+interface CombinationResult {
+  primaryId: string;
+  combinedIds: string[];
+  combinedTranscript: string;
+}
+
+/**
+ * Use Claude to analyze pending requests and identify ones that should be combined
+ */
+async function findSimilarRequests(pending: PendingRequest[]): Promise<CombinationResult | null> {
+  if (pending.length < 2) {
+    return null;
+  }
+
+  console.log(`\n🔍 Analyzing ${pending.length} pending requests for similar features...`);
+
+  const requestList = pending.map((r, i) => `${i + 1}. ID: ${r._id}\n   Transcript: "${r.transcript}"`).join("\n\n");
+
+  const prompt = `You are helping optimize a feature request queue. Analyze these pending feature requests and determine if any should be combined because they're similar in scope or would benefit from being implemented together.
+
+FEATURE REQUESTS:
+${requestList}
+
+RULES:
+1. Only combine requests that are genuinely related or would benefit from being implemented together
+2. Don't combine unrelated features just to be efficient
+3. If requests should be combined, provide a combined transcript that includes both features clearly
+
+Respond in JSON format only:
+{
+  "shouldCombine": boolean,
+  "reason": "brief explanation",
+  "primaryIndex": number (1-based index of the request that will be kept, usually the first/oldest),
+  "combineIndices": [array of 1-based indices of requests to combine into primary],
+  "combinedTranscript": "combined feature description if shouldCombine is true, otherwise null"
+}
+
+Example response if combining:
+{"shouldCombine": true, "reason": "Both features relate to email filtering", "primaryIndex": 1, "combineIndices": [2], "combinedTranscript": "Add email filtering with both sender-based rules and keyword-based rules"}
+
+Example response if not combining:
+{"shouldCombine": false, "reason": "Features are unrelated", "primaryIndex": null, "combineIndices": [], "combinedTranscript": null}`;
+
+  try {
+    const { text } = await generateText({
+      model: anthropic("claude-sonnet-4-20250514"),
+      prompt,
+    });
+
+    const result = JSON.parse(text);
+
+    if (!result.shouldCombine) {
+      console.log(`   ✓ No similar requests found: ${result.reason}`);
+      return null;
+    }
+
+    const primaryRequest = pending[result.primaryIndex - 1];
+    const combinedRequests = result.combineIndices.map((i: number) => pending[i - 1]);
+
+    console.log(`   🔗 Found similar requests to combine!`);
+    console.log(`   Primary: "${primaryRequest.transcript.slice(0, 50)}..."`);
+    for (const req of combinedRequests) {
+      console.log(`   Combined: "${req.transcript.slice(0, 50)}..."`);
+    }
+    console.log(`   Reason: ${result.reason}`);
+
+    return {
+      primaryId: primaryRequest._id,
+      combinedIds: combinedRequests.map((r: PendingRequest) => r._id),
+      combinedTranscript: result.combinedTranscript,
+    };
+  } catch (e) {
+    console.log(`   Failed to analyze requests: ${e}`);
+    return null;
+  }
+}
+
 async function poll() {
   try {
     const pending = await client.query(api.featureRequests.getPending, {});
@@ -367,7 +452,39 @@ async function poll() {
     if (pending.length > 0) {
       console.log(`\n📬 Found ${pending.length} pending request(s)`);
 
-      // Process one at a time
+      // Check if any requests should be combined
+      if (pending.length >= 2) {
+        const combination = await findSimilarRequests(pending);
+
+        if (combination) {
+          // Update the primary request's transcript
+          console.log(`\n🔗 Combining requests...`);
+          await client.mutation(api.featureRequests.updateTranscript, {
+            id: combination.primaryId as any,
+            transcript: combination.combinedTranscript,
+          });
+
+          // Mark other requests as combined
+          for (const combinedId of combination.combinedIds) {
+            await client.mutation(api.featureRequests.markCombined, {
+              id: combinedId as any,
+              combinedIntoId: combination.primaryId as any,
+            });
+            console.log(`   ✓ Marked ${combinedId} as combined into ${combination.primaryId}`);
+          }
+
+          // Re-fetch pending requests (some are now combined)
+          const remainingPending = await client.query(api.featureRequests.getPending, {});
+
+          // Process the combined request
+          for (const request of remainingPending) {
+            await processFeatureRequest(request);
+          }
+          return;
+        }
+      }
+
+      // Process one at a time (no combining)
       for (const request of pending) {
         await processFeatureRequest(request);
       }
