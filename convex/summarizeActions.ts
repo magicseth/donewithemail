@@ -11,6 +11,34 @@ const anthropic = createAnthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+// Model IDs
+const OPUS_MODEL = "claude-opus-4-5-20251101";
+const SONNET_MODEL = "claude-sonnet-4-20250514";
+
+// Generate text with Opus, falling back to Sonnet on overload
+async function generateTextWithFallback(prompt: string): Promise<{ text: string; model: string }> {
+  try {
+    const { text } = await generateText({
+      model: anthropic(OPUS_MODEL),
+      prompt,
+    });
+    return { text, model: OPUS_MODEL };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    // Check if it's an overload error
+    if (errorMessage.includes("Overloaded") || errorMessage.includes("overloaded") || errorMessage.includes("529")) {
+      console.log(`[Summarize] Opus overloaded, falling back to Sonnet`);
+      const { text } = await generateText({
+        model: anthropic(SONNET_MODEL),
+        prompt,
+      });
+      return { text, model: SONNET_MODEL };
+    }
+    // Re-throw other errors
+    throw error;
+  }
+}
+
 // Convert HTML to plain text for AI summarization
 function htmlToPlainText(html: string): string {
   if (!html) return "";
@@ -154,13 +182,11 @@ Subject: ${email.subject}
 ${bodyText}
 `.trim();
 
-    // Call Anthropic via AI SDK with enhanced prompt
+    // Call Anthropic via AI SDK with enhanced prompt (Opus with Sonnet fallback)
     const now = new Date();
     const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
     const today = `${dayOfWeek}, ${now.toISOString().split("T")[0]}`; // e.g., "Saturday, 2025-01-18"
-    const { text } = await generateText({
-      model: anthropic("claude-sonnet-4-20250514"),
-      prompt: `Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
+    const { text } = await generateTextWithFallback(`Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
 
 TODAY'S DATE: ${today}
 
@@ -209,8 +235,7 @@ FIELDS:
 Email:
 ${emailContent}
 
-Respond with only valid JSON, no markdown or explanation.`,
-    });
+Respond with only valid JSON, no markdown or explanation.`);
 
     // Parse response
     let result: SummarizeResult;
@@ -400,13 +425,11 @@ Subject: ${email.subject}${recentContext}${factsContext}
 
 ${bodyText}`.trim();
 
-          // Call Anthropic via AI SDK with enhanced prompt
+          // Call Anthropic via AI SDK with enhanced prompt (Opus with Sonnet fallback)
           const now = new Date();
           const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
           const today = `${dayOfWeek}, ${now.toISOString().split("T")[0]}`; // e.g., "Saturday, 2025-01-18"
-          const { text } = await generateText({
-            model: anthropic("claude-sonnet-4-20250514"),
-            prompt: `Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
+          const { text } = await generateTextWithFallback(`Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
 
 TODAY'S DATE: ${today}
 
@@ -460,8 +483,7 @@ FIELDS:
 Email:
 ${emailContent}
 
-Respond with only valid JSON, no markdown or explanation.`,
-          });
+Respond with only valid JSON, no markdown or explanation.`);
 
           // Parse response
           let result: SummarizeResult;
