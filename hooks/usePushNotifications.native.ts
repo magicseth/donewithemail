@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { AppState, AppStateStatus } from "react-native";
 import { useMutation, useConvexAuth } from "convex/react";
 import { useRouter } from "expo-router";
 import * as Notifications from "expo-notifications";
@@ -28,11 +29,30 @@ export function usePushNotifications() {
   const registerToken = useMutation(api.notifications.registerMyPushToken);
 
   useEffect(() => {
-    registerForPushNotificationsAsync().then((token) => {
+    let registrationFailed = false;
+
+    const attemptRegistration = async () => {
+      const token = await registerForPushNotificationsAsync();
       if (token) {
         setExpoPushToken(token);
+        registrationFailed = false;
+      } else {
+        registrationFailed = true;
       }
-    });
+    };
+
+    // Initial registration attempt
+    attemptRegistration();
+
+    // Retry when app comes back to foreground (user unlocked phone)
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === "active" && registrationFailed) {
+        console.log("[Push] App became active, retrying registration...");
+        attemptRegistration();
+      }
+    };
+
+    const subscription = AppState.addEventListener("change", handleAppStateChange);
 
     // Check if app was launched from a notification (app was closed)
     Notifications.getLastNotificationResponseAsync().then((response) => {
@@ -82,6 +102,7 @@ export function usePushNotifications() {
       if (responseListener.current) {
         responseListener.current.remove();
       }
+      subscription.remove();
     };
   }, [router]);
 
@@ -104,36 +125,37 @@ export function usePushNotifications() {
 }
 
 async function registerForPushNotificationsAsync(): Promise<string | null> {
-  // Push notifications only work on physical devices
-  if (!Device.isDevice) {
-    console.log("Push notifications require a physical device");
-    return null;
-  }
-
-  // Check existing permissions
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
-  let finalStatus = existingStatus;
-
-  // Request permission if not already granted
-  if (existingStatus !== "granted") {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== "granted") {
-    console.log("Push notification permission not granted");
-    return null;
-  }
-
-  // Get the Expo push token
   try {
+    // Push notifications only work on physical devices
+    if (!Device.isDevice) {
+      console.log("Push notifications require a physical device");
+      return null;
+    }
+
+    // Check existing permissions
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    // Request permission if not already granted
+    if (existingStatus !== "granted") {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== "granted") {
+      console.log("Push notification permission not granted");
+      return null;
+    }
+
+    // Get the Expo push token
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
     const token = await Notifications.getExpoPushTokenAsync({
       projectId,
     });
     return token.data;
   } catch (error) {
-    console.error("Failed to get push token:", error);
+    // Handle keychain access errors (common on iOS Simulator or when keychain is locked)
+    console.log("Push notification registration failed (this is normal on Simulator):", error);
     return null;
   }
 }
