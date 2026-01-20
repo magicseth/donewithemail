@@ -593,7 +593,7 @@ const styles = StyleSheet.create({
   },
   toast: {
     position: "absolute",
-    top: 60,
+    top: 10,
     left: 20,
     right: 20,
     backgroundColor: "#333",
