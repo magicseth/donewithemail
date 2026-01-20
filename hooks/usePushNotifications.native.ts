@@ -21,12 +21,30 @@ Notifications.setNotificationHandler({
 export function usePushNotifications() {
   const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
   const [notification, setNotification] = useState<any | null>(null);
+  const [pendingNavigation, setPendingNavigation] = useState<{ type: string; emailId?: string } | null>(null);
   const notificationListener = useRef<any | null>(null);
   const responseListener = useRef<any | null>(null);
 
   const router = useRouter();
   const { isAuthenticated, isLoading } = useConvexAuth();
   const registerToken = useMutation(api.notifications.registerMyPushToken);
+
+  // Process pending navigation once auth is ready
+  useEffect(() => {
+    if (isAuthenticated && !isLoading && pendingNavigation) {
+      const data = pendingNavigation;
+      console.log("[Push] Auth ready, processing pending navigation:", data);
+      setPendingNavigation(null);
+
+      setTimeout(() => {
+        if (data.type === "missed_todos") {
+          router.navigate("/(tabs)");
+        } else if (data.emailId) {
+          router.push(`/email/${data.emailId}`);
+        }
+      }, 100);
+    }
+  }, [isAuthenticated, isLoading, pendingNavigation, router]);
 
   useEffect(() => {
     let registrationFailed = false;
@@ -58,16 +76,12 @@ export function usePushNotifications() {
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (response) {
         const data = response.notification.request.content.data;
-        console.log("App launched from notification:", data);
-        // Small delay to ensure navigation is ready
-        setTimeout(() => {
-          if (data?.type === "missed_todos") {
-            // Navigate to TODO tab (index)
-            router.navigate("/(tabs)");
-          } else if (data?.emailId) {
-            router.push(`/email/${data.emailId}`);
-          }
-        }, 100);
+        console.log("[Push] App launched from notification:", data);
+        // Store for later - will be processed once auth is ready
+        setPendingNavigation({
+          type: data?.type || "email",
+          emailId: data?.emailId,
+        });
       }
     });
 
@@ -82,16 +96,14 @@ export function usePushNotifications() {
     responseListener.current = Notifications.addNotificationResponseReceivedListener(
       (response) => {
         const data = response.notification.request.content.data;
-        console.log("Notification tapped:", data);
+        console.log("[Push] Notification tapped:", data);
 
-        // Handle different notification types
-        if (data?.type === "missed_todos") {
-          // Navigate to TODO tab (index)
-          router.navigate("/(tabs)");
-        } else if (data?.emailId) {
-          // Navigate to the specific email
-          router.push(`/email/${data.emailId}`);
-        }
+        // Store navigation intent - will be processed immediately if auth is ready,
+        // or once auth becomes ready
+        setPendingNavigation({
+          type: data?.type || "email",
+          emailId: data?.emailId,
+        });
       }
     );
 
