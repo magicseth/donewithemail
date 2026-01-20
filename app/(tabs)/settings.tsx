@@ -18,7 +18,7 @@ import * as Updates from "expo-updates";
 import Constants from "expo-constants";
 import { api } from "../../convex/_generated/api";
 import { useAppLogs, appLogger } from "../../lib/appLogger";
-import { useVoiceRecording } from "../../hooks/useDailyVoice";
+import { VoiceRecordButton } from "../../components/VoiceRecordButton";
 
 export default function SettingsScreen() {
   const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
@@ -45,17 +45,9 @@ export default function SettingsScreen() {
   const [showLogs, setShowLogs] = useState(false);
   const logs = useAppLogs();
 
-  // Feature request voice recording
-  const {
-    startRecording: startVoiceRecording,
-    stopRecording: stopVoiceRecording,
-    cancelRecording: cancelVoiceRecording,
-    transcript: voiceTranscript,
-    isConnecting: isVoiceConnecting,
-    isConnected: isVoiceConnected,
-  } = useVoiceRecording();
-  const [isRecordingFeature, setIsRecordingFeature] = useState(false);
+  // Feature request
   const [isSubmittingFeature, setIsSubmittingFeature] = useState(false);
+  const [featureTranscript, setFeatureTranscript] = useState<string | null>(null);
   const submitFeatureRequest = useMutation(api.featureRequests.submit);
   const myFeatureRequests = useQuery(api.featureRequests.getMine);
 
@@ -321,39 +313,25 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleFeatureRecordStart = useCallback(async () => {
-    setIsRecordingFeature(true);
-    await startVoiceRecording();
-  }, [startVoiceRecording]);
-
-  const handleFeatureRecordStop = useCallback(async () => {
-    const transcript = await stopVoiceRecording();
-    setIsRecordingFeature(false);
-
-    if (!transcript || !transcript.trim()) {
-      const msg = "No speech detected. Please try again.";
-      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Error", msg);
-      return;
-    }
-
-    // Submit the feature request
+  const handleFeatureTranscript = useCallback(async (transcript: string) => {
+    setFeatureTranscript(transcript);
     setIsSubmittingFeature(true);
     try {
-      await submitFeatureRequest({ transcript: transcript.trim() });
-      const msg = `Feature request submitted!\n\n"${transcript.trim()}"`;
+      await submitFeatureRequest({ transcript });
+      const msg = `Feature request submitted!\n\n"${transcript}"`;
       Platform.OS === "web" ? window.alert(msg) : Alert.alert("Submitted", msg);
+      setFeatureTranscript(null);
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : "Unknown error";
       Platform.OS === "web" ? window.alert(`Error: ${errorMsg}`) : Alert.alert("Error", errorMsg);
     } finally {
       setIsSubmittingFeature(false);
     }
-  }, [stopVoiceRecording, submitFeatureRequest]);
+  }, [submitFeatureRequest]);
 
-  const handleFeatureRecordCancel = useCallback(() => {
-    cancelVoiceRecording();
-    setIsRecordingFeature(false);
-  }, [cancelVoiceRecording]);
+  const handleFeatureError = useCallback((error: string) => {
+    Platform.OS === "web" ? window.alert(error) : Alert.alert("Error", error);
+  }, []);
 
   const handleSignOut = async () => {
     const doSignOut = async () => {
@@ -831,29 +809,19 @@ export default function SettingsScreen() {
             <View style={styles.settingInfo}>
               <Text style={styles.settingLabel}>Add Feature</Text>
               <Text style={styles.settingDescription}>
-                {isRecordingFeature
-                  ? voiceTranscript || (isVoiceConnected ? "Listening..." : "Connecting...")
-                  : "Press and hold to describe a feature"}
+                {isSubmittingFeature
+                  ? "Submitting..."
+                  : featureTranscript
+                    ? featureTranscript
+                    : "Press and hold to describe a feature"}
               </Text>
             </View>
-            <TouchableOpacity
-              style={[
-                styles.recordButton,
-                isRecordingFeature && styles.recordButtonActive,
-                isSubmittingFeature && styles.recordButtonDisabled,
-              ]}
-              onPressIn={handleFeatureRecordStart}
-              onPressOut={handleFeatureRecordStop}
+            <VoiceRecordButton
+              onTranscript={handleFeatureTranscript}
+              onError={handleFeatureError}
               disabled={isSubmittingFeature}
-            >
-              {isSubmittingFeature ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.recordButtonText}>
-                  {isRecordingFeature ? "🎙️" : "🎤"}
-                </Text>
-              )}
-            </TouchableOpacity>
+              size="medium"
+            />
           </View>
 
           {/* Show recent feature requests */}
@@ -1143,25 +1111,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 18,
     fontWeight: "600",
-  },
-  // Add Feature styles
-  recordButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#EF4444",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  recordButtonActive: {
-    backgroundColor: "#DC2626",
-    transform: [{ scale: 1.1 }],
-  },
-  recordButtonDisabled: {
-    opacity: 0.6,
-  },
-  recordButtonText: {
-    fontSize: 20,
   },
   featureRequestsContainer: {
     padding: 16,

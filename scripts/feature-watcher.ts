@@ -116,7 +116,27 @@ After implementing:
 
 Important: This is a React Native Expo app. Follow existing patterns in the codebase.`;
 
-    await runClaudeCode(workDir, prompt);
+    const claudeResult = await runClaudeCode(workDir, prompt);
+
+    // Save Claude's output to Convex
+    await client.mutation(api.featureRequests.updateClaudeOutput, {
+      id: request._id as any,
+      claudeOutput: claudeResult.output.slice(-5000), // Last 5000 chars
+      claudeSuccess: claudeResult.success,
+    });
+
+    // Check if Claude succeeded before proceeding
+    if (!claudeResult.success) {
+      console.log(`\n⚠️ Claude did not indicate success. Stopping before merge/deploy.`);
+      console.log(`   Exit code: ${claudeResult.exitCode}`);
+      await client.mutation(api.featureRequests.markFailed, {
+        id: request._id as any,
+        error: `Claude did not complete successfully (exit code: ${claudeResult.exitCode})`,
+      });
+      return;
+    }
+
+    console.log(`\n✅ Claude completed successfully!`);
 
     // Get the commit hash
     const commitHash = execSync("git rev-parse HEAD", {
@@ -204,20 +224,44 @@ Important: This is a React Native Expo app. Follow existing patterns in the code
   }
 }
 
-function runClaudeCode(cwd: string, prompt: string): Promise<void> {
+interface ClaudeResult {
+  output: string;
+  success: boolean;
+  exitCode: number;
+}
+
+function runClaudeCode(cwd: string, prompt: string): Promise<ClaudeResult> {
   return new Promise((resolve, reject) => {
     // Write prompt to a temp file to avoid shell escaping issues
     const promptFile = path.join(os.tmpdir(), `claude-prompt-${Date.now()}.txt`);
     fs.writeFileSync(promptFile, prompt);
 
+    let fullOutput = "";
+
     const claude = spawn("claude", ["-p", promptFile, "--dangerously-skip-permissions"], {
       cwd,
-      stdio: "inherit",
+      stdio: ["inherit", "pipe", "pipe"],
       env: {
         ...process.env,
         // Ensure Claude Code can find npm/node
         PATH: process.env.PATH,
+        // Force color output
+        FORCE_COLOR: "1",
       },
+    });
+
+    // Stream and capture stdout
+    claude.stdout?.on("data", (data) => {
+      const text = data.toString();
+      fullOutput += text;
+      process.stdout.write(text);
+    });
+
+    // Stream and capture stderr
+    claude.stderr?.on("data", (data) => {
+      const text = data.toString();
+      fullOutput += text;
+      process.stderr.write(text);
     });
 
     claude.on("close", (code) => {
@@ -228,11 +272,34 @@ function runClaudeCode(cwd: string, prompt: string): Promise<void> {
         // Ignore
       }
 
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`Claude Code exited with code ${code}`));
-      }
+      // Check if Claude indicated success in its output
+      const successIndicators = [
+        /done\.?\s/i,
+        /fixed/i,
+        /implemented/i,
+        /completed/i,
+        /commit.*made/i,
+        /ready.*push/i,
+        /changes.*committed/i,
+      ];
+
+      const failureIndicators = [
+        /failed/i,
+        /error.*occurred/i,
+        /could not/i,
+        /unable to/i,
+        /cannot/i,
+      ];
+
+      const hasSuccessIndicator = successIndicators.some((re) => re.test(fullOutput));
+      const hasFailureIndicator = failureIndicators.some((re) => re.test(fullOutput));
+      const success = code === 0 && hasSuccessIndicator && !hasFailureIndicator;
+
+      resolve({
+        output: fullOutput,
+        success,
+        exitCode: code || 0,
+      });
     });
 
     claude.on("error", (err) => {

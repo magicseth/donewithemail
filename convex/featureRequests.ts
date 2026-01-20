@@ -73,6 +73,23 @@ export const markProcessing = mutation({
 });
 
 /**
+ * Update Claude output on a feature request (called by local watcher)
+ */
+export const updateClaudeOutput = mutation({
+  args: {
+    id: v.id("featureRequests"),
+    claudeOutput: v.string(),
+    claudeSuccess: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      claudeOutput: args.claudeOutput,
+      claudeSuccess: args.claudeSuccess,
+    });
+  },
+});
+
+/**
  * Update progress on a feature request (called by local watcher)
  */
 export const updateProgress = mutation({

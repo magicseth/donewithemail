@@ -278,6 +278,8 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     error: v.optional(v.string()),
     // Output from Claude Code
+    claudeOutput: v.optional(v.string()),      // Claude's final output/summary
+    claudeSuccess: v.optional(v.boolean()),    // Did Claude think it succeeded?
     commitHash: v.optional(v.string()),
     branchName: v.optional(v.string()),
     easUpdateId: v.optional(v.string()),
