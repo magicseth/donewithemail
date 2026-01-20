@@ -7,8 +7,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "prebuild": "expo prebuild && ./scripts/copy-native-extensions.sh",
-    "prebuild:clean": "expo prebuild --clean && ./scripts/copy-native-extensions.sh",
+    "prebuild": "expo prebuild",
+    "prebuild:clean": "expo prebuild --clean",
+    "prebuild:dev": "APP_VARIANT=development expo prebuild --platform ios --clean && open ios/*.xcworkspace",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
