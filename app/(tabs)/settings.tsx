@@ -16,6 +16,7 @@ import { useQuery, useAction, useMutation } from "convex/react";
 import * as Updates from "expo-updates";
 import Constants from "expo-constants";
 import { api } from "../../convex/_generated/api";
+import { useAppLogs, appLogger } from "../../lib/appLogger";
 
 export default function SettingsScreen() {
   const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
@@ -34,6 +35,8 @@ export default function SettingsScreen() {
   const [isScanningSubscriptions, setIsScanningSubscriptions] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<string>("checking...");
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  const logs = useAppLogs();
 
   const checkForUpdates = async () => {
     if (Platform.OS === "web") return;
@@ -584,6 +587,60 @@ export default function SettingsScreen() {
             <Text style={styles.aboutArrow}>→</Text>
           </TouchableOpacity>
         </View>
+      </View>
+
+      {/* Debug Logs */}
+      <View style={styles.section}>
+        <TouchableOpacity
+          style={styles.card}
+          onPress={() => setShowLogs(!showLogs)}
+        >
+          <View style={styles.aboutRow}>
+            <Text style={styles.aboutLabel}>Debug Logs ({logs.length})</Text>
+            <Text style={styles.aboutArrow}>{showLogs ? "▼" : "→"}</Text>
+          </View>
+        </TouchableOpacity>
+        {showLogs && (
+          <View style={[styles.card, { marginTop: 8 }]}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", padding: 8, borderBottomWidth: 1, borderBottomColor: "#eee" }}>
+              <TouchableOpacity onPress={() => appLogger.clear()}>
+                <Text style={{ color: "#6366F1", fontSize: 14 }}>Clear</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => {
+                const logText = logs.map(l =>
+                  `[${new Date(l.timestamp).toLocaleTimeString()}] ${l.level.toUpperCase()}: ${l.message}`
+                ).join("\n");
+                if (Platform.OS === "web") {
+                  navigator.clipboard?.writeText(logText);
+                  alert("Copied to clipboard");
+                } else {
+                  Alert.alert("Logs", logText.slice(0, 2000) + (logText.length > 2000 ? "..." : ""));
+                }
+              }}>
+                <Text style={{ color: "#6366F1", fontSize: 14 }}>Copy All</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 300, padding: 8 }} nestedScrollEnabled>
+              {logs.length === 0 ? (
+                <Text style={{ color: "#999", fontStyle: "italic" }}>No logs yet</Text>
+              ) : (
+                logs.slice().reverse().map((log, i) => (
+                  <Text
+                    key={i}
+                    style={{
+                      fontSize: 11,
+                      fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+                      color: log.level === "error" ? "#FF4444" : log.level === "warn" ? "#FFA500" : "#333",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {new Date(log.timestamp).toLocaleTimeString()}: {log.message}
+                  </Text>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        )}
       </View>
 
       {/* Sign Out */}

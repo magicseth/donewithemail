@@ -33,13 +33,14 @@ export function usePushNotifications() {
   useEffect(() => {
     if (isAuthenticated && !isLoading && pendingNavigation) {
       const data = pendingNavigation;
-      console.log("[Push] Auth ready, processing pending navigation:", data);
+      console.log("[Push] Auth ready, navigating:", data);
       setPendingNavigation(null);
 
       setTimeout(() => {
         if (data.type === "missed_todos") {
           router.navigate("/(tabs)");
         } else if (data.emailId) {
+          console.log("[Push] Navigating to email:", data.emailId);
           router.push(`/email/${data.emailId}`);
         }
       }, 100);

@@ -91,6 +91,24 @@ export function BatchTriageView({
     categoryYPositions.current.set(category, event.nativeEvent.layout.y);
   }, []);
 
+  // Collapse expanded category if it becomes empty
+  useEffect(() => {
+    if (expandedCategory) {
+      const emailsMap: Record<BatchCategory, typeof categories.done> = {
+        done: categories.done,
+        lowConfidence: categories.lowConfidence,
+        actionNeeded: categories.actionNeeded,
+        humanWaiting: categories.humanWaiting,
+        calendar: categories.calendar,
+        pending: categories.pending,
+      };
+      const expandedEmails = emailsMap[expandedCategory];
+      if (!expandedEmails || expandedEmails.length === 0) {
+        setExpandedCategory(null);
+      }
+    }
+  }, [expandedCategory, categories]);
+
   // Clear sender cache when component unmounts (switching to swipe mode or leaving tab)
   useEffect(() => {
     return () => {

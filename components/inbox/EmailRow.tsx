@@ -11,8 +11,8 @@ import {
   Image,
 } from "react-native";
 import { router } from "expo-router";
-import type { QuickReply, CalendarEvent } from "../../../hooks/useGmail";
-import { TriageRowWrapper } from "../../../components/triage";
+import type { QuickReply, CalendarEvent } from "../../hooks/useGmail";
+import { TriageRowWrapper } from "../triage";
 import type { InboxEmail } from "./types";
 import { TRIAGE_CONFIG } from "./types";
 import {

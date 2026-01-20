@@ -349,7 +349,8 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
   return {
     categories: categoriesData,
     total: batchPreview?.total ?? 0,
-    isLoading: !batchPreview && isAuthenticated && !authLoading,
+    // Loading if: auth is loading, OR (authenticated but no data yet)
+    isLoading: authLoading || (!batchPreview && isAuthenticated),
     puntedEmails,
     togglePuntEmail,
     markCategoryDone,

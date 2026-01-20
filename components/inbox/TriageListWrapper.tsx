@@ -12,7 +12,7 @@ import {
   Platform,
 } from "react-native";
 import Animated from "react-native-reanimated";
-import { useTriageContext } from "../../../components/triage";
+import { useTriageContext } from "../triage";
 import type { InboxEmail } from "./types";
 import { TRIAGE_CONFIG } from "./types";
 

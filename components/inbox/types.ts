@@ -1,7 +1,7 @@
 /**
  * Type definitions and configuration for the inbox screen.
  */
-import type { QuickReply, CalendarEvent } from "../../../hooks/useGmail";
+import type { QuickReply, CalendarEvent } from "../../hooks/useGmail";
 
 // Triage UI configuration - all positioning driven from these values
 export const TRIAGE_CONFIG = {

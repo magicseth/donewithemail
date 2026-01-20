@@ -1,3 +1,6 @@
+// Import logger first to intercept all console calls
+import "../lib/appLogger";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Stack } from "expo-router";
 import { ConvexReactClient, ConvexProviderWithAuth } from "convex/react";
@@ -17,7 +20,7 @@ export function signalAuthRefresh() {
   console.log("[AuthAdapter] Auth refresh signaled at", lastAuthRefreshSignal);
 }
 
-// Debug: decode JWT to check expiration and issuer
+// Decode JWT to check expiration (no logging - called frequently)
 function debugJwt(token: string): { valid: boolean; exp?: number; iss?: string; error?: string } {
   try {
     const parts = token.split(".");
@@ -27,7 +30,6 @@ function debugJwt(token: string): { valid: boolean; exp?: number; iss?: string; 
     const payload = JSON.parse(atob(parts[1]));
     const now = Math.floor(Date.now() / 1000);
     const isExpired = payload.exp && payload.exp < now;
-    console.log("[JWT Debug] iss:", payload.iss, "exp:", payload.exp, "now:", now, "expired:", isExpired);
     return { valid: !isExpired, exp: payload.exp, iss: payload.iss };
   } catch (e) {
     return { valid: false, error: String(e) };
@@ -112,24 +114,15 @@ function useAuthAdapter() {
           const isExpiredByJwt = accessToken && !jwtInfo.valid;
 
           if (isExpiredByStorage || isExpiredByJwt) {
-            console.log("[AuthAdapter] Token expired, clearing token state", { isExpiredByStorage, isExpiredByJwt });
-            if (token !== null) {
-              setToken(null);
-            }
+            console.log("[Auth] Token expired");
+            if (token !== null) setToken(null);
           } else if (accessToken && accessToken !== token) {
-            // Only update if we have a valid token
-            console.log("[AuthAdapter] Token updated, hasToken:", !!accessToken);
             setToken(accessToken);
           } else if (!accessToken && token !== null) {
-            // Token was cleared from storage
-            console.log("[AuthAdapter] Token cleared from storage");
             setToken(null);
           }
         } else {
-          if (token !== null) {
-            console.log("[AuthAdapter] No stored auth, clearing token");
-            setToken(null);
-          }
+          if (token !== null) setToken(null);
         }
         setIsLoading(false);
         retryCount = 0;
@@ -168,41 +161,31 @@ function useAuthAdapter() {
         const accessToken = parsed.accessToken || null;
         const expiresAt = parsed.expiresAt;
 
-        // Don't return expired tokens (check our stored expiresAt)
+        // Don't return expired tokens
         if (expiresAt && Date.now() > expiresAt - 10000) {
-          console.log("[AuthAdapter] fetchAccessToken: token expired (by expiresAt)");
           return null;
         }
 
         // Also verify the JWT itself isn't expired
         if (accessToken) {
           const jwtInfo = debugJwt(accessToken);
-          if (!jwtInfo.valid) {
-            console.log("[AuthAdapter] fetchAccessToken: JWT invalid/expired");
-            return null;
-          }
+          if (!jwtInfo.valid) return null;
         }
 
-        console.log("[AuthAdapter] fetchAccessToken: returning valid token");
         return accessToken;
       }
-      console.log("[AuthAdapter] fetchAccessToken: no stored auth");
     } catch (e) {
-      console.error("[AuthAdapter] Failed to fetch access token:", e);
+      console.error("[Auth] Failed to fetch token:", e);
     }
     return null;
   }, []);
 
   const result = useMemo(
-    () => {
-      const isAuthenticated = !!token;
-      console.log("[AuthAdapter] useMemo result: isLoading=", isLoading, "isAuthenticated=", isAuthenticated, "hasToken=", !!token);
-      return {
-        isLoading,
-        isAuthenticated,
-        fetchAccessToken,
-      };
-    },
+    () => ({
+      isLoading,
+      isAuthenticated: !!token,
+      fetchAccessToken,
+    }),
     [isLoading, token, fetchAccessToken]
   );
 

@@ -2,7 +2,7 @@
  * Utility functions for the inbox screen.
  */
 import { Alert, Platform } from "react-native";
-import type { GmailEmail } from "../../../hooks/useGmail";
+import type { GmailEmail } from "../../hooks/useGmail";
 import type { InboxEmail } from "./types";
 
 /**
