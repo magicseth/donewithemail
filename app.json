@@ -55,7 +55,8 @@
           "color": "#6366F1",
           "mode": "development"
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

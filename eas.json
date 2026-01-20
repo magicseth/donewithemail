@@ -8,26 +8,29 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_CONVEX_URL": "${EXPO_PUBLIC_CONVEX_URL}"
-      }
+        "EXPO_PUBLIC_CONVEX_URL": "https://cool-kingfisher-293.convex.cloud"
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_CONVEX_URL": "${EXPO_PUBLIC_CONVEX_URL}"
-      }
+        "EXPO_PUBLIC_CONVEX_URL": "https://cool-kingfisher-293.convex.cloud"
+      },
+      "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_CONVEX_URL": "https://cool-kingfisher-293.convex.cloud"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {
     "production": {
-      "ios" : {
-        "ascAppId":"6757969047"
+      "ios": {
+        "ascAppId": "6757969047"
       }
     }
   }
