@@ -14,11 +14,19 @@ export const submit = mutation({
       throw new Error("Not authenticated");
     }
 
-    // Get user from email
-    const user = await ctx.db
+    // Get user - try by workosId first, then fall back to email
+    const workosId = identity.subject;
+    let user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", identity.email!))
+      .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
       .first();
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
 
     if (!user) {
       throw new Error("User not found");
@@ -113,10 +121,19 @@ export const getMine = query({
       return [];
     }
 
-    const user = await ctx.db
+    // Get user - try by workosId first, then fall back to email
+    const workosId = identity.subject;
+    let user = await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", identity.email!))
+      .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
       .first();
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
 
     if (!user) {
       return [];

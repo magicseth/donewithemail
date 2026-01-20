@@ -24,6 +24,7 @@ import type * as emailSyncHelpers from "../emailSyncHelpers.js";
 import type * as emailWorkflow from "../emailWorkflow.js";
 import type * as emailWorkflowHelpers from "../emailWorkflowHelpers.js";
 import type * as emails from "../emails.js";
+import type * as featureRequests from "../featureRequests.js";
 import type * as functions from "../functions.js";
 import type * as gmailAuth from "../gmailAuth.js";
 import type * as gmailHelpers from "../gmailHelpers.js";
@@ -70,6 +71,7 @@ declare const fullApi: ApiFromModules<{
   emailWorkflow: typeof emailWorkflow;
   emailWorkflowHelpers: typeof emailWorkflowHelpers;
   emails: typeof emails;
+  featureRequests: typeof featureRequests;
   functions: typeof functions;
   gmailAuth: typeof gmailAuth;
   gmailHelpers: typeof gmailHelpers;

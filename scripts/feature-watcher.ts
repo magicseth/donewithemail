@@ -46,7 +46,7 @@ if (!convexUrl) {
 }
 
 const client = new ConvexHttpClient(convexUrl);
-const REPO_URL = "git@github.com:magicseth/tokmail.git"; // Adjust to your repo
+const REPO_URL = "https://github.com/magicseth/tokmail.git"; // Adjust to your repo
 const POLL_INTERVAL = 5000; // 5 seconds
 const WORKTREE_BASE = path.join(os.tmpdir(), "tokmail-features");
 
