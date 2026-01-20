@@ -84,6 +84,8 @@ export default function InboxScreen() {
   const [sendingReplyFor, setSendingReplyFor] = useState<string | null>(null);
   const [recordingFor, setRecordingFor] = useState<string | null>(null);
   const [pendingTranscriptFor, setPendingTranscriptFor] = useState<string | null>(null);
+  // Store the email being recorded so we don't lose it if it gets triaged during recording
+  const [pendingTranscriptEmail, setPendingTranscriptEmail] = useState<typeof gmailEmails[number] | null>(null);
   const [replyDraft, setReplyDraft] = useState<ReplyDraft | null>(null);
 
   // Toast state
@@ -164,22 +166,33 @@ export default function InboxScreen() {
       cancelRecording();
       setRecordingFor(null);
       setPendingTranscriptFor(null);
+      setPendingTranscriptEmail(null);
     }
 
     if (pendingTranscriptFor && pendingTranscriptFor !== emailId) {
       setPendingTranscriptFor(null);
+      setPendingTranscriptEmail(null);
+    }
+
+    // Store the email now, so we don't lose it if it gets triaged during recording
+    const email = gmailEmails.find(e => e._id === emailId);
+    if (!email) {
+      showAlert("Error", "Email not found");
+      return;
     }
 
     setRecordingFor(emailId);
     setPendingTranscriptFor(null);
+    setPendingTranscriptEmail(email);
     startRecording();
-  }, [recordingFor, pendingTranscriptFor, startRecording, cancelRecording]);
+  }, [recordingFor, pendingTranscriptFor, gmailEmails, startRecording, cancelRecording]);
 
   const handleBatchMicPressOut = useCallback(async (emailId: string) => {
     if (recordingFor !== emailId) return;
 
     playStopSound();
     setPendingTranscriptFor(emailId);
+    // Keep pendingTranscriptEmail - it was already set in handleBatchMicPressIn
     setRecordingFor(null);
 
     const currentTranscript = transcript;
@@ -194,11 +207,17 @@ export default function InboxScreen() {
     if (!actualTranscript) {
       showToast("No speech detected", "error");
       setPendingTranscriptFor(null);
+      setPendingTranscriptEmail(null);
     }
   }, [recordingFor, transcript, stopRecording, playStopSound, showToast]);
 
   const handleBatchSendTranscript = useCallback((emailId: string) => {
-    const email = gmailEmails.find(e => e._id === emailId);
+    // Use the stored email (captured when recording started), not the current gmailEmails array
+    // This prevents "Email not found" errors if the email was triaged during recording
+    const email = pendingTranscriptEmail?._id === emailId
+      ? pendingTranscriptEmail
+      : gmailEmails.find(e => e._id === emailId);
+
     if (!email) {
       showAlert("Error", "Email not found");
       return;
@@ -215,7 +234,8 @@ export default function InboxScreen() {
 
     setReplyDraft({ email, body: transcript.trim(), subject });
     setPendingTranscriptFor(null);
-  }, [gmailEmails, transcript, showToast]);
+    setPendingTranscriptEmail(null);
+  }, [pendingTranscriptEmail, gmailEmails, transcript, showToast]);
 
   if (isLoading && gmailEmails.length === 0) {
     return (
