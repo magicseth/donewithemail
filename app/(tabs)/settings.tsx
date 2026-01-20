@@ -28,10 +28,12 @@ export default function SettingsScreen() {
   const resetAndResummarize = useAction(api.summarizeActions.resetAndResummarizeAll);
   const sendTestNotification = useMutation(api.notifications.sendMyTestNotificationWithAvatar);
   const sendTestCommunicationNotification = useMutation(api.notifications.sendMyTestCommunicationNotification);
+  const sendTestNotificationForRecentEmail = useMutation(api.notifications.sendTestNotificationForRecentEmail);
   const resetAllToUntriaged = useMutation(api.emails.resetMyTriagedEmails);
   const scanExistingEmailsAction = useAction(api.subscriptions.scanMyExistingEmails);
   const [isResettingTriage, setIsResettingTriage] = useState(false);
   const [isSendingCommNotification, setIsSendingCommNotification] = useState(false);
+  const [isSendingRecentEmailNotification, setIsSendingRecentEmailNotification] = useState(false);
   const [isScanningSubscriptions, setIsScanningSubscriptions] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<string>("checking...");
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -160,6 +162,29 @@ export default function SettingsScreen() {
       }
     } finally {
       setIsSendingCommNotification(false);
+    }
+  };
+
+  const handleTestRecentEmailNotification = async () => {
+    setIsSendingRecentEmailNotification(true);
+    try {
+      const result = await sendTestNotificationForRecentEmail({});
+      const message = `Notification sent!\nEmail: ${result.subject}\nFrom: ${result.senderName}`;
+      if (Platform.OS === "web") {
+        window.alert(message);
+      } else {
+        Alert.alert("Test Notification Sent", message);
+      }
+    } catch (e) {
+      console.error("Recent email notification error:", e);
+      const errorMsg = e instanceof Error ? e.message : "Unknown error";
+      if (Platform.OS === "web") {
+        window.alert(`Error: ${errorMsg}`);
+      } else {
+        Alert.alert("Error", errorMsg);
+      }
+    } finally {
+      setIsSendingRecentEmailNotification(false);
     }
   };
 
@@ -549,6 +574,26 @@ export default function SettingsScreen() {
               </Text>
             </View>
             {isSendingCommNotification ? (
+              <ActivityIndicator size="small" color="#6366F1" />
+            ) : (
+              <Text style={styles.aboutArrow}>→</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity
+            style={styles.aboutRow}
+            onPress={handleTestRecentEmailNotification}
+            disabled={isSendingRecentEmailNotification}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Test Deep Link Notification</Text>
+              <Text style={styles.settingDescription}>
+                Send notification for most recent email to test navigation
+              </Text>
+            </View>
+            {isSendingRecentEmailNotification ? (
               <ActivityIndicator size="small" color="#6366F1" />
             ) : (
               <Text style={styles.aboutArrow}>→</Text>

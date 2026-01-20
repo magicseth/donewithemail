@@ -27,15 +27,17 @@ export function WebViewWrapper({ html, style }: WebViewWrapperProps) {
     }
   }, []);
 
-  // Web: render iframe
+  // Web: render iframe with scrollable content
   if (Platform.OS === "web") {
     return (
       <iframe
         srcDoc={html}
         style={{
           width: "100%",
-          minHeight: 400,
-          border: "none",
+          height: 500,
+          maxHeight: "60vh",
+          border: "1px solid #eee",
+          borderRadius: 8,
           backgroundColor: "#fff",
         }}
         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-scripts"
@@ -57,8 +59,9 @@ export function WebViewWrapper({ html, style }: WebViewWrapperProps) {
       originWhitelist={["*"]}
       source={{ html }}
       style={[styles.webView, style]}
-      scrollEnabled={false}
-      showsVerticalScrollIndicator={false}
+      scrollEnabled={true}
+      nestedScrollEnabled={true}
+      showsVerticalScrollIndicator={true}
     />
   );
 }

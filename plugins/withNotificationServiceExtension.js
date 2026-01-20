@@ -15,6 +15,8 @@ const withNotificationServiceExtension = (config) => {
   config = withXcodeProject(config, async (config) => {
     const xcodeProject = config.modResults;
     const bundleIdentifier = config.ios?.bundleIdentifier || "com.donewithemail.app";
+    const appVersion = config.version || "1.0.0";
+    const buildNumber = config.ios?.buildNumber || "1";
     const extensionName = "NotificationServiceExtension";
     const extensionBundleId = `${bundleIdentifier}.${extensionName}`;
 
@@ -169,15 +171,16 @@ const withNotificationServiceExtension = (config) => {
     objects.PBXSourcesBuildPhase[`${sourcesBuildPhaseUuid}_comment`] = 'Sources';
 
     // 7. Create build configurations
+    console.log(`[NotificationServiceExtension] Using version: ${appVersion}, build: ${buildNumber}`);
     const baseBuildSettings = {
       CLANG_ENABLE_MODULES: 'YES',
       CODE_SIGN_STYLE: 'Automatic',
-      CURRENT_PROJECT_VERSION: 1,
+      CURRENT_PROJECT_VERSION: buildNumber,
       GENERATE_INFOPLIST_FILE: 'NO',
       INFOPLIST_FILE: `${extensionName}/Info.plist`,
       IPHONEOS_DEPLOYMENT_TARGET: '15.0',
       LD_RUNPATH_SEARCH_PATHS: '"$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"',
-      MARKETING_VERSION: '1.0',
+      MARKETING_VERSION: appVersion,
       PRODUCT_BUNDLE_IDENTIFIER: extensionBundleId,
       PRODUCT_NAME: '"$(TARGET_NAME)"',
       SKIP_INSTALL: 'YES',

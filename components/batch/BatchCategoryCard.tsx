@@ -35,10 +35,25 @@ interface SenderGroupHeaderProps {
   senderEmail: string;
   avatarUrl?: string;
   emailCount: number;
+  /** Number of emails flagged for this sender */
+  flaggedCount?: number;
+  /** Mark all emails from this sender as done */
+  onMarkAllDone?: () => void;
+  /** Toggle flag on all emails from this sender */
+  onToggleFlagAll?: () => void;
 }
 
-function SenderGroupHeader({ senderName, senderEmail, avatarUrl, emailCount }: SenderGroupHeaderProps) {
+function SenderGroupHeader({
+  senderName,
+  senderEmail,
+  avatarUrl,
+  emailCount,
+  flaggedCount = 0,
+  onMarkAllDone,
+  onToggleFlagAll,
+}: SenderGroupHeaderProps) {
   const initials = getInitials(senderName || senderEmail.split("@")[0]);
+  const allFlagged = flaggedCount === emailCount;
 
   return (
     <View style={senderStyles.container}>
@@ -51,8 +66,32 @@ function SenderGroupHeader({ senderName, senderEmail, avatarUrl, emailCount }: S
       )}
       <View style={senderStyles.info}>
         <Text style={senderStyles.name} numberOfLines={1}>{senderName || senderEmail}</Text>
-        {emailCount > 1 && (
-          <Text style={senderStyles.count}>{emailCount} emails</Text>
+        <Text style={senderStyles.count}>
+          {emailCount} email{emailCount !== 1 ? "s" : ""}
+          {flaggedCount > 0 && ` · ${flaggedCount} flagged`}
+        </Text>
+      </View>
+      {/* Bulk action icons */}
+      <View style={senderStyles.actions}>
+        {onMarkAllDone && (
+          <TouchableOpacity
+            style={senderStyles.iconButton}
+            onPress={onMarkAllDone}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={senderStyles.checkmarkIcon}>✓</Text>
+          </TouchableOpacity>
+        )}
+        {onToggleFlagAll && (
+          <TouchableOpacity
+            style={[senderStyles.iconButton, allFlagged && senderStyles.iconButtonActive]}
+            onPress={onToggleFlagAll}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[senderStyles.flagIcon, allFlagged && senderStyles.flagIconActive]}>
+              {allFlagged ? "🚩" : "⚑"}
+            </Text>
+          </TouchableOpacity>
         )}
       </View>
     </View>
@@ -63,7 +102,7 @@ const senderStyles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingTop: 12,
     paddingBottom: 4,
     backgroundColor: "#F9FAFB",
@@ -104,6 +143,35 @@ const senderStyles = StyleSheet.create({
     fontSize: 12,
     color: "#6B7280",
   },
+  actions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginLeft: 8,
+  },
+  iconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#E5E7EB",
+  },
+  iconButtonActive: {
+    backgroundColor: "#FEF3C7",
+  },
+  checkmarkIcon: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#9CA3AF",  // Gray until clicked
+  },
+  flagIcon: {
+    fontSize: 14,
+    color: "#9CA3AF",
+  },
+  flagIconActive: {
+    color: "#F59E0B",
+  },
 });
 
 // Group emails by sender
@@ -112,6 +180,7 @@ interface SenderGroup {
   senderName: string;
   avatarUrl?: string;
   emails: BatchEmailPreview[];
+  flaggedCount: number;
 }
 
 // Category configuration
@@ -173,7 +242,14 @@ interface BatchCategoryCardProps {
   emails: BatchEmailPreview[];
   puntedEmails: Set<string>;
   onPuntEmail: (emailId: string) => void;
+  /** Mark a single email as done */
+  onMarkEmailDone?: (emailId: string) => void;
+  /** Mark all non-flagged emails in category as done */
   onMarkAllDone: () => void;
+  /** Mark all emails from a specific sender as done */
+  onMarkSenderDone?: (senderEmail: string) => void;
+  /** Toggle flag on all emails from a specific sender */
+  onToggleSenderFlag?: (senderEmail: string) => void;
   onAcceptCalendar?: (emailId: string) => void;
   onQuickReply?: (emailId: string, reply: QuickReplyOption) => void;
   onMicPressIn?: (emailId: string) => void;
@@ -203,7 +279,10 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
   emails,
   puntedEmails,
   onPuntEmail,
+  onMarkEmailDone,
   onMarkAllDone,
+  onMarkSenderDone,
+  onToggleSenderFlag,
   onAcceptCalendar,
   onQuickReply,
   onMicPressIn,
@@ -250,15 +329,18 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
     for (const email of emails) {
       const senderEmail = email.fromContact?.email || "unknown";
       const existing = groups.get(senderEmail);
+      const isFlagged = puntedEmails.has(email._id) || !!email.isInTodo;
 
       if (existing) {
         existing.emails.push(email);
+        if (isFlagged) existing.flaggedCount++;
       } else {
         groups.set(senderEmail, {
           senderEmail,
           senderName: email.fromContact?.name || email.fromName || senderEmail,
           avatarUrl: email.fromContact?.avatarUrl,
           emails: [email],
+          flaggedCount: isFlagged ? 1 : 0,
         });
       }
     }
@@ -269,7 +351,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
       const bTime = Math.max(...b.emails.map(e => e.receivedAt));
       return bTime - aTime;
     });
-  }, [emails]);
+  }, [emails, puntedEmails]);
 
   // Flatten sender groups into a list with headers for FlatList (native)
   type FlatListItem =
@@ -370,6 +452,9 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                       senderEmail={group.senderEmail}
                       avatarUrl={group.avatarUrl}
                       emailCount={group.emails.length}
+                      flaggedCount={group.flaggedCount}
+                      onMarkAllDone={onMarkSenderDone ? () => onMarkSenderDone(group.senderEmail) : undefined}
+                      onToggleFlagAll={onToggleSenderFlag ? () => onToggleSenderFlag(group.senderEmail) : undefined}
                     />
                     {group.emails.map((email, index) => {
                       const globalIndex = prevItemsCount + index;
@@ -386,6 +471,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                           switchAnimationDelay={200 + globalIndex * 150}
                           triggerSwitchAnimation={isExpanded}
                           onPunt={() => onPuntEmail(email._id)}
+                          onMarkDone={onMarkEmailDone ? () => onMarkEmailDone(email._id) : undefined}
                           onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
                           onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
                           onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id) : undefined}
@@ -438,6 +524,9 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                   senderEmail={section.senderEmail}
                   avatarUrl={section.avatarUrl}
                   emailCount={section.emails.length}
+                  flaggedCount={section.flaggedCount}
+                  onMarkAllDone={onMarkSenderDone ? () => onMarkSenderDone(section.senderEmail) : undefined}
+                  onToggleFlagAll={onToggleSenderFlag ? () => onToggleSenderFlag(section.senderEmail) : undefined}
                 />
               )}
               renderItem={({ item: email, index, section }) => {
@@ -456,6 +545,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                     switchAnimationDelay={200 + globalIndex * 150}
                     triggerSwitchAnimation={isExpanded}
                     onPunt={() => onPuntEmail(email._id)}
+                    onMarkDone={onMarkEmailDone ? () => onMarkEmailDone(email._id) : undefined}
                     onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
                     onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
                     onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id) : undefined}

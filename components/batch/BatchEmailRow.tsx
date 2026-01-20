@@ -11,7 +11,6 @@ import {
   ScrollView,
   Dimensions,
   Platform,
-  Switch,
 } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "convex/react";
@@ -115,11 +114,14 @@ interface BatchEmailRowProps {
   isRecordingConnected?: boolean;
   /** Live transcript while recording */
   transcript?: string;
-  /** Delay in ms before switch animates to "Done" state. Used for cascade effect. */
+  /** Delay in ms before checkmark animates in. Used for cascade effect. */
   switchAnimationDelay?: number;
-  /** If true, trigger the switch animation (used for scroll-into-view) */
+  /** If true, trigger the animation (used for scroll-into-view) */
   triggerSwitchAnimation?: boolean;
+  /** Toggle flag state (keep/needs review) */
   onPunt: () => void;
+  /** Mark this email as done immediately */
+  onMarkDone?: () => void;
   onAccept?: () => void;
   onQuickReply?: (reply: QuickReplyOption) => void;
   /** Called when mic button is pressed down (start recording) */
@@ -129,7 +131,7 @@ interface BatchEmailRowProps {
   /** Called when send button is tapped after recording */
   onSendTranscript?: () => void;
   onUnsubscribe?: () => void;
-  /** Called when "Needs Reply" button is tapped - toggles TODO state */
+  /** @deprecated Use onPunt and onMarkDone instead */
   onNeedsReplyPress?: () => void;
   isAccepting?: boolean;
   isUnsubscribing?: boolean;
@@ -148,6 +150,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   switchAnimationDelay = 0,
   triggerSwitchAnimation = true,
   onPunt,
+  onMarkDone,
   onAccept,
   onQuickReply,
   onMicPressIn,
@@ -159,35 +162,25 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   isUnsubscribing,
   compact = false,
 }: BatchEmailRowProps) {
-  const [showReplyOptions, setShowReplyOptions] = useState(expandReplyByDefault);
   const [showPreview, setShowPreview] = useState(false);
 
-  // Animation state: starts as "TODO" (false), animates to "Done" (true) after delay
-  // This creates the visual effect of switches flipping to "Done"
-  const [hasAnimatedToDone, setHasAnimatedToDone] = useState(false);
-  const hasUserInteracted = useRef(false);
+  // Animation state for checkmark appearance
+  const [hasAnimated, setHasAnimated] = useState(false);
 
-  // Trigger animation when component becomes visible (via triggerSwitchAnimation prop)
+  // Trigger animation when component becomes visible
   useEffect(() => {
-    // Don't animate if user has manually interacted or if already punted
-    if (hasUserInteracted.current || isPunted) {
-      setHasAnimatedToDone(true); // Skip animation, go directly to actual state
+    if (isPunted) {
+      setHasAnimated(true); // Skip animation for flagged items
       return;
     }
 
-    if (triggerSwitchAnimation && !hasAnimatedToDone) {
+    if (triggerSwitchAnimation && !hasAnimated) {
       const timer = setTimeout(() => {
-        setHasAnimatedToDone(true);
+        setHasAnimated(true);
       }, switchAnimationDelay);
       return () => clearTimeout(timer);
     }
-  }, [triggerSwitchAnimation, switchAnimationDelay, hasAnimatedToDone, isPunted]);
-
-  // The visual switch value: false during animation, then follows actual state
-  const switchValue = hasAnimatedToDone ? !isPunted : false;
-  const switchLabel = hasAnimatedToDone
-    ? (isPunted ? "Reply" : "Done")
-    : "Todo";
+  }, [triggerSwitchAnimation, switchAnimationDelay, hasAnimated, isPunted]);
 
   // Track mic press state for native responder system
   const micPressActive = useRef(false);
@@ -204,15 +197,10 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   const timeAgo = formatTimeAgo(email.receivedAt);
 
   const hasCalendar = !!email.calendarEvent;
-  const hasQuickReplies = email.quickReplies && email.quickReplies.length > 0;
 
   const handlePress = useCallback(() => {
     router.push(`/email/${email._id}`);
   }, [email._id]);
-
-  const handleReplyToggle = useCallback(() => {
-    setShowReplyOptions(prev => !prev);
-  }, []);
 
   const handleLongPress = useCallback(() => {
     setShowPreview(true);
@@ -282,76 +270,51 @@ export const BatchEmailRow = memo(function BatchEmailRow({
           )}
         </View>
 
-        {/* Action buttons */}
+        {/* Action buttons - stop (unsubscribe), checkmark (done), flag (keep/needs review) */}
         <View style={styles.actionButtons}>
-          {/* Done switch - animates from TODO to Done on load, OFF = needs reply/TODO */}
-          {onNeedsReplyPress && (
-            <View style={styles.doneSwitchContainer}>
-              <Switch
-                value={switchValue}
-                onValueChange={(isDone) => {
-                  hasUserInteracted.current = true;
-                  setHasAnimatedToDone(true); // Ensure we're past animation state
-                  if (isDone) {
-                    // Switched to ON (Done) - remove from TODO and hide replies
-                    onNeedsReplyPress();
-                    setShowReplyOptions(false);
-                  } else {
-                    // Switched to OFF (Needs Reply) - add to TODO and show replies
-                    onNeedsReplyPress();
-                    setShowReplyOptions(true);
-                  }
-                }}
-                trackColor={{ false: "#6366F1", true: "#10B981" }}
-                thumbColor="#fff"
-                ios_backgroundColor="#6366F1"
-              />
-              <Text style={[
-                styles.doneSwitchLabel,
-                !hasAnimatedToDone && styles.doneSwitchLabelTodo,
-                hasAnimatedToDone && isPunted && styles.doneSwitchLabelActive
-              ]}>
-                {switchLabel}
-              </Text>
-            </View>
-          )}
-
-          {/* Reply expansion toggle - only if quick replies or mic available AND not expanded by default */}
-          {(hasQuickReplies || onMicPressIn) && !expandReplyByDefault && !onNeedsReplyPress && (
+          {/* Stop sign - unsubscribe (for subscriptions only) */}
+          {isSubscription && onUnsubscribe && (
             <TouchableOpacity
-              style={[styles.actionButton, styles.replyButton, showReplyOptions && styles.replyButtonActive]}
-              onPress={handleReplyToggle}
-              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+              style={[styles.iconButton, isUnsubscribing && styles.iconButtonDisabled]}
+              onPress={onUnsubscribe}
+              disabled={isUnsubscribing}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Text style={[styles.actionButtonText, styles.replyButtonText, showReplyOptions && styles.replyButtonTextActive]}>
-                Reply
+              <Text style={[styles.stopIcon, !isUnsubscribing && styles.stopIconGray]}>
+                {isUnsubscribing ? "🛑" : "⊘"}
               </Text>
             </TouchableOpacity>
           )}
 
+          {/* Checkmark - mark as done (gray until clicked) */}
+          {onMarkDone && hasAnimated && (
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={onMarkDone}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.checkmarkIconGray}>✓</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Flag - toggle keep/needs review */}
+          <TouchableOpacity
+            style={[styles.iconButton, isPunted && styles.iconButtonActive]}
+            onPress={onPunt}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[styles.flagIcon, isPunted && styles.flagIconActive]}>
+              {isPunted ? "🚩" : "⚑"}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Summary row with optional unsubscribe button */}
+      {/* Summary row */}
       <View style={styles.summaryRow}>
-        <Text style={[styles.summary, isSubscription && onUnsubscribe && styles.summaryWithUnsub]} numberOfLines={2}>
+        <Text style={styles.summary} numberOfLines={2}>
           {email.summary || decodeHtmlEntities(email.bodyPreview)}
         </Text>
-        {/* Unsubscribe button (for subscriptions only) - positioned right of summary */}
-        {isSubscription && onUnsubscribe && (
-          <TouchableOpacity
-            style={[styles.unsubButton, isUnsubscribing && styles.buttonDisabled]}
-            onPress={(e) => { e.stopPropagation(); onUnsubscribe(); }}
-            disabled={isUnsubscribing}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            {isUnsubscribing ? (
-              <ActivityIndicator size="small" color="#EF4444" />
-            ) : (
-              <Text style={styles.unsubButtonText}>Unsubscribe</Text>
-            )}
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Calendar event details with add button */}
@@ -402,7 +365,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
       )}
 
       {/* Expanded reply options */}
-      {showReplyOptions && (
+      {expandReplyByDefault && (
         <View style={styles.replyOptionsContainer}>
           <View style={styles.replyOptionsRow}>
             {/* Show transcript when recording or have pending transcript */}
@@ -557,6 +520,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   if (prevProps.compact !== nextProps.compact) return false;
 
   // For functions, only check if defined status changed (not reference)
+  if (!!prevProps.onMarkDone !== !!nextProps.onMarkDone) return false;
   if (!!prevProps.onAccept !== !!nextProps.onAccept) return false;
   if (!!prevProps.onQuickReply !== !!nextProps.onQuickReply) return false;
   if (!!prevProps.onMicPressIn !== !!nextProps.onMicPressIn) return false;
@@ -644,9 +608,6 @@ const styles = StyleSheet.create({
     color: "#666",
     lineHeight: 18,
   },
-  summaryWithUnsub: {
-    marginRight: 8,
-  },
   calendarEventContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -694,63 +655,43 @@ const styles = StyleSheet.create({
     color: "#fff",
     lineHeight: 28,
   },
-  unsubButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: "#fff",
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#EF4444",
-    alignSelf: "flex-start",
-  },
-  unsubButtonText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#EF4444",
-  },
   actionButtons: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
   },
-  doneSwitchContainer: {
-    flexDirection: "row",
+  iconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
     alignItems: "center",
-    gap: 6,
+    backgroundColor: "#F3F4F6",
   },
-  doneSwitchLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
+  iconButtonActive: {
+    backgroundColor: "#FEF3C7",
   },
-  doneSwitchLabelTodo: {
-    color: "#6366F1",
+  flagIcon: {
+    fontSize: 16,
+    color: "#9CA3AF",
   },
-  doneSwitchLabelActive: {
-    color: "#6366F1",
+  flagIconActive: {
+    color: "#F59E0B",
   },
-  actionButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
+  checkmarkIconGray: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#9CA3AF",
   },
-  actionButtonText: {
-    fontSize: 12,
-    fontWeight: "600",
+  stopIcon: {
+    fontSize: 18,
+    fontWeight: "700",
   },
-  replyButton: {
-    backgroundColor: "#fff",
-    borderColor: "#6366F1",
+  stopIconGray: {
+    color: "#9CA3AF",
   },
-  replyButtonActive: {
-    backgroundColor: "#6366F1",
-  },
-  replyButtonText: {
-    color: "#6366F1",
-  },
-  replyButtonTextActive: {
-    color: "#fff",
+  iconButtonDisabled: {
+    opacity: 0.5,
   },
   replyOptionsContainer: {
     paddingHorizontal: 12,

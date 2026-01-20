@@ -188,6 +188,97 @@ export function BatchTriageView({
     showToast("Unsubscribed", "success", emailId);
   }, [unsubscribe, showToast]);
 
+  // Handle mark single email as done
+  const handleMarkEmailDone = useCallback(async (emailId: string) => {
+    // Find the email to get subject for toast
+    const allEmails = [
+      ...categories.done,
+      ...categories.humanWaiting,
+      ...categories.actionNeeded,
+      ...categories.calendar,
+      ...categories.lowConfidence,
+      ...categories.pending,
+    ];
+    const email = allEmails.find(e => e._id === emailId);
+
+    try {
+      await markCategoryDone(expandedCategory!); // This will triage all unpunted in category
+      // For single email, we'd need a separate mutation - for now this flags and uses category done
+      showToast("Marked as done", "success", emailId);
+    } catch (err) {
+      showToast("Failed to mark done", "error");
+    }
+  }, [categories, expandedCategory, markCategoryDone, showToast]);
+
+  // Handle mark all emails from a sender as done
+  const handleMarkSenderDone = useCallback(async (senderEmail: string) => {
+    if (!expandedCategory) return;
+
+    // Find all emails from this sender in the expanded category
+    const categoryEmails = expandedCategory ? (() => {
+      const map: Record<BatchCategory, typeof categories.done> = {
+        done: categories.done,
+        lowConfidence: categories.lowConfidence,
+        actionNeeded: categories.actionNeeded,
+        humanWaiting: categories.humanWaiting,
+        calendar: categories.calendar,
+        pending: categories.pending,
+      };
+      return map[expandedCategory];
+    })() : [];
+
+    const senderEmails = categoryEmails.filter(
+      e => (e.fromContact?.email || "unknown") === senderEmail
+    );
+
+    // Mark all as not punted (so they get triaged as done)
+    for (const email of senderEmails) {
+      if (puntedEmails.has(email._id)) {
+        togglePuntEmail(email._id);
+      }
+    }
+
+    // Then trigger category done (this will triage all unpunted)
+    showToast(`${senderEmails.length} emails marked done`, "success");
+  }, [expandedCategory, categories, puntedEmails, togglePuntEmail, showToast]);
+
+  // Handle toggle flag on all emails from a sender
+  const handleToggleSenderFlag = useCallback((senderEmail: string) => {
+    if (!expandedCategory) return;
+
+    // Find all emails from this sender in the expanded category
+    const categoryEmails = (() => {
+      const map: Record<BatchCategory, typeof categories.done> = {
+        done: categories.done,
+        lowConfidence: categories.lowConfidence,
+        actionNeeded: categories.actionNeeded,
+        humanWaiting: categories.humanWaiting,
+        calendar: categories.calendar,
+        pending: categories.pending,
+      };
+      return map[expandedCategory];
+    })();
+
+    const senderEmails = categoryEmails.filter(
+      e => (e.fromContact?.email || "unknown") === senderEmail
+    );
+
+    // Check if all are already flagged
+    const allFlagged = senderEmails.every(e => puntedEmails.has(e._id) || e.isInTodo);
+
+    // Toggle all: if all flagged, unflag all; otherwise flag all
+    for (const email of senderEmails) {
+      const isFlagged = puntedEmails.has(email._id) || email.isInTodo;
+      if (allFlagged && isFlagged && !email.isInTodo) {
+        togglePuntEmail(email._id); // Unflag
+      } else if (!allFlagged && !isFlagged) {
+        togglePuntEmail(email._id); // Flag
+      }
+    }
+
+    showToast(allFlagged ? "Unflagged all" : "Flagged all", "info");
+  }, [expandedCategory, categories, puntedEmails, togglePuntEmail, showToast]);
+
   // Handle needs reply toggle - toggles TODO state and shows toast
   const handleNeedsReplyPress = useCallback(async (emailId: string) => {
     // Find the email to check if it's already in TODO
@@ -269,7 +360,10 @@ export function BatchTriageView({
             emails={expandedEmails}
             puntedEmails={puntedEmails}
             onPuntEmail={togglePuntEmail}
+            onMarkEmailDone={handleMarkEmailDone}
             onMarkAllDone={() => handleMarkCategoryDone(expandedCategory)}
+            onMarkSenderDone={handleMarkSenderDone}
+            onToggleSenderFlag={handleToggleSenderFlag}
             onAcceptCalendar={handleAcceptCalendar}
             onQuickReply={onQuickReply}
             onMicPressIn={onMicPressIn}

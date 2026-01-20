@@ -278,3 +278,64 @@ export const sendMyTestCommunicationNotification = authedMutation({
     return { success: true, avatarUrl, contactName, style: "communication" };
   },
 });
+
+/**
+ * Send a test notification for the most recent email - for testing deep linking
+ */
+export const sendTestNotificationForRecentEmail = authedMutation({
+  args: {},
+  handler: async (ctx) => {
+    // Get the most recent email for this user
+    const recentEmail = await ctx.db
+      .query("emails")
+      .withIndex("by_user_received", (q) => q.eq("userId", ctx.userId))
+      .order("desc")
+      .first();
+
+    if (!recentEmail) {
+      throw new Error("No emails found");
+    }
+
+    // Get sender info from contact
+    let avatarUrl = "https://ui-avatars.com/api/?name=Test&background=6366F1&color=fff&size=200";
+    let senderName = recentEmail.fromName || "Unknown";
+
+    // Get contact avatar
+    const contact = await ctx.db.get(recentEmail.from);
+    if (contact) {
+      senderName = contact.name || contact.email;
+      if (contact.avatarStorageId) {
+        const freshUrl = await ctx.storage.getUrl(contact.avatarStorageId);
+        if (freshUrl) avatarUrl = freshUrl;
+      } else if (contact.avatarUrl) {
+        avatarUrl = contact.avatarUrl;
+      }
+    }
+
+    const notificationPayload = {
+      userId: ctx.userId,
+      notification: {
+        title: senderName,
+        body: recentEmail.subject || "No subject",
+        mutableContent: true,
+        data: {
+          type: "email",
+          emailId: recentEmail._id,
+          senderAvatar: avatarUrl,
+          senderName: senderName,
+        },
+      },
+    };
+
+    console.log(`[Notification] Sending test for email ${recentEmail._id}:`, recentEmail.subject);
+
+    await pushNotifications.sendPushNotification(ctx, notificationPayload);
+
+    return {
+      success: true,
+      emailId: recentEmail._id,
+      subject: recentEmail.subject,
+      senderName,
+    };
+  },
+});
