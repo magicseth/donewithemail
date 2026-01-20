@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useAction, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../lib/authContext";
@@ -59,21 +59,32 @@ export interface GmailEmail {
 let nextPageToken: string | undefined = undefined;
 
 export function useGmail(sessionStart?: number) {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, refreshAccessToken } = useAuth();
   // Use Convex auth state for query timing (ensures token is ready)
   const { isAuthenticated: convexAuthenticated, isLoading: convexLoading } = useConvexAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Detect auth mismatch: local auth says yes, but Convex says no
+  // This can happen when the token exists locally but Convex hasn't synced yet
+  useEffect(() => {
+    if (isAuthenticated && !convexAuthenticated && !convexLoading) {
+      console.log("[useGmail] Auth mismatch detected - triggering token refresh");
+      refreshAccessToken();
+    }
+  }, [isAuthenticated, convexAuthenticated, convexLoading, refreshAccessToken]);
+
+  // Only query when Convex is authenticated (token is synced to server)
+  const shouldQuery = convexAuthenticated && !convexLoading;
+
   // Query for cached untriaged emails - this is INSTANT from Convex
   // Now using getMyUntriagedEmails (authenticated) to only show emails that haven't been triaged
   // If sessionStart is provided, also includes emails triaged after that time
-  // Use convexAuthenticated to ensure Convex client has the token ready
   const cachedEmails = useQuery(
     api.emails.getMyUntriagedEmails,
-    convexAuthenticated && !convexLoading
-      ? { limit: 50, sessionStart }
+    shouldQuery
+      ? { limit: 200, sessionStart }
       : "skip"
   );
 
@@ -204,11 +215,19 @@ export function useGmail(sessionStart?: number) {
     fromContact: email.fromContact,
   }));
 
+  // Debug logging
+  if (cachedEmails === undefined && shouldQuery) {
+    console.log("[useGmail] Query returned undefined despite shouldQuery=true");
+  } else if (!shouldQuery) {
+    console.log("[useGmail] Query skipped", { isAuthenticated, convexAuthenticated, convexLoading });
+  }
+
   return {
     isAuthenticated,
     emails,
-    // Only show loading if we have NO data (fresh or stale)
-    isLoading: cachedEmails === undefined && lastEmailsCache === null,
+    // Only show loading if we have NO data (fresh or stale) AND auth is still loading
+    // If auth failed but we have stale data, show that instead of spinner
+    isLoading: emails.length === 0 && cachedEmails === undefined && (convexLoading || !convexAuthenticated),
     isSyncing, // Syncing with Gmail
     isSummarizing,
     error,

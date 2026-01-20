@@ -293,6 +293,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return accessToken; // Return existing token, don't clear auth
       }
 
+      // Check if this is a transient OCC error - retry instead of signing out
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      if (errorMessage.includes("Data read or written in this mutation changed")) {
+        console.log("[Auth] OCC error during refresh (transient), will retry when app becomes active");
+        pendingRefreshRef.current = true;
+        return accessToken; // Return existing token, don't clear auth
+      }
+
       // For other errors (invalid token, etc.), sign out
       console.log("[Auth] Non-recoverable refresh error, signing out");
       await clearAuth();

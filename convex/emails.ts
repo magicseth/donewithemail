@@ -117,7 +117,7 @@ export const getMyUntriagedEmails = authedQuery({
     sessionStart: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 50;
+    const limit = args.limit ?? 200;
 
     // Get untriaged emails for authenticated user
     const rawUntriagedEmails = await ctx.db
@@ -219,7 +219,7 @@ export const getMyTodoEmails = authedQuery({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 50;
+    const limit = args.limit ?? 200;
 
     const emails = await ctx.db
       .query("emails")
@@ -615,7 +615,7 @@ export const getMyBatchTriagePreview = authedQuery({
     pending: BatchEmailPreview[];
     total: number;
   }> => {
-    const limit = args.limit ?? 100;
+    const limit = args.limit ?? 200;
 
     // Get untriaged emails for authenticated user
     const rawUntriagedEmails = await ctx.db
@@ -804,6 +804,54 @@ export const batchTriageMyEmails = authedMutation({
 
     console.log(`[BatchTriage] Triaged ${triaged} emails for user ${ctx.userId}`);
     return { triaged, errors };
+  },
+});
+
+/**
+ * Mark all untriaged emails from a specific sender as done
+ */
+export const triageMyEmailsFromSender = authedMutation({
+  args: {
+    senderEmail: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ triaged: number }> => {
+    // Find the contact by email
+    const contact = await ctx.db
+      .query("contacts")
+      .withIndex("by_user_email", (q) =>
+        q.eq("userId", ctx.userId).eq("email", args.senderEmail)
+      )
+      .first();
+
+    if (!contact) {
+      console.log(`[TriageSender] No contact found for ${args.senderEmail}`);
+      return { triaged: 0 };
+    }
+
+    // Get all untriaged emails from this sender
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_from", (q) => q.eq("from", contact._id))
+      .collect();
+
+    // Filter to untriaged only for this user
+    const untriagedEmails = emails.filter(
+      (e) => e.userId === ctx.userId && !e.isTriaged
+    );
+
+    // Mark all as done
+    let triaged = 0;
+    for (const email of untriagedEmails) {
+      await ctx.db.patch(email._id, {
+        isTriaged: true,
+        triageAction: "done",
+        triagedAt: Date.now(),
+      });
+      triaged++;
+    }
+
+    console.log(`[TriageSender] Marked ${triaged} emails from ${args.senderEmail} as done`);
+    return { triaged };
   },
 });
 

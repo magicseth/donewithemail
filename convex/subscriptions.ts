@@ -232,6 +232,7 @@ export const batchUnsubscribeMy = action({
         type SubscriptionData = {
           _id: Id<"subscriptions">;
           userId: Id<"users">;
+          senderEmail: string;
           listUnsubscribe?: string;
           listUnsubscribePost?: boolean;
           unsubscribeMethod?: string;
@@ -286,6 +287,11 @@ export const batchUnsubscribeMy = action({
                 status: "unsubscribed",
                 unsubscribedAt: Date.now(),
               });
+              // Triage all untriaged emails from this sender as done
+              await ctx.runMutation(internal.subscriptionsHelpers.triageEmailsFromSender, {
+                userId,
+                senderEmail: subscription.senderEmail,
+              });
               completed.push(subscriptionId);
             } else {
               manualRequired.push({ id: subscriptionId, url: parsed.httpUrl });
@@ -293,12 +299,22 @@ export const batchUnsubscribeMy = action({
                 subscriptionId,
                 status: "manual_required",
               });
+              // Still triage emails since user initiated unsubscribe
+              await ctx.runMutation(internal.subscriptionsHelpers.triageEmailsFromSender, {
+                userId,
+                senderEmail: subscription.senderEmail,
+              });
             }
           } catch {
             manualRequired.push({ id: subscriptionId, url: parsed.httpUrl });
             await ctx.runMutation(internal.subscriptionsHelpers.updateStatus, {
               subscriptionId,
               status: "manual_required",
+            });
+            // Still triage emails since user initiated unsubscribe
+            await ctx.runMutation(internal.subscriptionsHelpers.triageEmailsFromSender, {
+              userId,
+              senderEmail: subscription.senderEmail,
             });
           }
         } else if (method === "mailto" && parsed.mailtoUrl) {
@@ -341,6 +357,11 @@ export const batchUnsubscribeMy = action({
                 status: "unsubscribed",
                 unsubscribedAt: Date.now(),
               });
+              // Triage all untriaged emails from this sender as done
+              await ctx.runMutation(internal.subscriptionsHelpers.triageEmailsFromSender, {
+                userId,
+                senderEmail: subscription.senderEmail,
+              });
               completed.push(subscriptionId);
             } else {
               await ctx.runMutation(internal.subscriptionsHelpers.updateStatus, {
@@ -361,6 +382,11 @@ export const batchUnsubscribeMy = action({
           await ctx.runMutation(internal.subscriptionsHelpers.updateStatus, {
             subscriptionId,
             status: "manual_required",
+          });
+          // Still triage emails since user initiated unsubscribe
+          await ctx.runMutation(internal.subscriptionsHelpers.triageEmailsFromSender, {
+            userId,
+            senderEmail: subscription.senderEmail,
           });
         } else {
           await ctx.runMutation(internal.subscriptionsHelpers.updateStatus, {

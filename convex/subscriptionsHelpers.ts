@@ -297,3 +297,50 @@ export const getEmailIdsForReset = internalQuery({
     return emails.map((e) => e._id);
   },
 });
+
+// Mark all untriaged emails from a sender as done (used when unsubscribing)
+export const triageEmailsFromSender = internalMutation({
+  args: {
+    userId: v.id("users"),
+    senderEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Find the contact by email
+    const contact = await ctx.db
+      .query("contacts")
+      .withIndex("by_user_email", (q) =>
+        q.eq("userId", args.userId).eq("email", args.senderEmail)
+      )
+      .first();
+
+    if (!contact) {
+      console.log(`[TriageSender] No contact found for ${args.senderEmail}`);
+      return { triaged: 0 };
+    }
+
+    // Get all untriaged emails from this sender
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_from", (q) => q.eq("from", contact._id))
+      .collect();
+
+    // Filter to untriaged only
+    const untriagedEmails = emails.filter(
+      (e) => e.userId === args.userId && !e.isTriaged
+    );
+
+    // Mark all as done
+    let triaged = 0;
+    for (const email of untriagedEmails) {
+      await ctx.db.patch(email._id, {
+        isTriaged: true,
+        triageAction: "done",
+        triagedAt: Date.now(),
+      });
+      triaged++;
+    }
+
+    console.log(`[TriageSender] Marked ${triaged} emails from ${args.senderEmail} as done`);
+    return { triaged };
+  },
+});

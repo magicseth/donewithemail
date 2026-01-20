@@ -206,11 +206,22 @@ export const refreshToken = action({
     const data = await response.json();
 
     // Update user's WorkOS refresh token if a new one was provided
+    // This is best-effort - OCC errors can happen if other mutations are updating the user
     if (data.refresh_token && data.user?.id) {
-      await ctx.runMutation(api.auth.updateWorkosRefreshToken, {
-        workosUserId: data.user.id,
-        workosRefreshToken: data.refresh_token,
-      });
+      try {
+        await ctx.runMutation(api.auth.updateWorkosRefreshToken, {
+          workosUserId: data.user.id,
+          workosRefreshToken: data.refresh_token,
+        });
+      } catch (e) {
+        // Ignore OCC errors - the token update isn't critical for auth to work
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        if (errorMessage.includes("Data read or written in this mutation changed")) {
+          console.log("WorkOS refresh token update skipped due to OCC conflict (non-critical)");
+        } else {
+          throw e; // Re-throw other errors
+        }
+      }
     }
 
     return {

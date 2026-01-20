@@ -86,6 +86,7 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
   // Mutations and actions
   const batchTriageMutation = useMutation(api.emails.batchTriageMyEmails);
   const untriageMutation = useMutation(api.emails.untriagedMyEmail);
+  const triageFromSenderMutation = useMutation(api.emails.triageMyEmailsFromSender);
   const batchCalendarAction = useAction(api.calendar.batchAddToCalendar);
 
   // Local state
@@ -208,8 +209,9 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
       const emailsInCategory = categoriesData[category];
 
       // Split into punted (go to TODO) and unpunted (mark done)
-      const toPunt = emailsInCategory.filter(e => puntedEmails.has(e._id));
-      const toDone = emailsInCategory.filter(e => !puntedEmails.has(e._id));
+      // Exclude isInTodo emails - they're already triaged as reply_needed
+      const toPunt = emailsInCategory.filter(e => puntedEmails.has(e._id) && !e.isInTodo);
+      const toDone = emailsInCategory.filter(e => !puntedEmails.has(e._id) && !e.isInTodo);
 
       // Build triage actions
       const triageActions: Array<{
@@ -317,18 +319,35 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
     }
   }, [userEmail, batchCalendarAction, batchTriageMutation]);
 
-  // Unsubscribe from a mailing list
+  // Unsubscribe from a mailing list - marks all emails from that sender as done
   const unsubscribe = useCallback(async (emailId: string) => {
     setUnsubscribingIds(prev => new Set(prev).add(emailId));
 
     try {
-      // Mark the email as done
-      await batchTriageMutation({
-        triageActions: [{
-          emailId: emailId as Id<"emails">,
-          action: "done",
-        }],
-      });
+      // Find the email in our data to get the sender
+      const allEmails = [
+        ...(batchPreview?.done || []),
+        ...(batchPreview?.humanWaiting || []),
+        ...(batchPreview?.actionNeeded || []),
+        ...(batchPreview?.calendar || []),
+        ...(batchPreview?.lowConfidence || []),
+        ...(batchPreview?.pending || []),
+      ];
+      const email = allEmails.find(e => e._id === emailId);
+      const senderEmail = email?.fromContact?.email;
+
+      if (senderEmail) {
+        // Triage ALL emails from this sender as done
+        await triageFromSenderMutation({ senderEmail });
+      } else {
+        // Fallback: just triage this one email
+        await batchTriageMutation({
+          triageActions: [{
+            emailId: emailId as Id<"emails">,
+            action: "done",
+          }],
+        });
+      }
     } finally {
       setUnsubscribingIds(prev => {
         const next = new Set(prev);
@@ -336,7 +355,7 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
         return next;
       });
     }
-  }, [batchTriageMutation]);
+  }, [batchTriageMutation, triageFromSenderMutation, batchPreview]);
 
   // Untriage an email (undo triage action)
   const untriage = useCallback(async (emailId: string) => {
