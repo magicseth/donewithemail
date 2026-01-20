@@ -7,6 +7,12 @@ import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { api } from "../convex/_generated/api";
 
+// Type for notification data payload
+interface NotificationData {
+  type?: string;
+  emailId?: string;
+}
+
 // Configure how notifications are handled when app is in foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -76,7 +82,7 @@ export function usePushNotifications() {
     // Check if app was launched from a notification (app was closed)
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (response) {
-        const data = response.notification.request.content.data;
+        const data = response.notification.request.content.data as NotificationData;
         console.log("[Push] App launched from notification:", data);
         // Store for later - will be processed once auth is ready
         setPendingNavigation({
@@ -96,7 +102,7 @@ export function usePushNotifications() {
     // Listen for user interactions with notifications (app in background or foreground)
     responseListener.current = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        const data = response.notification.request.content.data;
+        const data = response.notification.request.content.data as NotificationData;
         console.log("[Push] Notification tapped:", data);
 
         // Store navigation intent - will be processed immediately if auth is ready,
