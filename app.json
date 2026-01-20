@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "sayless",
-    "slug": "sayless",
+    "name": "DoneWith",
+    "slug": "tokmail",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/ios-light.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
-    "scheme": "sayless",
+    "scheme": "tokmail",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -15,10 +15,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.sayless.app",
+      "bundleIdentifier": "com.tokmail.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSMicrophoneUsageDescription": "sayless needs microphone access to record voice replies to emails"
+        "NSMicrophoneUsageDescription": "DoneWith needs microphone access to record voice replies to emails"
       }
     },
     "android": {
@@ -27,7 +27,7 @@
         "backgroundColor": "#6366F1"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.sayless.app",
+      "package": "com.tokmail.app",
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
@@ -42,7 +42,7 @@
       [
         "expo-av",
         {
-          "microphonePermission": "sayless needs microphone access to record voice replies to emails"
+          "microphonePermission": "DoneWith needs microphone access to record voice replies to emails"
         }
       ],
       [

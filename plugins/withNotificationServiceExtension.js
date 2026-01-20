@@ -11,7 +11,7 @@ const withNotificationServiceExtension = (config) => {
   config = withXcodeProject(config, async (config) => {
     const xcodeProject = config.modResults;
     const projectName = config.modRequest.projectName;
-    const bundleIdentifier = config.ios?.bundleIdentifier || "com.sayless.app";
+    const bundleIdentifier = config.ios?.bundleIdentifier || "com.tokmail.app";
     const extensionName = "NotificationServiceExtension";
     const extensionBundleId = `${bundleIdentifier}.${extensionName}`;
     
