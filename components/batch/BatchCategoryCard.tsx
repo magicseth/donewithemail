@@ -1,13 +1,118 @@
-import React, { useState, useCallback, memo } from "react";
+import React, { useState, useCallback, memo, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+  Image,
+  SectionList,
 } from "react-native";
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { BatchEmailRow, QuickReplyOption } from "./BatchEmailRow";
 import type { BatchEmailPreview, BatchCategory } from "../../hooks/useBatchTriage";
+
+// Get initials from name for avatar placeholder
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+// Sender group header component
+interface SenderGroupHeaderProps {
+  senderName: string;
+  senderEmail: string;
+  avatarUrl?: string;
+  emailCount: number;
+}
+
+function SenderGroupHeader({ senderName, senderEmail, avatarUrl, emailCount }: SenderGroupHeaderProps) {
+  const initials = getInitials(senderName || senderEmail.split("@")[0]);
+
+  return (
+    <View style={senderStyles.container}>
+      {avatarUrl ? (
+        <Image source={{ uri: avatarUrl }} style={senderStyles.avatar} />
+      ) : (
+        <View style={[senderStyles.avatar, senderStyles.avatarPlaceholder]}>
+          <Text style={senderStyles.avatarText}>{initials}</Text>
+        </View>
+      )}
+      <View style={senderStyles.info}>
+        <Text style={senderStyles.name} numberOfLines={1}>{senderName || senderEmail}</Text>
+        {emailCount > 1 && (
+          <Text style={senderStyles.count}>{emailCount} emails</Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const senderStyles = StyleSheet.create({
+  container: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+    backgroundColor: "#F9FAFB",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+    // Sticky positioning for web
+    ...(Platform.OS === "web" ? {
+      position: "sticky" as const,
+      top: 0,
+      zIndex: 10,
+    } : {}),
+  },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  avatarPlaceholder: {
+    backgroundColor: "#E5E7EB",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  info: {
+    marginLeft: 10,
+    flex: 1,
+  },
+  name: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  count: {
+    fontSize: 12,
+    color: "#6B7280",
+  },
+});
+
+// Group emails by sender
+interface SenderGroup {
+  senderEmail: string;
+  senderName: string;
+  avatarUrl?: string;
+  emails: BatchEmailPreview[];
+}
 
 // Category configuration
 interface CategoryConfig {
@@ -115,6 +220,48 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
   const [hasExpandedOnce, setHasExpandedOnce] = useState(false);
   const config = CATEGORY_CONFIG[category];
 
+  // Track email count to animate removal
+  const prevEmailCount = useRef(emails.length);
+  useEffect(() => {
+    // Animate when emails are removed (count decreases)
+    if (emails.length < prevEmailCount.current) {
+      LayoutAnimation.configureNext({
+        duration: 250,
+        update: { type: LayoutAnimation.Types.easeInEaseOut },
+        delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+      });
+    }
+    prevEmailCount.current = emails.length;
+  }, [emails.length]);
+
+  // Group emails by sender
+  const senderGroups = useMemo((): SenderGroup[] => {
+    const groups = new Map<string, SenderGroup>();
+
+    for (const email of emails) {
+      const senderEmail = email.fromContact?.email || "unknown";
+      const existing = groups.get(senderEmail);
+
+      if (existing) {
+        existing.emails.push(email);
+      } else {
+        groups.set(senderEmail, {
+          senderEmail,
+          senderName: email.fromContact?.name || email.fromName || senderEmail,
+          avatarUrl: email.fromContact?.avatarUrl,
+          emails: [email],
+        });
+      }
+    }
+
+    // Sort groups by most recent email
+    return Array.from(groups.values()).sort((a, b) => {
+      const aTime = Math.max(...a.emails.map(e => e.receivedAt));
+      const bTime = Math.max(...b.emails.map(e => e.receivedAt));
+      return bTime - aTime;
+    });
+  }, [emails]);
+
   const handleToggleExpand = useCallback(() => {
     setIsExpanded(prev => {
       if (!prev && !hasExpandedOnce) {
@@ -161,56 +308,151 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
         </Text>
       </TouchableOpacity>
 
-      {/* Email list - expanded */}
+      {/* Email list - expanded, grouped by sender with sticky headers */}
       {isExpanded && (
         <View style={styles.emailList}>
-          {emails.map((email, index) => (
-            <BatchEmailRow
-              key={email._id}
-              email={email}
-              isPunted={puntedEmails.has(email._id) || !!email.isInTodo}
-              isSubscription={email.isSubscription}
-              expandReplyByDefault={category === "humanWaiting"}
-              isRecording={recordingForId === email._id}
-              isRecordingConnected={isRecordingConnected}
-              transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
-              switchAnimationDelay={200 + index * 150}
-              triggerSwitchAnimation={isExpanded}
-              onPunt={() => onPuntEmail(email._id)}
-              onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
-              onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
-              onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id) : undefined}
-              onMicPressOut={onMicPressOut ? () => onMicPressOut(email._id) : undefined}
-              onSendTranscript={onSendTranscript ? () => onSendTranscript(email._id) : undefined}
-              onUnsubscribe={onUnsubscribe ? () => onUnsubscribe(email._id) : undefined}
-              onNeedsReplyPress={onNeedsReplyPress ? () => onNeedsReplyPress(email._id) : undefined}
-              isAccepting={acceptingIds?.has(email._id)}
-              isUnsubscribing={unsubscribingIds?.has(email._id)}
-            />
-          ))}
-
-          {/* Mark all as done button */}
-          {unpuntedCount > 0 && (
-            <TouchableOpacity
-              style={[styles.markDoneButton, isProcessing && styles.markDoneButtonDisabled]}
-              onPress={onMarkAllDone}
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.markDoneButtonText}>
-                  Done with {unpuntedCount} emails
-                </Text>
+          {/* On web, render directly with CSS sticky; on native, use SectionList */}
+          {Platform.OS === "web" ? (
+            <>
+              {senderGroups.map((group, sectionIndex) => {
+                const prevItemsCount = senderGroups.slice(0, sectionIndex).reduce((sum, g) => sum + g.emails.length, 0);
+                return (
+                  <View key={group.senderEmail}>
+                    <SenderGroupHeader
+                      senderName={group.senderName}
+                      senderEmail={group.senderEmail}
+                      avatarUrl={group.avatarUrl}
+                      emailCount={group.emails.length}
+                    />
+                    {group.emails.map((email, index) => {
+                      const globalIndex = prevItemsCount + index;
+                      return (
+                        <BatchEmailRow
+                          key={email._id}
+                          email={email}
+                          isPunted={puntedEmails.has(email._id) || !!email.isInTodo}
+                          isSubscription={email.isSubscription}
+                          expandReplyByDefault={category === "humanWaiting"}
+                          isRecording={recordingForId === email._id}
+                          isRecordingConnected={isRecordingConnected}
+                          transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
+                          switchAnimationDelay={200 + globalIndex * 150}
+                          triggerSwitchAnimation={isExpanded}
+                          onPunt={() => onPuntEmail(email._id)}
+                          onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
+                          onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
+                          onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id) : undefined}
+                          onMicPressOut={onMicPressOut ? () => onMicPressOut(email._id) : undefined}
+                          onSendTranscript={onSendTranscript ? () => onSendTranscript(email._id) : undefined}
+                          onUnsubscribe={onUnsubscribe ? () => onUnsubscribe(email._id) : undefined}
+                          onNeedsReplyPress={onNeedsReplyPress ? () => onNeedsReplyPress(email._id) : undefined}
+                          isAccepting={acceptingIds?.has(email._id)}
+                          isUnsubscribing={unsubscribingIds?.has(email._id)}
+                          compact={true}
+                        />
+                      );
+                    })}
+                  </View>
+                );
+              })}
+              {/* Footer for web */}
+              {unpuntedCount > 0 && (
+                <TouchableOpacity
+                  style={[styles.markDoneButton, isProcessing && styles.markDoneButtonDisabled]}
+                  onPress={onMarkAllDone}
+                  disabled={isProcessing}
+                >
+                  {isProcessing ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.markDoneButtonText}>
+                      Done with {unpuntedCount} emails
+                    </Text>
+                  )}
+                </TouchableOpacity>
               )}
-            </TouchableOpacity>
-          )}
+              {unpuntedCount === 0 && (
+                <View style={styles.allSavedMessage}>
+                  <Text style={styles.allSavedText}>All emails saved to TODO</Text>
+                </View>
+              )}
+            </>
+          ) : (
+            <SectionList
+              sections={senderGroups.map(group => ({
+                ...group,
+                data: group.emails,
+              }))}
+              keyExtractor={(item) => item._id}
+              stickySectionHeadersEnabled={true}
+              renderSectionHeader={({ section }) => (
+                <SenderGroupHeader
+                  senderName={section.senderName}
+                  senderEmail={section.senderEmail}
+                  avatarUrl={section.avatarUrl}
+                  emailCount={section.emails.length}
+                />
+              )}
+              renderItem={({ item: email, index, section }) => {
+                // Calculate global index for animation delay
+                const sectionIndex = senderGroups.findIndex(g => g.senderEmail === section.senderEmail);
+                const prevItemsCount = senderGroups.slice(0, sectionIndex).reduce((sum, g) => sum + g.emails.length, 0);
+                const globalIndex = prevItemsCount + index;
 
-          {/* All saved message */}
-          {unpuntedCount === 0 && (
-            <View style={styles.allSavedMessage}>
-              <Text style={styles.allSavedText}>All emails saved to TODO</Text>
-            </View>
+                return (
+                  <BatchEmailRow
+                    email={email}
+                    isPunted={puntedEmails.has(email._id) || !!email.isInTodo}
+                    isSubscription={email.isSubscription}
+                    expandReplyByDefault={category === "humanWaiting"}
+                    isRecording={recordingForId === email._id}
+                    isRecordingConnected={isRecordingConnected}
+                    transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
+                    switchAnimationDelay={200 + globalIndex * 150}
+                    triggerSwitchAnimation={isExpanded}
+                    onPunt={() => onPuntEmail(email._id)}
+                    onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
+                    onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
+                    onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id) : undefined}
+                    onMicPressOut={onMicPressOut ? () => onMicPressOut(email._id) : undefined}
+                    onSendTranscript={onSendTranscript ? () => onSendTranscript(email._id) : undefined}
+                    onUnsubscribe={onUnsubscribe ? () => onUnsubscribe(email._id) : undefined}
+                    onNeedsReplyPress={onNeedsReplyPress ? () => onNeedsReplyPress(email._id) : undefined}
+                    isAccepting={acceptingIds?.has(email._id)}
+                    isUnsubscribing={unsubscribingIds?.has(email._id)}
+                    compact={true}
+                  />
+                );
+              }}
+              ListFooterComponent={
+                <>
+                  {/* Mark all as done button */}
+                  {unpuntedCount > 0 && (
+                    <TouchableOpacity
+                      style={[styles.markDoneButton, isProcessing && styles.markDoneButtonDisabled]}
+                      onPress={onMarkAllDone}
+                      disabled={isProcessing}
+                    >
+                      {isProcessing ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.markDoneButtonText}>
+                          Done with {unpuntedCount} emails
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+
+                  {/* All saved message */}
+                  {unpuntedCount === 0 && (
+                    <View style={styles.allSavedMessage}>
+                      <Text style={styles.allSavedText}>All emails saved to TODO</Text>
+                    </View>
+                  )}
+                </>
+              }
+              scrollEnabled={false}
+            />
           )}
         </View>
       )}
@@ -223,7 +465,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: 12,
     marginVertical: 6,
-    overflow: "hidden",
+    // overflow: hidden clips sticky headers on web, only use on native
+    ...(Platform.OS !== "web" ? { overflow: "hidden" as const } : {}),
   },
   header: {
     flexDirection: "row",

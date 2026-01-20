@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useAction, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../lib/authContext";
@@ -68,10 +68,17 @@ export function useGmail(sessionStart?: number) {
 
   // Detect auth mismatch: local auth says yes, but Convex says no
   // This can happen when the token exists locally but Convex hasn't synced yet
+  // Use a ref to ensure we only attempt refresh once per mount
+  const hasAttemptedRefresh = useRef(false);
   useEffect(() => {
-    if (isAuthenticated && !convexAuthenticated && !convexLoading) {
-      console.log("[useGmail] Auth mismatch detected - triggering token refresh");
+    if (isAuthenticated && !convexAuthenticated && !convexLoading && !hasAttemptedRefresh.current) {
+      console.log("[useGmail] Auth mismatch detected - triggering token refresh (once)");
+      hasAttemptedRefresh.current = true;
       refreshAccessToken();
+    }
+    // Reset the flag when we become authenticated
+    if (convexAuthenticated) {
+      hasAttemptedRefresh.current = false;
     }
   }, [isAuthenticated, convexAuthenticated, convexLoading, refreshAccessToken]);
 

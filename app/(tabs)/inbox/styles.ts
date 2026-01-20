@@ -1,0 +1,233 @@
+/**
+ * Shared styles for the inbox screen.
+ */
+import { StyleSheet } from "react-native";
+
+export const inboxStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  modeToggleContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#F8F9FF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8EAFF",
+    gap: 8,
+  },
+  modeToggleButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#E8EAFF",
+  },
+  modeToggleButtonActive: {
+    backgroundColor: "#6366F1",
+    borderColor: "#6366F1",
+  },
+  modeToggleText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#666",
+  },
+  modeToggleTextActive: {
+    color: "#fff",
+  },
+  swipeHintContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#F8F9FF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8EAFF",
+  },
+  swipeHintText: {
+    fontSize: 13,
+    color: "#6366F1",
+    fontWeight: "500",
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    backgroundColor: "#fff",
+  },
+  searchInput: {
+    flex: 1,
+    height: 36,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: "#333",
+  },
+  searchClearButton: {
+    marginLeft: 8,
+    padding: 4,
+  },
+  searchClearText: {
+    fontSize: 16,
+    color: "#999",
+  },
+  headerRefreshButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+  },
+  headerRefreshButtonDisabled: {
+    opacity: 0.6,
+  },
+  headerRefreshButtonText: {
+    color: "#6366F1",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fab: {
+    position: "absolute",
+    right: 20,
+    bottom: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#6366F1",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  fabIcon: {
+    fontSize: 24,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: "80%",
+    minHeight: 300,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#1a1a1a",
+  },
+  modalCancelButton: {
+    padding: 8,
+    marginLeft: -8,
+  },
+  modalCancel: {
+    fontSize: 16,
+    color: "#666",
+  },
+  modalSendButton: {
+    padding: 8,
+    marginRight: -8,
+  },
+  modalSend: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#6366F1",
+  },
+  modalRecipient: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  modalRecipientLabel: {
+    fontSize: 15,
+    color: "#666",
+    width: 60,
+  },
+  modalRecipientValue: {
+    fontSize: 15,
+    color: "#1a1a1a",
+    flex: 1,
+  },
+  modalSubject: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  modalSubjectLabel: {
+    fontSize: 15,
+    color: "#666",
+    width: 60,
+  },
+  modalSubjectValue: {
+    fontSize: 15,
+    color: "#1a1a1a",
+    flex: 1,
+  },
+  modalBodyInput: {
+    flex: 1,
+    fontSize: 16,
+    color: "#1a1a1a",
+    padding: 16,
+    textAlignVertical: "top",
+    minHeight: 150,
+  },
+  // Toast styles
+  toast: {
+    position: "absolute",
+    bottom: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: "#333",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  toastSuccess: {
+    backgroundColor: "#10B981",
+  },
+  toastError: {
+    backgroundColor: "#EF4444",
+  },
+  toastText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+});

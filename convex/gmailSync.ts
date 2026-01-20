@@ -1,115 +1,28 @@
+/**
+ * Gmail sync actions - fetching and storing emails from Gmail API.
+ *
+ * Extracted modules:
+ * - gmailHelpers.ts: Pure helper functions (decodeBase64Url, extractBody, etc.)
+ * - gmailAuth.ts: Token refresh and photo fetching
+ * - gmailQueries.ts: Read-only queries (getUserByEmail, getCachedEmails, etc.)
+ */
 import { v } from "convex/values";
-import { action, internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { action, internalAction, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
+// Import from extracted modules
+import { extractBody } from "./gmailHelpers";
+import {
+  refreshTokenIfNeeded,
+  fetchProfilePhotoUrl,
+  downloadImage,
+} from "./gmailAuth";
 
-// Internal query to get user by email
-export const getUserByEmail = internalQuery({
-  args: { email: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
-      .first();
-  },
-});
-
-// Internal query to get cached summaries for a list of external IDs
-export const getCachedSummaries = internalQuery({
-  args: { externalIds: v.array(v.string()) },
-  handler: async (ctx, args) => {
-    const summaries: Record<string, {
-      summary?: string;
-      urgencyScore?: number;
-      urgencyReason?: string;
-      suggestedReply?: string;
-    }> = {};
-
-    for (const externalId of args.externalIds) {
-      const email = await ctx.db
-        .query("emails")
-        .withIndex("by_external_id", (q) =>
-          q.eq("externalId", externalId).eq("provider", "gmail")
-        )
-        .first();
-
-      if (email) {
-        // Look up summary from emailSummaries table
-        const summaryData = await ctx.db
-          .query("emailSummaries")
-          .withIndex("by_email", (q) => q.eq("emailId", email._id))
-          .first();
-
-        if (summaryData) {
-          summaries[externalId] = {
-            summary: summaryData.summary,
-            urgencyScore: summaryData.urgencyScore,
-            urgencyReason: summaryData.urgencyReason,
-            suggestedReply: summaryData.suggestedReply,
-          };
-        }
-      }
-    }
-
-    return summaries;
-  },
-});
-
-// Internal query to get cached emails by external IDs
-export const getCachedEmails = internalQuery({
-  args: { externalIds: v.array(v.string()) },
-  handler: async (ctx, args) => {
-    const cached: Record<string, {
-      subject: string;
-      snippet: string;
-      receivedAt: number;
-      isRead: boolean;
-      fromEmail: string;
-      fromName?: string;
-      summary?: string;
-      urgencyScore?: number;
-      urgencyReason?: string;
-      suggestedReply?: string;
-    }> = {};
-
-    for (const externalId of args.externalIds) {
-      const email = await ctx.db
-        .query("emails")
-        .withIndex("by_external_id", (q) =>
-          q.eq("externalId", externalId).eq("provider", "gmail")
-        )
-        .first();
-
-      if (email) {
-        // Get contact info
-        const contact = await ctx.db.get(email.from);
-        // Get summary from emailSummaries table
-        const summaryData = await ctx.db
-          .query("emailSummaries")
-          .withIndex("by_email", (q) => q.eq("emailId", email._id))
-          .first();
-
-        cached[externalId] = {
-          subject: email.subject,
-          snippet: email.bodyPreview,
-          receivedAt: email.receivedAt,
-          isRead: email.isRead,
-          fromEmail: contact?.email || "",
-          fromName: contact?.name,
-          summary: summaryData?.summary,
-          urgencyScore: summaryData?.urgencyScore,
-          urgencyReason: summaryData?.urgencyReason,
-          suggestedReply: summaryData?.suggestedReply,
-        };
-      }
-    }
-
-    return cached;
-  },
-});
+// Re-export queries for backwards compatibility
+export { getUserByEmail, getCachedSummaries, getCachedEmails } from "./gmailQueries";
+// Re-export updateUserTokens for backwards compatibility
+export { updateUserTokens } from "./gmailAuth";
 
 // Internal mutation to upsert contact and return ID
 export const upsertContact = internalMutation({
@@ -232,172 +145,6 @@ export const storeEmailInternal = internalMutation({
   },
 });
 
-// Internal mutation to update user's OAuth tokens after refresh
-export const updateUserTokens = internalMutation({
-  args: {
-    userId: v.id("users"),
-    accessToken: v.string(),
-    expiresAt: v.number(),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.userId, {
-      gmailAccessToken: args.accessToken,
-      gmailTokenExpiresAt: args.expiresAt,
-    });
-  },
-});
-
-// Refresh access token if expired
-async function refreshTokenIfNeeded(
-  accessToken: string,
-  refreshToken: string,
-  expiresAt: number
-): Promise<{ accessToken: string; expiresAt: number; refreshed: boolean }> {
-  // If token is still valid (with 5 min buffer), return it
-  if (Date.now() < expiresAt - 5 * 60 * 1000) {
-    return { accessToken, expiresAt, refreshed: false };
-  }
-
-  // Refresh the token
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
-      refresh_token: refreshToken,
-      grant_type: "refresh_token",
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to refresh token: ${error}`);
-  }
-
-  const data = await response.json();
-  return {
-    accessToken: data.access_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
-    refreshed: true,
-  };
-}
-
-// Fetch profile photo URL from Google People API
-async function fetchProfilePhotoUrl(
-  accessToken: string,
-  email: string
-): Promise<string | undefined> {
-  try {
-    // First try to search in user's contacts
-    const searchUrl = `https://people.googleapis.com/v1/people:searchContacts?query=${encodeURIComponent(email)}&readMask=photos,emailAddresses&pageSize=1`;
-
-    const searchResponse = await fetch(searchUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (searchResponse.ok) {
-      const searchData = await searchResponse.json();
-      if (searchData.results && searchData.results.length > 0) {
-        const person = searchData.results[0].person;
-        if (person?.photos && person.photos.length > 0) {
-          // Return the first photo URL
-          return person.photos[0].url;
-        }
-      }
-    }
-
-    // Try "other contacts" (people you've emailed but aren't in contacts)
-    const otherContactsUrl = `https://people.googleapis.com/v1/otherContacts:search?query=${encodeURIComponent(email)}&readMask=photos,emailAddresses&pageSize=1`;
-
-    const otherResponse = await fetch(otherContactsUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (otherResponse.ok) {
-      const otherData = await otherResponse.json();
-      if (otherData.results && otherData.results.length > 0) {
-        const person = otherData.results[0].person;
-        if (person?.photos && person.photos.length > 0) {
-          return person.photos[0].url;
-        }
-      }
-    }
-
-    // No photo found
-    return undefined;
-  } catch (error) {
-    console.error("Error fetching profile photo URL:", error);
-    return undefined;
-  }
-}
-
-// Download image and return as blob
-async function downloadImage(imageUrl: string): Promise<Blob | undefined> {
-  try {
-    const response = await fetch(imageUrl);
-    if (!response.ok) return undefined;
-    return await response.blob();
-  } catch (error) {
-    console.error("Error downloading image:", error);
-    return undefined;
-  }
-}
-
-// Helper to decode base64url with proper UTF-8 support
-function decodeBase64Url(data: string): string {
-  try {
-    // Replace URL-safe characters
-    const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
-    // Decode base64 to binary string
-    const binaryString = atob(base64);
-    // Convert binary string to Uint8Array
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    // Decode UTF-8
-    const decoder = new TextDecoder("utf-8");
-    return decoder.decode(bytes);
-  } catch {
-    return "";
-  }
-}
-
-// Extract email body from Gmail payload (handles multipart messages)
-function extractBody(payload: any): { html: string; plain: string } {
-  let html = "";
-  let plain = "";
-
-  // Check if body is directly in payload
-  if (payload.body?.data) {
-    const decoded = decodeBase64Url(payload.body.data);
-    if (payload.mimeType === "text/html") {
-      html = decoded;
-    } else {
-      plain = decoded;
-    }
-  }
-
-  // Check parts for multipart messages
-  if (payload.parts) {
-    for (const part of payload.parts) {
-      if (part.mimeType === "text/html" && part.body?.data) {
-        html = decodeBase64Url(part.body.data);
-      } else if (part.mimeType === "text/plain" && part.body?.data) {
-        plain = decodeBase64Url(part.body.data);
-      }
-      // Recursively check nested parts
-      if (part.parts) {
-        const nested = extractBody(part);
-        if (nested.html) html = nested.html;
-        if (nested.plain && !plain) plain = nested.plain;
-      }
-    }
-  }
-
-  return { html, plain };
-}
 
 // Fetch full email body on demand (for email detail view)
 export const fetchEmailBody = action({

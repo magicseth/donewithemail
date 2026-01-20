@@ -133,6 +133,8 @@ interface BatchEmailRowProps {
   onNeedsReplyPress?: () => void;
   isAccepting?: boolean;
   isUnsubscribing?: boolean;
+  /** Compact mode - hides avatar/sender, used when grouped by sender */
+  compact?: boolean;
 }
 
 export const BatchEmailRow = memo(function BatchEmailRow({
@@ -155,6 +157,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   onNeedsReplyPress,
   isAccepting,
   isUnsubscribing,
+  compact = false,
 }: BatchEmailRowProps) {
   const [showReplyOptions, setShowReplyOptions] = useState(expandReplyByDefault);
   const [showPreview, setShowPreview] = useState(false);
@@ -233,36 +236,50 @@ export const BatchEmailRow = memo(function BatchEmailRow({
       onLongPress={handleLongPress}
       delayLongPress={400}
     >
-      {/* Top row: avatar, sender/subject, action buttons */}
+      {/* Top row: avatar (unless compact), sender/subject, action buttons */}
       <View style={styles.topRow}>
-        {/* Avatar */}
-        <View style={styles.avatarContainer}>
-          {email.fromContact?.avatarUrl ? (
-            <Image
-              source={{ uri: email.fromContact.avatarUrl }}
-              style={styles.avatar}
-            />
+        {/* Avatar - hidden in compact mode */}
+        {!compact && (
+          <View style={styles.avatarContainer}>
+            {email.fromContact?.avatarUrl ? (
+              <Image
+                source={{ uri: email.fromContact.avatarUrl }}
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Text style={styles.avatarText}>{initials}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Sender and subject - in compact mode, show subject + time only */}
+        <View style={styles.headerContent}>
+          {!compact ? (
+            <>
+              {/* Header row: sender + time */}
+              <View style={styles.headerRow}>
+                <Text style={styles.senderName} numberOfLines={1}>
+                  {fromName}
+                </Text>
+                <Text style={styles.timeAgo}>{timeAgo}</Text>
+              </View>
+
+              {/* Subject */}
+              <Text style={styles.subject} numberOfLines={1}>
+                {decodeHtmlEntities(email.subject)}
+              </Text>
+            </>
           ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder]}>
-              <Text style={styles.avatarText}>{initials}</Text>
+            /* Compact: subject + time on one row */
+            <View style={styles.headerRow}>
+              <Text style={[styles.subject, { flex: 1 }]} numberOfLines={1}>
+                {decodeHtmlEntities(email.subject)}
+              </Text>
+              <Text style={styles.timeAgo}>{timeAgo}</Text>
             </View>
           )}
-        </View>
-
-        {/* Sender and subject */}
-        <View style={styles.headerContent}>
-          {/* Header row: sender + time */}
-          <View style={styles.headerRow}>
-            <Text style={styles.senderName} numberOfLines={1}>
-              {fromName}
-            </Text>
-            <Text style={styles.timeAgo}>{timeAgo}</Text>
-          </View>
-
-          {/* Subject */}
-          <Text style={styles.subject} numberOfLines={1}>
-            {decodeHtmlEntities(email.subject)}
-          </Text>
         </View>
 
         {/* Action buttons */}
@@ -537,6 +554,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   if (prevProps.isUnsubscribing !== nextProps.isUnsubscribing) return false;
   if (prevProps.switchAnimationDelay !== nextProps.switchAnimationDelay) return false;
   if (prevProps.triggerSwitchAnimation !== nextProps.triggerSwitchAnimation) return false;
+  if (prevProps.compact !== nextProps.compact) return false;
 
   // For functions, only check if defined status changed (not reference)
   if (!!prevProps.onAccept !== !!nextProps.onAccept) return false;

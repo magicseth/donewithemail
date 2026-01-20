@@ -86,7 +86,6 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
   // Mutations and actions
   const batchTriageMutation = useMutation(api.emails.batchTriageMyEmails);
   const untriageMutation = useMutation(api.emails.untriagedMyEmail);
-  const triageFromSenderMutation = useMutation(api.emails.triageMyEmailsFromSender);
   const batchCalendarAction = useAction(api.calendar.batchAddToCalendar);
 
   // Local state
@@ -319,35 +318,20 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
     }
   }, [userEmail, batchCalendarAction, batchTriageMutation]);
 
-  // Unsubscribe from a mailing list - marks all emails from that sender as done
+  // Unsubscribe from a mailing list - marks only THIS email as done
+  // (User may have multiple emails from same sender to different recipients)
   const unsubscribe = useCallback(async (emailId: string) => {
     setUnsubscribingIds(prev => new Set(prev).add(emailId));
 
     try {
-      // Find the email in our data to get the sender
-      const allEmails = [
-        ...(batchPreview?.done || []),
-        ...(batchPreview?.humanWaiting || []),
-        ...(batchPreview?.actionNeeded || []),
-        ...(batchPreview?.calendar || []),
-        ...(batchPreview?.lowConfidence || []),
-        ...(batchPreview?.pending || []),
-      ];
-      const email = allEmails.find(e => e._id === emailId);
-      const senderEmail = email?.fromContact?.email;
-
-      if (senderEmail) {
-        // Triage ALL emails from this sender as done
-        await triageFromSenderMutation({ senderEmail });
-      } else {
-        // Fallback: just triage this one email
-        await batchTriageMutation({
-          triageActions: [{
-            emailId: emailId as Id<"emails">,
-            action: "done",
-          }],
-        });
-      }
+      // Just triage this one email - don't auto-triage all from sender
+      // This lets user unsubscribe from each email individually
+      await batchTriageMutation({
+        triageActions: [{
+          emailId: emailId as Id<"emails">,
+          action: "done",
+        }],
+      });
     } finally {
       setUnsubscribingIds(prev => {
         const next = new Set(prev);
@@ -355,7 +339,7 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
         return next;
       });
     }
-  }, [batchTriageMutation, triageFromSenderMutation, batchPreview]);
+  }, [batchTriageMutation]);
 
   // Untriage an email (undo triage action)
   const untriage = useCallback(async (emailId: string) => {
