@@ -1,21 +1,14 @@
-import React, { useState, useCallback, memo, useEffect, useRef, useMemo } from "react";
+import React, { useState, useCallback, memo, useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  LayoutAnimation,
   Platform,
-  UIManager,
   Image,
   SectionList,
 } from "react-native";
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 import { BatchEmailRow, QuickReplyOption } from "./BatchEmailRow";
 import type { BatchEmailPreview, BatchCategory } from "../../hooks/useBatchTriage";
 
@@ -308,19 +301,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
   const [hasExpandedOnce, setHasExpandedOnce] = useState(false);
   const config = CATEGORY_CONFIG[category];
 
-  // Track email count to animate removal
-  const prevEmailCount = useRef(emails.length);
-  useEffect(() => {
-    // Animate when emails are removed (count decreases)
-    if (emails.length < prevEmailCount.current) {
-      LayoutAnimation.configureNext({
-        duration: 250,
-        update: { type: LayoutAnimation.Types.easeInEaseOut },
-        delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
-      });
-    }
-    prevEmailCount.current = emails.length;
-  }, [emails.length]);
+  // Note: Email removal animations are handled by BatchEmailRow using react-native-reanimated
 
   // Group emails by sender
   const senderGroups = useMemo((): SenderGroup[] => {

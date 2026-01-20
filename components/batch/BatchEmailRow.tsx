@@ -12,6 +12,7 @@ import {
   Dimensions,
   Platform,
 } from "react-native";
+import Animated, { FadeOut, SlideOutLeft, Layout } from "react-native-reanimated";
 import { router } from "expo-router";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -213,6 +214,10 @@ export const BatchEmailRow = memo(function BatchEmailRow({
 
   return (
     <>
+    <Animated.View
+      layout={Layout.duration(200)}
+      exiting={SlideOutLeft.duration(200).withInitialValues({ opacity: 1 })}
+    >
     <Pressable
       style={({ pressed }) => [
         styles.container,
@@ -445,6 +450,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
         </View>
       )}
     </Pressable>
+    </Animated.View>
 
     {/* Full email preview modal - shown on long press, dismisses on any touch up */}
     <Modal

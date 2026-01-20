@@ -11,6 +11,7 @@ import {
   Platform,
 } from "react-native";
 import { router } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import { useAuth } from "../../lib/authContext";
 import { useQuery, useAction, useMutation } from "convex/react";
 import * as Updates from "expo-updates";
@@ -651,7 +652,7 @@ export default function SettingsScreen() {
               <TouchableOpacity onPress={() => appLogger.clear()}>
                 <Text style={{ color: "#6366F1", fontSize: 14 }}>Clear</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => {
+              <TouchableOpacity onPress={async () => {
                 const logText = logs.map(l =>
                   `[${new Date(l.timestamp).toLocaleTimeString()}] ${l.level.toUpperCase()}: ${l.message}`
                 ).join("\n");
@@ -659,7 +660,8 @@ export default function SettingsScreen() {
                   navigator.clipboard?.writeText(logText);
                   alert("Copied to clipboard");
                 } else {
-                  Alert.alert("Logs", logText.slice(0, 2000) + (logText.length > 2000 ? "..." : ""));
+                  await Clipboard.setStringAsync(logText);
+                  Alert.alert("Copied", "Logs copied to clipboard");
                 }
               }}>
                 <Text style={{ color: "#6366F1", fontSize: 14 }}>Copy All</Text>
