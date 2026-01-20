@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -13,6 +13,8 @@ import {
 import { router } from "expo-router";
 import { useAuth } from "../../lib/authContext";
 import { useQuery, useAction, useMutation } from "convex/react";
+import * as Updates from "expo-updates";
+import Constants from "expo-constants";
 import { api } from "../../convex/_generated/api";
 
 export default function SettingsScreen() {
@@ -30,6 +32,56 @@ export default function SettingsScreen() {
   const [isResettingTriage, setIsResettingTriage] = useState(false);
   const [isSendingCommNotification, setIsSendingCommNotification] = useState(false);
   const [isScanningSubscriptions, setIsScanningSubscriptions] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<string>("checking...");
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+  const checkForUpdates = async () => {
+    if (Platform.OS === "web") return;
+    setIsCheckingUpdate(true);
+    try {
+      const update = await Updates.checkForUpdateAsync();
+      if (update.isAvailable) {
+        setUpdateInfo("Update found! Downloading...");
+        const result = await Updates.fetchUpdateAsync();
+        setUpdateInfo(`Downloaded! Restart to apply. ID: ${result.manifest?.id?.slice(0, 8)}`);
+        Alert.alert(
+          "Update Ready",
+          "Restart the app to apply the update?",
+          [
+            { text: "Later", style: "cancel" },
+            { text: "Restart", onPress: () => Updates.reloadAsync() },
+          ]
+        );
+      } else {
+        setUpdateInfo(prev => prev + " (up to date)");
+        Alert.alert("Up to Date", "No new updates available.");
+      }
+    } catch (e: any) {
+      setUpdateInfo(`Error: ${e.message}`);
+      Alert.alert("Update Error", e.message);
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
+
+  useEffect(() => {
+    if (Platform.OS !== "web") {
+      // Get commit from update manifest or build constants
+      const manifest = Updates.manifest as any;
+      const commit = manifest?.extra?.expoClient?.extra?.gitCommit
+        || Constants.expoConfig?.extra?.gitCommit
+        || "?";
+      const info = [
+        `${Updates.channel || "no-channel"}`,
+        `${Updates.updateId?.slice(0, 8) || "embedded"}`,
+        `${commit}`,
+      ].join(" | ");
+      setUpdateInfo(info);
+    } else {
+      const commit = Constants.expoConfig?.extra?.gitCommit || "?";
+      setUpdateInfo(`web | ${commit}`);
+    }
+  }, []);
 
   // Check if Gmail is actually connected (has tokens stored)
   const isGmailConnected = useQuery(
@@ -510,6 +562,17 @@ export default function SettingsScreen() {
             <Text style={styles.aboutLabel}>Version</Text>
             <Text style={styles.aboutValue}>1.0.0</Text>
           </View>
+          <View style={styles.divider} />
+          <TouchableOpacity
+            style={styles.aboutRow}
+            onPress={checkForUpdates}
+            disabled={isCheckingUpdate || Platform.OS === "web"}
+          >
+            <Text style={[styles.aboutLabel, { fontSize: 12 }]}>Update</Text>
+            <Text style={[styles.aboutValue, { fontSize: 10 }]}>
+              {isCheckingUpdate ? "Checking..." : updateInfo}
+            </Text>
+          </TouchableOpacity>
           <View style={styles.divider} />
           <TouchableOpacity style={styles.aboutRow}>
             <Text style={styles.aboutLabel}>Privacy Policy</Text>
