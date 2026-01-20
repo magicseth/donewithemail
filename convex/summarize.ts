@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 
 // Internal mutation to mark an event as added to calendar
 export const markCalendarEventAdded = internalMutation({
@@ -355,5 +355,157 @@ export const updateEmailSummary = internalMutation({
         ...summaryData,
       });
     }
+  },
+});
+
+// Get top email recipients (contacts the user has sent the most emails to)
+export const getTopRecipients = query({
+  args: { userEmail: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    // Find user by email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .first();
+    if (!user) return { error: "User not found", recipients: [] };
+
+    // Get all outgoing emails
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .filter((q) => q.eq(q.field("direction"), "outgoing"))
+      .collect();
+
+    // Count emails per recipient
+    const recipientCounts = new Map<string, { count: number; name?: string; email: string }>();
+
+    for (const email of emails) {
+      if (!email.to || email.to.length === 0) continue;
+
+      for (const contactId of email.to) {
+        const contact = await ctx.db.get(contactId);
+        if (!contact) continue;
+
+        const existing = recipientCounts.get(contact.email);
+        if (existing) {
+          existing.count++;
+        } else {
+          recipientCounts.set(contact.email, {
+            count: 1,
+            name: contact.name,
+            email: contact.email,
+          });
+        }
+      }
+    }
+
+    // Sort by count and take top N
+    const sorted = Array.from(recipientCounts.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, args.limit || 20);
+
+    return {
+      totalOutgoing: emails.length,
+      withRecipients: emails.filter(e => e.to && e.to.length > 0).length,
+      recipients: sorted,
+    };
+  },
+});
+
+// Clear all writing styles for a user (to fix incorrect data)
+export const clearWritingStyles = mutation({
+  args: { userEmail: v.string() },
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .first();
+    if (!user) return { error: "User not found", cleared: 0 };
+
+    const contacts = await ctx.db
+      .query("contacts")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+
+    let cleared = 0;
+    for (const contact of contacts) {
+      if (contact.writingStyle) {
+        await ctx.db.patch(contact._id, { writingStyle: undefined });
+        cleared++;
+      }
+    }
+
+    return { cleared };
+  },
+});
+
+// Get sent emails TO a specific contact (for writing style analysis)
+// This finds emails where the user is the sender and the contact is a recipient
+export const getSentEmailsToContact = internalQuery({
+  args: {
+    userId: v.id("users"),
+    contactId: v.id("contacts"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit || 20;
+
+    // Get all outgoing emails for this user
+    const outgoingEmails = await ctx.db
+      .query("emails")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .filter((q) => q.eq(q.field("direction"), "outgoing"))
+      .collect();
+
+    // Filter to emails sent TO this contact
+    const emailsToContact = outgoingEmails.filter(
+      (e) => e.to && e.to.includes(args.contactId)
+    );
+
+    // Get the email bodies
+    const emailsWithBodies = await Promise.all(
+      emailsToContact.slice(0, limit).map(async (email) => {
+        const body = await ctx.db
+          .query("emailBodies")
+          .withIndex("by_email", (q) => q.eq("emailId", email._id))
+          .first();
+        return {
+          ...email,
+          bodyFull: body?.bodyFull || email.bodyPreview,
+        };
+      })
+    );
+
+    return emailsWithBodies;
+  },
+});
+
+// Update a contact's writing style
+export const updateContactWritingStyle = internalMutation({
+  args: {
+    contactId: v.id("contacts"),
+    writingStyle: v.object({
+      tone: v.string(),
+      greeting: v.optional(v.string()),
+      signoff: v.optional(v.string()),
+      characteristics: v.optional(v.array(v.string())),
+      samplePhrases: v.optional(v.array(v.string())),
+      emailsAnalyzed: v.number(),
+      analyzedAt: v.number(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.contactId, { writingStyle: args.writingStyle });
+  },
+});
+
+// Get all contacts for a user (for backfill)
+export const getContactsForWritingStyleBackfill = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("contacts")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
   },
 });

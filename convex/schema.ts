@@ -148,6 +148,16 @@ export default defineSchema({
       createdAt: v.number(),
       sourceEmailId: v.optional(v.id("emails")),
     }))),
+    // Writing style analysis (how the user writes to this contact)
+    writingStyle: v.optional(v.object({
+      tone: v.string(),                          // "casual", "formal", "friendly professional"
+      greeting: v.optional(v.string()),          // "Hey!", "Hi John,", "Dear Mr. Smith,"
+      signoff: v.optional(v.string()),           // "Cheers", "Best,", "Thanks!"
+      characteristics: v.optional(v.array(v.string())), // ["uses emojis", "short sentences"]
+      samplePhrases: v.optional(v.array(v.string())),   // Actual phrases from emails
+      emailsAnalyzed: v.number(),
+      analyzedAt: v.number(),
+    })),
   })
     .index("by_user", ["userId"])
     .index("by_email", ["email"])

@@ -172,8 +172,13 @@ export default function EmailDetailScreen() {
     }
   }, [user?.email, addToCalendar, convexId]);
 
-  const handleContactPress = useCallback(() => {
-    if (email?.fromContact?._id) {
+  const handleContactPress = useCallback((contactId?: string) => {
+    if (contactId) {
+      router.push(`/person/${contactId}`);
+    } else if (email?.direction === "outgoing" && (email as any).toContacts?.[0]?._id) {
+      // Fallback for single email view
+      router.push(`/person/${(email as any).toContacts[0]._id}`);
+    } else if (email?.fromContact?._id) {
       router.push(`/person/${email.fromContact._id}`);
     }
   }, [email]);
@@ -254,6 +259,13 @@ export default function EmailDetailScreen() {
               relationship: email.fromContact.relationship,
             }
           : undefined,
+        direction: email.direction,
+        toContacts: (email as any).toContacts?.map((c: any) => ({
+          _id: c._id,
+          email: c.email,
+          name: c.name,
+          avatarUrl: c.avatarUrl,
+        })),
       }
     : mockEmail;
 
@@ -333,6 +345,13 @@ export default function EmailDetailScreen() {
                     relationship: threadEmail.fromContact.relationship,
                   }
                 : undefined,
+              direction: threadEmail.direction,
+              toContacts: (threadEmail as any).toContacts?.map((c: any) => ({
+                _id: c._id,
+                email: c.email,
+                name: c.name,
+                avatarUrl: c.avatarUrl,
+              })),
             };
 
             return (
@@ -344,7 +363,9 @@ export default function EmailDetailScreen() {
                   >
                     <View style={styles.collapsedEmailContent}>
                       <Text style={styles.collapsedSender} numberOfLines={1}>
-                        {threadEmail.fromName || threadEmail.fromContact?.name || threadEmail.fromContact?.email || "Unknown"}
+                        {threadEmail.direction === "outgoing"
+                          ? `To: ${(threadEmail as any).toContacts?.[0]?.name || (threadEmail as any).toContacts?.[0]?.email || "Unknown"}`
+                          : threadEmail.fromName || threadEmail.fromContact?.name || threadEmail.fromContact?.email || "Unknown"}
                       </Text>
                       <Text style={styles.collapsedPreview} numberOfLines={1}>
                         {threadEmail.bodyPreview}

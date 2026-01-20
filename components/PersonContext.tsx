@@ -30,6 +30,16 @@ export interface ContactFact {
   sourceEmailId?: string;
 }
 
+export interface WritingStyle {
+  tone: string;
+  greeting?: string;
+  signoff?: string;
+  characteristics?: string[];
+  samplePhrases?: string[];
+  emailsAnalyzed: number;
+  analyzedAt: number;
+}
+
 export interface ContactData {
   _id: string;
   email: string;
@@ -40,6 +50,7 @@ export interface ContactData {
   relationship?: "vip" | "regular" | "unknown";
   relationshipSummary?: string;
   facts?: ContactFact[];
+  writingStyle?: WritingStyle;
 }
 
 export interface EmailPreview {
@@ -192,6 +203,66 @@ export function PersonContext({
           </Text>
         )}
       </View>
+
+      {/* Writing style analysis */}
+      {contact.writingStyle && (
+        <View style={styles.writingStyleSection}>
+          <View style={styles.aiHeader}>
+            <View style={styles.aiIcon}>
+              <Text style={styles.aiIconText}>AI</Text>
+            </View>
+            <Text style={styles.sectionLabel}>Your Writing Style</Text>
+          </View>
+          <Text style={styles.writingStyleSubtitle}>
+            How you typically write to {contact.name || "this contact"}
+          </Text>
+
+          <View style={styles.writingStyleRow}>
+            <Text style={styles.writingStyleLabel}>Tone:</Text>
+            <Text style={styles.writingStyleValue}>{contact.writingStyle.tone}</Text>
+          </View>
+
+          {contact.writingStyle.greeting && (
+            <View style={styles.writingStyleRow}>
+              <Text style={styles.writingStyleLabel}>Greeting:</Text>
+              <Text style={styles.writingStyleValue}>"{contact.writingStyle.greeting}"</Text>
+            </View>
+          )}
+
+          {contact.writingStyle.signoff && (
+            <View style={styles.writingStyleRow}>
+              <Text style={styles.writingStyleLabel}>Sign-off:</Text>
+              <Text style={styles.writingStyleValue}>"{contact.writingStyle.signoff}"</Text>
+            </View>
+          )}
+
+          {contact.writingStyle.characteristics && contact.writingStyle.characteristics.length > 0 && (
+            <View style={styles.writingStyleCharacteristics}>
+              <Text style={styles.writingStyleLabel}>Style traits:</Text>
+              <View style={styles.characteristicsList}>
+                {contact.writingStyle.characteristics.map((trait, idx) => (
+                  <View key={idx} style={styles.characteristicChip}>
+                    <Text style={styles.characteristicText}>{trait}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {contact.writingStyle.samplePhrases && contact.writingStyle.samplePhrases.length > 0 && (
+            <View style={styles.samplePhrasesSection}>
+              <Text style={styles.writingStyleLabel}>Sample phrases:</Text>
+              {contact.writingStyle.samplePhrases.slice(0, 3).map((phrase, idx) => (
+                <Text key={idx} style={styles.samplePhrase}>"{phrase}"</Text>
+              ))}
+            </View>
+          )}
+
+          <Text style={styles.writingStyleMeta}>
+            Based on {contact.writingStyle.emailsAnalyzed} email{contact.writingStyle.emailsAnalyzed !== 1 ? 's' : ''}
+          </Text>
+        </View>
+      )}
 
       {/* Recent emails */}
       <View style={styles.emailsSection}>
@@ -508,5 +579,69 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#999",
     fontStyle: "italic",
+  },
+  // Writing style styles
+  writingStyleSection: {
+    backgroundColor: "#F0FDF4",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+  },
+  writingStyleSubtitle: {
+    fontSize: 13,
+    color: "#15803D",
+    marginBottom: 12,
+  },
+  writingStyleRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+  },
+  writingStyleLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#166534",
+    marginRight: 8,
+    minWidth: 70,
+  },
+  writingStyleValue: {
+    fontSize: 13,
+    color: "#15803D",
+    flex: 1,
+  },
+  writingStyleCharacteristics: {
+    marginBottom: 12,
+  },
+  characteristicsList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 6,
+  },
+  characteristicChip: {
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  characteristicText: {
+    fontSize: 12,
+    color: "#166534",
+  },
+  samplePhrasesSection: {
+    marginBottom: 8,
+  },
+  samplePhrase: {
+    fontSize: 13,
+    color: "#15803D",
+    fontStyle: "italic",
+    marginTop: 4,
+    marginLeft: 8,
+  },
+  writingStyleMeta: {
+    fontSize: 11,
+    color: "#86EFAC",
+    marginTop: 8,
   },
 });

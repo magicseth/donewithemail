@@ -471,10 +471,10 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
 
       {/* Email list - expanded, grouped by sender with sticky headers */}
       {isExpanded && (
-        <View style={[styles.emailList, Platform.OS !== "web" && { flex: 1 }]}>
-          {/* On web, render directly with CSS sticky; on native, use SectionList */}
+        <View style={[styles.emailList, { flex: 1 }]}>
+          {/* On web, render in scrollable div with CSS sticky; on native, use SectionList */}
           {Platform.OS === "web" ? (
-            <>
+            <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
               {senderGroups.map((group, sectionIndex) => {
                 const prevItemsCount = senderGroups.slice(0, sectionIndex).reduce((sum, g) => sum + g.emails.length, 0);
                 return (
@@ -544,7 +544,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                   <Text style={styles.allSavedText}>All emails saved to TODO</Text>
                 </View>
               )}
-            </>
+            </div>
           ) : (
             <SectionList
               sections={senderGroups.map(group => ({

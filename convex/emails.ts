@@ -494,9 +494,14 @@ export const getMyThreadEmails = authedQuery({
     if (!email.threadId) {
       const fromContact = await ctx.db.get(email.from);
       const summaryData = await getSummaryForEmail(ctx.db, email._id);
+      // Fetch recipients for outgoing emails
+      const toContacts = email.direction === "outgoing" && email.to?.length
+        ? await Promise.all(email.to.map(id => ctx.db.get(id)))
+        : [];
       return [{
         ...email,
         fromContact,
+        toContacts: toContacts.filter(Boolean),
         summary: summaryData?.summary,
         urgencyScore: summaryData?.urgencyScore,
         urgencyReason: summaryData?.urgencyReason,
@@ -515,13 +520,15 @@ export const getMyThreadEmails = authedQuery({
       .order("asc")
       .collect();
 
-    // Batch fetch contacts
-    const contactIds = [...new Set(threadEmails.map((e) => e.from))];
+    // Batch fetch contacts (both from and to)
+    const fromContactIds = [...new Set(threadEmails.map((e) => e.from))];
+    const toContactIds = [...new Set(threadEmails.flatMap((e) => e.to || []))];
+    const allContactIds = [...new Set([...fromContactIds, ...toContactIds])];
     const contactsArray = await Promise.all(
-      contactIds.map((id) => ctx.db.get(id))
+      allContactIds.map((id) => ctx.db.get(id))
     );
     const contactsMap = new Map(
-      contactIds.map((id, i) => [id, contactsArray[i]])
+      allContactIds.map((id, i) => [id, contactsArray[i]])
     );
 
     // Batch fetch summaries
@@ -540,10 +547,12 @@ export const getMyThreadEmails = authedQuery({
 
     const emailsWithData = threadEmails.map((e) => {
       const fromContact = contactsMap.get(e.from);
+      const toContacts = (e.to || []).map(id => contactsMap.get(id)).filter(Boolean);
       const summaryData = summariesMap.get(e._id);
       return {
         ...e,
         fromContact,
+        toContacts,
         summary: summaryData?.summary,
         urgencyScore: summaryData?.urgencyScore,
         urgencyReason: summaryData?.urgencyReason,

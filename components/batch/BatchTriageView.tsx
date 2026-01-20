@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useRef } from "react";
+import React, { useCallback, useState, useEffect, useRef, forwardRef } from "react";
 import {
   View,
   Text,
@@ -8,11 +8,58 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   LayoutChangeEvent,
+  Platform,
 } from "react-native";
 import { BatchCategoryCard } from "./BatchCategoryCard";
 import { QuickReplyOption } from "./BatchEmailRow";
 import { CelebrationOverlay } from "./CelebrationOverlay";
 import { useBatchTriage, BatchCategory } from "../../hooks/useBatchTriage";
+
+// Web-specific scrollable container that actually scrolls
+const WebScrollView = forwardRef<HTMLDivElement, {
+  style?: object | (object | false | null | undefined)[];
+  contentContainerStyle?: object;
+  children: React.ReactNode;
+  hidden?: boolean;
+}>(
+  ({ style, contentContainerStyle, children, hidden }, ref) => {
+    if (Platform.OS !== "web") {
+      return null;
+    }
+
+    // Flatten style array, filtering out falsy values
+    const flatStyle = Array.isArray(style)
+      ? style.filter((s): s is object => Boolean(s)).reduce((acc, s) => ({ ...acc, ...s }), {})
+      : (style || {});
+
+    return (
+      <div
+        ref={ref}
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+          ...flatStyle,
+          // Apply hidden styles if needed
+          ...(hidden && {
+            position: "absolute" as const,
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            opacity: 0,
+            pointerEvents: "none" as const,
+            zIndex: -1,
+          }),
+        }}
+      >
+        <div style={contentContainerStyle}>
+          {children}
+        </div>
+      </div>
+    );
+  }
+);
 
 interface BatchTriageViewProps {
   userEmail: string | undefined;
@@ -363,6 +410,102 @@ export function BatchTriageView({
 
   const expandedEmails = getExpandedCategoryData();
 
+  // Shared content for the category list (used by both web and native scroll containers)
+  const categoryListContent = (
+    <>
+      {/* Header stats */}
+      <View style={styles.statsRow}>
+        <Text style={styles.statsText}>
+          {total} emails to review
+          {puntedEmails.size > 0 && ` • ${puntedEmails.size} saved to TODO`}
+        </Text>
+      </View>
+
+      {/* FYI category (was "Done") - newsletters, receipts, etc. */}
+      <View onLayout={(e) => handleCategoryLayout("done", e)}>
+        <BatchCategoryCard
+          category="done"
+          emails={categories.done}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
+          onMarkAllDone={() => handleMarkCategoryDone("done")}
+          isExpanded={false}
+          onToggleExpand={() => handleToggleExpand("done")}
+        />
+      </View>
+
+      {/* Needs Review category (low confidence) */}
+      <View onLayout={(e) => handleCategoryLayout("lowConfidence", e)}>
+        <BatchCategoryCard
+          category="lowConfidence"
+          emails={categories.lowConfidence}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
+          onMarkAllDone={() => handleMarkCategoryDone("lowConfidence")}
+          isExpanded={false}
+          onToggleExpand={() => handleToggleExpand("lowConfidence")}
+        />
+      </View>
+
+      {/* Action needed category */}
+      <View onLayout={(e) => handleCategoryLayout("actionNeeded", e)}>
+        <BatchCategoryCard
+          category="actionNeeded"
+          emails={categories.actionNeeded}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
+          onMarkAllDone={() => handleMarkCategoryDone("actionNeeded")}
+          isExpanded={false}
+          onToggleExpand={() => handleToggleExpand("actionNeeded")}
+        />
+      </View>
+
+      {/* Human waiting category - emails requiring reply */}
+      <View onLayout={(e) => handleCategoryLayout("humanWaiting", e)}>
+        <BatchCategoryCard
+          category="humanWaiting"
+          emails={categories.humanWaiting}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
+          onMarkAllDone={() => handleMarkCategoryDone("humanWaiting")}
+          isExpanded={false}
+          onToggleExpand={() => handleToggleExpand("humanWaiting")}
+        />
+      </View>
+
+      {/* Calendar category */}
+      <View onLayout={(e) => handleCategoryLayout("calendar", e)}>
+        <BatchCategoryCard
+          category="calendar"
+          emails={categories.calendar}
+          puntedEmails={puntedEmails}
+          onPuntEmail={togglePuntEmail}
+          onMarkAllDone={() => handleMarkCategoryDone("calendar")}
+          isExpanded={false}
+          onToggleExpand={() => handleToggleExpand("calendar")}
+        />
+      </View>
+
+      {/* Pending/analyzing emails (if any) - shown at bottom */}
+      {categories.pending.length > 0 && (
+        <View onLayout={(e) => handleCategoryLayout("pending", e)}>
+          <BatchCategoryCard
+            category="pending"
+            emails={categories.pending}
+            puntedEmails={puntedEmails}
+            onPuntEmail={togglePuntEmail}
+            onMarkAllDone={() => handleMarkCategoryDone("pending")}
+            isExpanded={false}
+            onToggleExpand={() => handleToggleExpand("pending")}
+          />
+        </View>
+      )}
+
+      {/* Bottom spacing */}
+      <View style={styles.bottomSpacer} />
+    </>
+  );
+
   return (
     <View style={styles.container}>
       {/* When a category is expanded on native, render it outside ScrollView */}
@@ -398,113 +541,29 @@ export function BatchTriageView({
       )}
 
       {/* Scrollable categories - hidden when one is expanded */}
-      <ScrollView
-        ref={scrollViewRef}
-        style={[styles.scrollView, expandedCategory && styles.hidden]}
-        contentContainerStyle={styles.scrollContent}
-        scrollEnabled={!isRecording && expandedCategory === null}
-        refreshControl={
-          onRefresh ? (
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#6366F1"
-            />
-          ) : undefined
-        }
-      >
-        {/* Header stats */}
-        <View style={styles.statsRow}>
-          <Text style={styles.statsText}>
-            {total} emails to review
-            {puntedEmails.size > 0 && ` • ${puntedEmails.size} saved to TODO`}
-          </Text>
-        </View>
-
-        {/* FYI category (was "Done") - newsletters, receipts, etc. */}
-        {/* Cards in ScrollView are always collapsed - expanded view is rendered separately above */}
-        <View onLayout={(e) => handleCategoryLayout("done", e)}>
-          <BatchCategoryCard
-            category="done"
-            emails={categories.done}
-            puntedEmails={puntedEmails}
-            onPuntEmail={togglePuntEmail}
-            onMarkAllDone={() => handleMarkCategoryDone("done")}
-            isExpanded={false}
-            onToggleExpand={() => handleToggleExpand("done")}
-          />
-        </View>
-
-        {/* Needs Review category (low confidence) */}
-        <View onLayout={(e) => handleCategoryLayout("lowConfidence", e)}>
-          <BatchCategoryCard
-            category="lowConfidence"
-            emails={categories.lowConfidence}
-            puntedEmails={puntedEmails}
-            onPuntEmail={togglePuntEmail}
-            onMarkAllDone={() => handleMarkCategoryDone("lowConfidence")}
-            isExpanded={false}
-            onToggleExpand={() => handleToggleExpand("lowConfidence")}
-          />
-        </View>
-
-        {/* Action needed category */}
-        <View onLayout={(e) => handleCategoryLayout("actionNeeded", e)}>
-          <BatchCategoryCard
-            category="actionNeeded"
-            emails={categories.actionNeeded}
-            puntedEmails={puntedEmails}
-            onPuntEmail={togglePuntEmail}
-            onMarkAllDone={() => handleMarkCategoryDone("actionNeeded")}
-            isExpanded={false}
-            onToggleExpand={() => handleToggleExpand("actionNeeded")}
-          />
-        </View>
-
-        {/* Human waiting category - emails requiring reply */}
-        <View onLayout={(e) => handleCategoryLayout("humanWaiting", e)}>
-          <BatchCategoryCard
-            category="humanWaiting"
-            emails={categories.humanWaiting}
-            puntedEmails={puntedEmails}
-            onPuntEmail={togglePuntEmail}
-            onMarkAllDone={() => handleMarkCategoryDone("humanWaiting")}
-            isExpanded={false}
-            onToggleExpand={() => handleToggleExpand("humanWaiting")}
-          />
-        </View>
-
-        {/* Calendar category */}
-        <View onLayout={(e) => handleCategoryLayout("calendar", e)}>
-          <BatchCategoryCard
-            category="calendar"
-            emails={categories.calendar}
-            puntedEmails={puntedEmails}
-            onPuntEmail={togglePuntEmail}
-            onMarkAllDone={() => handleMarkCategoryDone("calendar")}
-            isExpanded={false}
-            onToggleExpand={() => handleToggleExpand("calendar")}
-          />
-        </View>
-
-        {/* Pending/analyzing emails (if any) - shown at bottom */}
-        {categories.pending.length > 0 && (
-          <View onLayout={(e) => handleCategoryLayout("pending", e)}>
-            <BatchCategoryCard
-              category="pending"
-              emails={categories.pending}
-              puntedEmails={puntedEmails}
-              onPuntEmail={togglePuntEmail}
-              onMarkAllDone={() => handleMarkCategoryDone("pending")}
-              isExpanded={false}
-              onToggleExpand={() => handleToggleExpand("pending")}
-            />
-          </View>
-        )}
-
-        {/* Bottom spacing */}
-        <View style={styles.bottomSpacer} />
-      </ScrollView>
+      {Platform.OS === "web" ? (
+        <WebScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          hidden={!!expandedCategory}
+        >
+          {categoryListContent}
+        </WebScrollView>
+      ) : (
+        <ScrollView
+          ref={scrollViewRef}
+          style={[styles.scrollView, expandedCategory && styles.hidden]}
+          contentContainerStyle={styles.scrollContent}
+          scrollEnabled={!isRecording && expandedCategory === null}
+          refreshControl={
+            onRefresh ? (
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366F1" />
+            ) : undefined
+          }
+        >
+          {categoryListContent}
+        </ScrollView>
+      )}
 
       {/* Pending warning */}
       {hasPendingEmails && (

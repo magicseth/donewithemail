@@ -712,3 +712,153 @@ export const reprocessEmail = action({
     }
   },
 });
+
+// =============================================================================
+// WRITING STYLE ANALYSIS
+// =============================================================================
+
+/**
+ * Analyze writing style from emails sent TO a specific contact.
+ * This captures how the USER writes to this RECIPIENT.
+ */
+export const analyzeWritingStyle = internalAction({
+  args: {
+    userId: v.id("users"),
+    contactId: v.id("contacts"),
+    contactName: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
+    // Get sent emails TO this contact
+    const emails = await ctx.runQuery(internal.summarize.getSentEmailsToContact, {
+      userId: args.userId,
+      contactId: args.contactId,
+      limit: 20,
+    });
+
+    if (emails.length < 2) {
+      return { success: false, error: "Not enough sent emails to this contact" };
+    }
+
+    // Build email samples for analysis
+    const emailSamples = emails.slice(0, 10).map((e, i) => {
+      const body = htmlToPlainText(e.bodyFull || e.bodyPreview).slice(0, 500);
+      return `Email ${i + 1}:\nSubject: ${e.subject}\nBody: ${body}`;
+    }).join("\n\n---\n\n");
+
+    const contactLabel = args.contactName || "this contact";
+
+    const prompt = `Analyze the writing style in these emails that a user has sent TO ${contactLabel}. Focus on how the sender writes to this specific recipient.
+
+${emailSamples}
+
+Provide a JSON analysis of the sender's writing style when communicating with this person:
+{
+  "tone": "brief description of overall tone (e.g., 'formal', 'casual', 'friendly professional', 'urgent and direct')",
+  "greeting": "typical greeting used or null if none (e.g., 'Hi John,', 'Hey!', 'Dear Mr. Smith,')",
+  "signoff": "typical sign-off used or null if none (e.g., 'Best,', 'Thanks!', '- Seth')",
+  "characteristics": ["list", "of", "writing", "traits"],
+  "samplePhrases": ["actual", "phrases", "from", "emails", "that", "are", "distinctive"]
+}
+
+Return ONLY valid JSON, no other text.`;
+
+    try {
+      const { text } = await generateTextWithFallback(prompt);
+
+      // Parse JSON from response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return { success: false, error: "Could not parse AI response" };
+      }
+
+      const analysis = JSON.parse(jsonMatch[0]);
+
+      // Save to the contact
+      await ctx.runMutation(internal.summarize.updateContactWritingStyle, {
+        contactId: args.contactId,
+        writingStyle: {
+          tone: analysis.tone || "unknown",
+          greeting: analysis.greeting || undefined,
+          signoff: analysis.signoff || undefined,
+          characteristics: analysis.characteristics || [],
+          samplePhrases: analysis.samplePhrases || [],
+          emailsAnalyzed: emails.length,
+          analyzedAt: Date.now(),
+        },
+      });
+
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  },
+});
+
+/**
+ * Backfill writing styles for all contacts the user has sent emails to.
+ */
+export const backfillWritingStyles = action({
+  args: { userEmail: v.string() },
+  handler: async (ctx, args): Promise<{ processed: number; errors: number }> => {
+    // Get user
+    const user = await ctx.runQuery(internal.gmailQueries.getUserByEmail, {
+      email: args.userEmail,
+    });
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Get all contacts for this user
+    const contacts = await ctx.runQuery(internal.summarize.getContactsForWritingStyleBackfill, {
+      userId: user._id,
+    });
+
+    console.log(`[WritingStyle Backfill] Processing ${contacts.length} contacts for ${args.userEmail}`);
+
+    let processed = 0;
+    let errors = 0;
+
+    for (const contact of contacts) {
+      // Skip user's own contact
+      if (contact.email === args.userEmail) {
+        continue;
+      }
+
+      // Check if there are sent emails TO this contact
+      const sentEmails = await ctx.runQuery(internal.summarize.getSentEmailsToContact, {
+        userId: user._id,
+        contactId: contact._id,
+        limit: 5,
+      });
+
+      if (sentEmails.length < 2) {
+        continue; // Not enough emails to analyze
+      }
+
+      try {
+        const result = await ctx.runAction(internal.summarizeActions.analyzeWritingStyle, {
+          userId: user._id,
+          contactId: contact._id,
+          contactName: contact.name || contact.email,
+        });
+
+        if (result.success) {
+          processed++;
+          console.log(`[WritingStyle] Analyzed style for ${contact.name || contact.email}`);
+        } else {
+          errors++;
+          console.error(`[WritingStyle] Failed for ${contact.email}: ${result.error}`);
+        }
+      } catch (error) {
+        errors++;
+        console.error(`[WritingStyle] Error for ${contact.email}:`, error);
+      }
+    }
+
+    console.log(`[WritingStyle Backfill] Completed: ${processed} processed, ${errors} errors`);
+    return { processed, errors };
+  },
+});

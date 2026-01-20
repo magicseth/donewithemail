@@ -149,6 +149,7 @@ export default function PersonScreen() {
         relationship: contactStats.contact.relationship,
         relationshipSummary: contactStats.contact.relationshipSummary,
         facts: contactStats.contact.facts,
+        writingStyle: contactStats.contact.writingStyle,
       }
     : mockContact;
 

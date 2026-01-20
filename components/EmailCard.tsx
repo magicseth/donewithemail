@@ -100,12 +100,20 @@ export interface EmailCardData {
     avatarUrl?: string;
     relationship?: "vip" | "regular" | "unknown";
   };
+  // For outgoing emails
+  direction?: "incoming" | "outgoing";
+  toContacts?: Array<{
+    _id: string;
+    email: string;
+    name?: string;
+    avatarUrl?: string;
+  }>;
 }
 
 interface EmailCardProps {
   email: EmailCardData;
   onPress?: () => void;
-  onContactPress?: () => void;
+  onContactPress?: (contactId?: string) => void;
   onUseReply?: () => void;
   onAddToCalendar?: (event: CalendarEventData) => void;
   showFullContent?: boolean;
@@ -121,11 +129,21 @@ export function EmailCard({
   showFullContent = false,
   isAddingToCalendar = false,
 }: EmailCardProps) {
-  // Prefer fromName (from email header) over contact name (may be stale for shared addresses)
-  const fromName = email.fromName || email.fromContact?.name || email.fromContact?.email || "Unknown";
-  const initials = getInitials(fromName);
+  const isOutgoing = email.direction === "outgoing";
+
+  // For outgoing emails, show recipient; for incoming, show sender
+  const displayContact = isOutgoing && email.toContacts?.length
+    ? email.toContacts[0]
+    : email.fromContact;
+  const displayName = isOutgoing && email.toContacts?.length
+    ? email.toContacts[0]?.name || email.toContacts[0]?.email || "Unknown"
+    : email.fromName || email.fromContact?.name || email.fromContact?.email || "Unknown";
+  const displayEmail = displayContact?.email;
+  const displayAvatarUrl = displayContact?.avatarUrl;
+
+  const initials = getInitials(displayName);
   const timeAgo = formatTimeAgo(email.receivedAt);
-  const isVip = email.fromContact?.relationship === "vip";
+  const isVip = !isOutgoing && email.fromContact?.relationship === "vip";
 
   const Container = onPress ? TouchableOpacity : View;
   const containerProps = onPress
@@ -134,12 +152,12 @@ export function EmailCard({
 
   return (
     <Container {...containerProps}>
-      {/* Header with sender info */}
-      <TouchableOpacity style={styles.header} onPress={onContactPress}>
+      {/* Header with sender/recipient info */}
+      <TouchableOpacity style={styles.header} onPress={() => onContactPress?.(displayContact?._id)}>
         <View style={styles.avatarContainer}>
-          {email.fromContact?.avatarUrl ? (
+          {displayAvatarUrl ? (
             <Image
-              source={{ uri: email.fromContact.avatarUrl }}
+              source={{ uri: displayAvatarUrl }}
               style={styles.avatar}
             />
           ) : (
@@ -151,11 +169,14 @@ export function EmailCard({
         </View>
 
         <View style={styles.senderInfo}>
-          <Text style={styles.senderName} numberOfLines={1}>
-            {fromName}
-          </Text>
+          <View style={styles.senderNameRow}>
+            {isOutgoing && <Text style={styles.toLabel}>To: </Text>}
+            <Text style={[styles.senderName, { flex: 1 }]} numberOfLines={1}>
+              {displayName}
+            </Text>
+          </View>
           <Text style={styles.senderEmail} numberOfLines={1}>
-            {email.fromContact?.email}
+            {displayEmail}
           </Text>
         </View>
 
@@ -334,6 +355,15 @@ const styles = StyleSheet.create({
   senderInfo: {
     flex: 1,
     marginLeft: 12,
+  },
+  senderNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  toLabel: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#6366F1",
   },
   senderName: {
     fontSize: 16,
