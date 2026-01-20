@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useMemo } from "react";
+import React, { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Platform,
   FlatList,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useAction } from "convex/react";
 import { api } from "../convex/_generated/api";
@@ -23,21 +24,56 @@ interface Message {
   content: string;
 }
 
+interface ThreadInfo {
+  threadId: string;
+  title: string | null;
+  createdAt: number;
+  firstMessage: string | null;
+}
+
 interface AskEmailModalProps {
   visible: boolean;
   onClose: () => void;
 }
+
+type ViewMode = "chat" | "history";
 
 export function AskEmailModal({ visible, onClose }: AskEmailModalProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("chat");
+  const [threads, setThreads] = useState<ThreadInfo[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [deletingThreadId, setDeletingThreadId] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
 
   const startChat = useAction(api.emailAgent.startChat);
   const continueChat = useAction(api.emailAgent.continueChat);
+  const listThreads = useAction(api.chatHistory.listThreads);
+  const deleteThread = useAction(api.chatHistory.deleteThread);
+  const getThreadMessages = useAction(api.chatHistory.getThreadMessages);
+
+  // Load history when switching to history view
+  useEffect(() => {
+    if (viewMode === "history" && visible) {
+      loadHistory();
+    }
+  }, [viewMode, visible]);
+
+  const loadHistory = useCallback(async () => {
+    setIsLoadingHistory(true);
+    try {
+      const result = await listThreads({});
+      setThreads(result);
+    } catch (err) {
+      console.error("Failed to load history:", err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  }, [listThreads]);
 
   // Handle link presses in markdown - intercept email: links
   const handleLinkPress = useCallback(
@@ -114,8 +150,72 @@ export function AskEmailModal({ visible, onClose }: AskEmailModalProps) {
     setInput("");
     setThreadId(null);
     setIsLoading(false);
+    setViewMode("chat");
     onClose();
   }, [onClose]);
+
+  const handleNewChat = useCallback(() => {
+    setMessages([]);
+    setInput("");
+    setThreadId(null);
+    setViewMode("chat");
+  }, []);
+
+  const handleResumeThread = useCallback(
+    async (thread: ThreadInfo) => {
+      setIsLoading(true);
+      try {
+        // Load messages for this thread
+        const threadMessages = await getThreadMessages({ threadId: thread.threadId });
+
+        // Convert to our Message format
+        const loadedMessages: Message[] = threadMessages.map((m, i) => ({
+          id: `${thread.threadId}-${i}`,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }));
+
+        setMessages(loadedMessages);
+        setThreadId(thread.threadId);
+        setViewMode("chat");
+      } catch (err) {
+        console.error("Failed to load thread:", err);
+        Alert.alert("Error", "Failed to load conversation");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [getThreadMessages]
+  );
+
+  const handleDeleteThread = useCallback(
+    async (thread: ThreadInfo) => {
+      Alert.alert(
+        "Delete Conversation",
+        "Are you sure you want to delete this conversation?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: async () => {
+              setDeletingThreadId(thread.threadId);
+              try {
+                await deleteThread({ threadId: thread.threadId });
+                setThreads((prev) => prev.filter((t) => t.threadId !== thread.threadId));
+              } catch (err) {
+                console.error("Failed to delete thread:", err);
+                Alert.alert("Error", "Failed to delete conversation");
+              } finally {
+                setDeletingThreadId(null);
+              }
+            },
+          },
+        ]
+      );
+    },
+    [deleteThread]
+  );
 
   // Markdown styles for assistant messages
   const markdownStyles = useMemo(
@@ -171,7 +271,6 @@ export function AskEmailModal({ visible, onClose }: AskEmailModalProps) {
   const renderMessage = useCallback(
     ({ item }: { item: Message }) => {
       const isUser = item.role === "user";
-      console.log("[AskEmailModal] Rendering message:", { role: item.role, isUser, contentPreview: item.content.substring(0, 50) });
       return (
         <View
           style={[
@@ -194,6 +293,46 @@ export function AskEmailModal({ visible, onClose }: AskEmailModalProps) {
     [markdownStyles, handleLinkPress]
   );
 
+  const renderThreadItem = useCallback(
+    ({ item }: { item: ThreadInfo }) => {
+      const isDeleting = deletingThreadId === item.threadId;
+      const date = new Date(item.createdAt);
+      const dateStr = date.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+
+      return (
+        <View style={styles.threadItem}>
+          <TouchableOpacity
+            style={styles.threadContent}
+            onPress={() => handleResumeThread(item)}
+            disabled={isDeleting}
+          >
+            <Text style={styles.threadMessage} numberOfLines={2}>
+              {item.firstMessage || "Empty conversation"}
+            </Text>
+            <Text style={styles.threadDate}>{dateStr}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => handleDeleteThread(item)}
+            disabled={isDeleting}
+          >
+            {isDeleting ? (
+              <ActivityIndicator size="small" color="#EF4444" />
+            ) : (
+              <Text style={styles.deleteButtonText}>Delete</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      );
+    },
+    [deletingThreadId, handleResumeThread, handleDeleteThread]
+  );
+
   const exampleQuestions = [
     "When is my iFly reservation?",
     "What appointments do I have this week?",
@@ -214,87 +353,130 @@ export function AskEmailModal({ visible, onClose }: AskEmailModalProps) {
         <View style={styles.container}>
           {/* Header */}
           <View style={styles.header}>
-            <View style={styles.headerSpacer} />
-            <Text style={styles.title}>Ask My Email</Text>
+            {viewMode === "chat" ? (
+              <TouchableOpacity
+                onPress={() => setViewMode("history")}
+                style={styles.headerButton}
+              >
+                <Text style={styles.headerButtonText}>History</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity onPress={handleNewChat} style={styles.headerButton}>
+                <Text style={styles.headerButtonText}>New</Text>
+              </TouchableOpacity>
+            )}
+            <Text style={styles.title}>
+              {viewMode === "chat" ? "Ask My Email" : "Chat History"}
+            </Text>
             <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
               <Text style={styles.closeText}>Done</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Messages */}
-          {messages.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>Ask about your emails</Text>
-              <Text style={styles.emptySubtitle}>
-                I can search through your emails to find information about
-                reservations, appointments, orders, and more.
-              </Text>
-              <View style={styles.examplesContainer}>
-                <Text style={styles.examplesTitle}>Try asking:</Text>
-                {exampleQuestions.map((q, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    style={styles.exampleButton}
-                    onPress={() => setInput(q)}
-                  >
-                    <Text style={styles.exampleText}>{q}</Text>
-                  </TouchableOpacity>
-                ))}
+          {viewMode === "history" ? (
+            // History View
+            isLoadingHistory ? (
+              <View style={styles.loadingHistoryContainer}>
+                <ActivityIndicator size="large" color="#6366F1" />
+                <Text style={styles.loadingText}>Loading history...</Text>
               </View>
-            </View>
+            ) : threads.length === 0 ? (
+              <View style={styles.emptyHistory}>
+                <Text style={styles.emptyHistoryText}>No previous conversations</Text>
+                <TouchableOpacity
+                  style={styles.startNewButton}
+                  onPress={handleNewChat}
+                >
+                  <Text style={styles.startNewButtonText}>Start a new chat</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <FlatList
+                data={threads}
+                renderItem={renderThreadItem}
+                keyExtractor={(item) => item.threadId}
+                contentContainerStyle={styles.historyContent}
+              />
+            )
           ) : (
-            <FlatList
-              ref={flatListRef}
-              data={messages}
-              renderItem={renderMessage}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.messagesContent}
-              onContentSizeChange={() =>
-                flatListRef.current?.scrollToEnd({ animated: true })
-              }
-            />
-          )}
+            // Chat View
+            <>
+              {/* Messages */}
+              {messages.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyTitle}>Ask about your emails</Text>
+                  <Text style={styles.emptySubtitle}>
+                    I can search through your emails to find information about
+                    reservations, appointments, orders, and more.
+                  </Text>
+                  <View style={styles.examplesContainer}>
+                    <Text style={styles.examplesTitle}>Try asking:</Text>
+                    {exampleQuestions.map((q, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={styles.exampleButton}
+                        onPress={() => setInput(q)}
+                      >
+                        <Text style={styles.exampleText}>{q}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              ) : (
+                <FlatList
+                  ref={flatListRef}
+                  data={messages}
+                  renderItem={renderMessage}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.messagesContent}
+                  onContentSizeChange={() =>
+                    flatListRef.current?.scrollToEnd({ animated: true })
+                  }
+                />
+              )}
 
-          {/* Loading indicator */}
-          {isLoading && (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#6366F1" />
-              <Text style={styles.loadingText}>Searching your emails...</Text>
-            </View>
-          )}
+              {/* Loading indicator */}
+              {isLoading && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color="#6366F1" />
+                  <Text style={styles.loadingText}>Searching your emails...</Text>
+                </View>
+              )}
 
-          {/* Input */}
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              value={input}
-              onChangeText={setInput}
-              placeholder="Ask about your emails..."
-              placeholderTextColor="#999"
-              multiline
-              maxLength={500}
-              editable={!isLoading}
-              onSubmitEditing={handleSend}
-              blurOnSubmit={false}
-            />
-            <TouchableOpacity
-              style={[
-                styles.sendButton,
-                (!input.trim() || isLoading) && styles.sendButtonDisabled,
-              ]}
-              onPress={handleSend}
-              disabled={!input.trim() || isLoading}
-            >
-              <Text
-                style={[
-                  styles.sendButtonText,
-                  (!input.trim() || isLoading) && styles.sendButtonTextDisabled,
-                ]}
-              >
-                Send
-              </Text>
-            </TouchableOpacity>
-          </View>
+              {/* Input */}
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.input}
+                  value={input}
+                  onChangeText={setInput}
+                  placeholder="Ask about your emails..."
+                  placeholderTextColor="#999"
+                  multiline
+                  maxLength={500}
+                  editable={!isLoading}
+                  onSubmitEditing={handleSend}
+                  blurOnSubmit={false}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.sendButton,
+                    (!input.trim() || isLoading) && styles.sendButtonDisabled,
+                  ]}
+                  onPress={handleSend}
+                  disabled={!input.trim() || isLoading}
+                >
+                  <Text
+                    style={[
+                      styles.sendButtonText,
+                      (!input.trim() || isLoading) && styles.sendButtonTextDisabled,
+                    ]}
+                  >
+                    Send
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -322,8 +504,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
   },
-  headerSpacer: {
-    width: 60,
+  headerButton: {
+    minWidth: 60,
+  },
+  headerButtonText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#6366F1",
   },
   title: {
     fontSize: 17,
@@ -339,6 +526,72 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#6366F1",
   },
+  // History styles
+  loadingHistoryContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 12,
+  },
+  emptyHistory: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  emptyHistoryText: {
+    fontSize: 16,
+    color: "#666",
+    marginBottom: 16,
+  },
+  startNewButton: {
+    backgroundColor: "#6366F1",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  startNewButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  historyContent: {
+    padding: 16,
+  },
+  threadItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8F9FA",
+    borderRadius: 12,
+    marginBottom: 8,
+    overflow: "hidden",
+  },
+  threadContent: {
+    flex: 1,
+    padding: 14,
+  },
+  threadMessage: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#1a1a1a",
+    marginBottom: 4,
+  },
+  threadDate: {
+    fontSize: 13,
+    color: "#666",
+  },
+  deleteButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  deleteButtonText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#EF4444",
+  },
+  // Chat styles
   emptyState: {
     flex: 1,
     padding: 24,
