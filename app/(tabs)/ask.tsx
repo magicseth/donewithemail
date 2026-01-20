@@ -30,14 +30,11 @@ interface ThreadInfo {
   firstMessage: string | null;
 }
 
-type ViewMode = "chat" | "history";
-
 export default function AskScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("chat");
   const [threads, setThreads] = useState<ThreadInfo[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [deletingThreadId, setDeletingThreadId] = useState<string | null>(null);
@@ -50,12 +47,10 @@ export default function AskScreen() {
   const deleteThread = useAction(api.chatHistory.deleteThread);
   const getThreadMessages = useAction(api.chatHistory.getThreadMessages);
 
-  // Load history when switching to history view
+  // Load history on mount
   useEffect(() => {
-    if (viewMode === "history") {
-      loadHistory();
-    }
-  }, [viewMode]);
+    loadHistory();
+  }, []);
 
   const loadHistory = useCallback(async () => {
     setIsLoadingHistory(true);
@@ -140,7 +135,6 @@ export default function AskScreen() {
     setMessages([]);
     setInput("");
     setThreadId(null);
-    setViewMode("chat");
   }, []);
 
   const handleResumeThread = useCallback(
@@ -159,7 +153,6 @@ export default function AskScreen() {
 
         setMessages(loadedMessages);
         setThreadId(thread.threadId);
-        setViewMode("chat");
       } catch (err) {
         console.error("Failed to load thread:", err);
         Alert.alert("Error", "Failed to load conversation");
@@ -275,46 +268,6 @@ export default function AskScreen() {
     [markdownStyles, handleLinkPress]
   );
 
-  const renderThreadItem = useCallback(
-    ({ item }: { item: ThreadInfo }) => {
-      const isDeleting = deletingThreadId === item.threadId;
-      const date = new Date(item.createdAt);
-      const dateStr = date.toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
-
-      return (
-        <View style={styles.threadItem}>
-          <TouchableOpacity
-            style={styles.threadContent}
-            onPress={() => handleResumeThread(item)}
-            disabled={isDeleting}
-          >
-            <Text style={styles.threadMessage} numberOfLines={2}>
-              {item.firstMessage || "Empty conversation"}
-            </Text>
-            <Text style={styles.threadDate}>{dateStr}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={() => handleDeleteThread(item)}
-            disabled={isDeleting}
-          >
-            {isDeleting ? (
-              <ActivityIndicator size="small" color="#EF4444" />
-            ) : (
-              <Text style={styles.deleteButtonText}>Delete</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      );
-    },
-    [deletingThreadId, handleResumeThread, handleDeleteThread]
-  );
-
   const exampleQuestions = [
     "When is my iFly reservation?",
     "What appointments do I have this week?",
@@ -327,135 +280,134 @@ export default function AskScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={90}
     >
-      {/* Toggle buttons */}
-      <View style={styles.toggleContainer}>
-        <TouchableOpacity
-          style={[styles.toggleButton, viewMode === "chat" && styles.toggleButtonActive]}
-          onPress={() => setViewMode("chat")}
-        >
-          <Text style={[styles.toggleText, viewMode === "chat" && styles.toggleTextActive]}>
-            Chat
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.toggleButton, viewMode === "history" && styles.toggleButtonActive]}
-          onPress={() => setViewMode("history")}
-        >
-          <Text style={[styles.toggleText, viewMode === "history" && styles.toggleTextActive]}>
-            History
-          </Text>
-        </TouchableOpacity>
-        {viewMode === "chat" && messages.length > 0 && (
+      {/* Header with New Chat button when in active conversation */}
+      {messages.length > 0 && (
+        <View style={styles.headerContainer}>
           <TouchableOpacity style={styles.newChatButton} onPress={handleNewChat}>
             <Text style={styles.newChatText}>New Chat</Text>
           </TouchableOpacity>
-        )}
-      </View>
-
-      {viewMode === "history" ? (
-        // History View
-        isLoadingHistory ? (
-          <View style={styles.loadingHistoryContainer}>
-            <ActivityIndicator size="large" color="#6366F1" />
-            <Text style={styles.loadingText}>Loading history...</Text>
-          </View>
-        ) : threads.length === 0 ? (
-          <View style={styles.emptyHistory}>
-            <Text style={styles.emptyHistoryText}>No previous conversations</Text>
-            <TouchableOpacity
-              style={styles.startNewButton}
-              onPress={handleNewChat}
-            >
-              <Text style={styles.startNewButtonText}>Start a new chat</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <FlatList
-            data={threads}
-            renderItem={renderThreadItem}
-            keyExtractor={(item) => item.threadId}
-            contentContainerStyle={styles.historyContent}
-          />
-        )
-      ) : (
-        // Chat View
-        <>
-          {/* Messages */}
-          {messages.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>Ask about your emails</Text>
-              <Text style={styles.emptySubtitle}>
-                I can search through your emails to find information about
-                reservations, appointments, orders, and more.
-              </Text>
-              <View style={styles.examplesContainer}>
-                <Text style={styles.examplesTitle}>Try asking:</Text>
-                {exampleQuestions.map((q, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    style={styles.exampleButton}
-                    onPress={() => setInput(q)}
-                  >
-                    <Text style={styles.exampleText}>{q}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          ) : (
-            <FlatList
-              ref={flatListRef}
-              data={messages}
-              renderItem={renderMessage}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.messagesContent}
-              onContentSizeChange={() =>
-                flatListRef.current?.scrollToEnd({ animated: true })
-              }
-            />
-          )}
-
-          {/* Loading indicator */}
-          {isLoading && (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#6366F1" />
-              <Text style={styles.loadingText}>Searching your emails...</Text>
-            </View>
-          )}
-
-          {/* Input */}
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.input}
-              value={input}
-              onChangeText={setInput}
-              placeholder="Ask about your emails..."
-              placeholderTextColor="#999"
-              multiline
-              maxLength={500}
-              editable={!isLoading}
-              onSubmitEditing={handleSend}
-              blurOnSubmit={false}
-            />
-            <TouchableOpacity
-              style={[
-                styles.sendButton,
-                (!input.trim() || isLoading) && styles.sendButtonDisabled,
-              ]}
-              onPress={handleSend}
-              disabled={!input.trim() || isLoading}
-            >
-              <Text
-                style={[
-                  styles.sendButtonText,
-                  (!input.trim() || isLoading) && styles.sendButtonTextDisabled,
-                ]}
-              >
-                Send
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </>
+        </View>
       )}
+
+      {/* Messages or Empty State with History */}
+      {messages.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>Ask about your emails</Text>
+          <Text style={styles.emptySubtitle}>
+            I can search through your emails to find information about
+            reservations, appointments, orders, and more.
+          </Text>
+          <View style={styles.examplesContainer}>
+            <Text style={styles.examplesTitle}>Try asking:</Text>
+            {exampleQuestions.map((q, i) => (
+              <TouchableOpacity
+                key={i}
+                style={styles.exampleButton}
+                onPress={() => setInput(q)}
+              >
+                <Text style={styles.exampleText}>{q}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* History section integrated into empty state */}
+          {isLoadingHistory ? (
+            <View style={styles.historyLoadingContainer}>
+              <ActivityIndicator size="small" color="#6366F1" />
+              <Text style={styles.historyLoadingText}>Loading history...</Text>
+            </View>
+          ) : threads.length > 0 ? (
+            <View style={styles.historySection}>
+              <Text style={styles.historySectionTitle}>Recent Conversations</Text>
+              {threads.slice(0, 5).map((thread) => {
+                const isDeleting = deletingThreadId === thread.threadId;
+                const date = new Date(thread.createdAt);
+                const dateStr = date.toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                });
+                return (
+                  <View key={thread.threadId} style={styles.threadItem}>
+                    <TouchableOpacity
+                      style={styles.threadContent}
+                      onPress={() => handleResumeThread(thread)}
+                      disabled={isDeleting}
+                    >
+                      <Text style={styles.threadMessage} numberOfLines={1}>
+                        {thread.firstMessage || "Empty conversation"}
+                      </Text>
+                      <Text style={styles.threadDate}>{dateStr}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => handleDeleteThread(thread)}
+                      disabled={isDeleting}
+                    >
+                      {isDeleting ? (
+                        <ActivityIndicator size="small" color="#EF4444" />
+                      ) : (
+                        <Text style={styles.deleteButtonText}>×</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+      ) : (
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.messagesContent}
+          onContentSizeChange={() =>
+            flatListRef.current?.scrollToEnd({ animated: true })
+          }
+        />
+      )}
+
+      {/* Loading indicator */}
+      {isLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color="#6366F1" />
+          <Text style={styles.loadingText}>Searching your emails...</Text>
+        </View>
+      )}
+
+      {/* Input */}
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.input}
+          value={input}
+          onChangeText={setInput}
+          placeholder="Ask about your emails..."
+          placeholderTextColor="#999"
+          multiline
+          maxLength={500}
+          editable={!isLoading}
+          onSubmitEditing={handleSend}
+          blurOnSubmit={false}
+        />
+        <TouchableOpacity
+          style={[
+            styles.sendButton,
+            (!input.trim() || isLoading) && styles.sendButtonDisabled,
+          ]}
+          onPress={handleSend}
+          disabled={!input.trim() || isLoading}
+        >
+          <Text
+            style={[
+              styles.sendButtonText,
+              (!input.trim() || isLoading) && styles.sendButtonTextDisabled,
+            ]}
+          >
+            Send
+          </Text>
+        </TouchableOpacity>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -465,34 +417,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
-  toggleContainer: {
+  headerContainer: {
     flexDirection: "row",
     padding: 12,
     paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
-    alignItems: "center",
-  },
-  toggleButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-    backgroundColor: "#F3F4F6",
-  },
-  toggleButtonActive: {
-    backgroundColor: "#6366F1",
-  },
-  toggleText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#666",
-  },
-  toggleTextActive: {
-    color: "#fff",
+    justifyContent: "flex-end",
   },
   newChatButton: {
-    marginLeft: "auto",
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
@@ -501,37 +434,30 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#6366F1",
   },
-  // History styles
-  loadingHistoryContainer: {
-    flex: 1,
-    justifyContent: "center",
+  // History styles integrated into empty state
+  historyLoadingContainer: {
+    flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-  },
-  emptyHistory: {
-    flex: 1,
     justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
+    marginTop: 24,
+    gap: 8,
   },
-  emptyHistoryText: {
-    fontSize: 16,
+  historyLoadingText: {
+    fontSize: 14,
     color: "#666",
-    marginBottom: 16,
   },
-  startNewButton: {
-    backgroundColor: "#6366F1",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
+  historySection: {
+    marginTop: 32,
+    width: "100%",
+    maxWidth: 300,
   },
-  startNewButtonText: {
-    fontSize: 15,
+  historySectionTitle: {
+    fontSize: 13,
     fontWeight: "600",
-    color: "#fff",
-  },
-  historyContent: {
-    padding: 16,
+    color: "#999",
+    marginBottom: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   threadItem: {
     flexDirection: "row",
@@ -543,28 +469,34 @@ const styles = StyleSheet.create({
   },
   threadContent: {
     flex: 1,
-    padding: 14,
+    paddingVertical: 12,
+    paddingLeft: 14,
+    paddingRight: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   threadMessage: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "500",
     color: "#1a1a1a",
-    marginBottom: 4,
+    flex: 1,
+    marginRight: 8,
   },
   threadDate: {
-    fontSize: 13,
-    color: "#666",
+    fontSize: 12,
+    color: "#999",
   },
   deleteButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     justifyContent: "center",
     alignItems: "center",
   },
   deleteButtonText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#EF4444",
+    fontSize: 20,
+    fontWeight: "400",
+    color: "#999",
   },
   // Chat styles
   emptyState: {
