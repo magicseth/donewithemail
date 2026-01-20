@@ -27,12 +27,14 @@ export default function SettingsScreen() {
   const [isSendingTestNotification, setIsSendingTestNotification] = useState(false);
 
   const resetAndResummarize = useAction(api.summarizeActions.resetAndResummarizeAll);
+  const retryUnprocessed = useAction(api.summarizeActions.retryUnprocessedEmails);
   const sendTestNotification = useMutation(api.notifications.sendMyTestNotificationWithAvatar);
   const sendTestCommunicationNotification = useMutation(api.notifications.sendMyTestCommunicationNotification);
   const sendTestNotificationForRecentEmail = useMutation(api.notifications.sendTestNotificationForRecentEmail);
   const resetAllToUntriaged = useMutation(api.emails.resetMyTriagedEmails);
   const scanExistingEmailsAction = useAction(api.subscriptions.scanMyExistingEmails);
   const [isResettingTriage, setIsResettingTriage] = useState(false);
+  const [isRetryingUnprocessed, setIsRetryingUnprocessed] = useState(false);
   const [isSendingCommNotification, setIsSendingCommNotification] = useState(false);
   const [isSendingRecentEmailNotification, setIsSendingRecentEmailNotification] = useState(false);
   const [isScanningSubscriptions, setIsScanningSubscriptions] = useState(false);
@@ -209,6 +211,32 @@ export default function SettingsScreen() {
       }
     } finally {
       setIsScanningSubscriptions(false);
+    }
+  };
+
+  const handleRetryUnprocessed = async () => {
+    if (!user?.email) return;
+    setIsRetryingUnprocessed(true);
+    try {
+      const result = await retryUnprocessed({ userEmail: user.email });
+      const message = result.queued > 0
+        ? `Queued ${result.queued} emails for processing`
+        : "No unprocessed emails found";
+      if (Platform.OS === "web") {
+        window.alert(message);
+      } else {
+        Alert.alert("Retry Started", message);
+      }
+    } catch (e) {
+      console.error("Retry unprocessed error:", e);
+      const errorMsg = e instanceof Error ? e.message : "Unknown error";
+      if (Platform.OS === "web") {
+        window.alert(`Error: ${errorMsg}`);
+      } else {
+        Alert.alert("Error", errorMsg);
+      }
+    } finally {
+      setIsRetryingUnprocessed(false);
     }
   };
 
@@ -495,6 +523,26 @@ export default function SettingsScreen() {
               </Text>
             </View>
             {isScanningSubscriptions ? (
+              <ActivityIndicator size="small" color="#6366F1" />
+            ) : (
+              <Text style={styles.aboutArrow}>→</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity
+            style={styles.aboutRow}
+            onPress={handleRetryUnprocessed}
+            disabled={isRetryingUnprocessed}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Retry Failed Summaries</Text>
+              <Text style={styles.settingDescription}>
+                Reprocess emails that failed AI summarization
+              </Text>
+            </View>
+            {isRetryingUnprocessed ? (
               <ActivityIndicator size="small" color="#6366F1" />
             ) : (
               <Text style={styles.aboutArrow}>→</Text>

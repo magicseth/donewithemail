@@ -595,6 +595,46 @@ export const resetAndResummarizeAll = action({
   },
 });
 
+// Retry all unprocessed emails for a user
+export const retryUnprocessedEmails = action({
+  args: { userEmail: v.string() },
+  handler: async (ctx, args): Promise<{ queued: number }> => {
+    // Get user
+    const user = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+      email: args.userEmail,
+    });
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Get external IDs for unprocessed emails
+    const externalIds: string[] = await ctx.runQuery(internal.summarize.getUnprocessedExternalIdsForUser, {
+      userId: user._id,
+    });
+
+    if (externalIds.length === 0) {
+      return { queued: 0 };
+    }
+
+    // Trigger summarization in batches
+    const BATCH_SIZE = 5; // Smaller batches to avoid overload
+    let queued = 0;
+
+    for (let i = 0; i < externalIds.length; i += BATCH_SIZE) {
+      const batch = externalIds.slice(i, i + BATCH_SIZE);
+      // Run summarization (don't await to avoid timeout)
+      ctx.runAction(internal.summarizeActions.summarizeByExternalIds, {
+        externalIds: batch,
+        userEmail: args.userEmail,
+      });
+      queued += batch.length;
+    }
+
+    return { queued };
+  },
+});
+
 // Reprocess a single email - delete summary and regenerate
 export const reprocessEmail = action({
   args: {

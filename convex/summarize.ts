@@ -264,6 +264,33 @@ export const getExternalIdsForUser = internalQuery({
   },
 });
 
+// Get external IDs for unprocessed emails (no aiProcessedAt)
+export const getUnprocessedExternalIdsForUser = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const emails = await ctx.db
+      .query("emails")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    // Filter to only unprocessed emails
+    const unprocessed = [];
+    for (const email of emails) {
+      // Check if there's a summary for this email
+      const summary = await ctx.db
+        .query("emailSummaries")
+        .withIndex("by_email", (q) => q.eq("emailId", email._id))
+        .first();
+
+      if (!summary) {
+        unprocessed.push(email.externalId);
+      }
+    }
+
+    return unprocessed;
+  },
+});
+
 // Save email summary to separate table
 export const updateEmailSummary = internalMutation({
   args: {
