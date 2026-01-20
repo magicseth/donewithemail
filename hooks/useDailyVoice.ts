@@ -54,6 +54,7 @@ function useDeepgramNative(): UseVoiceResult {
   const wsRef = useRef<WebSocket | null>(null);
   const transcriptRef = useRef("");
   const isStreamingRef = useRef(false);
+  const sessionIdRef = useRef(0); // Track recording sessions to prevent cross-contamination
 
   const getDeepgramKey = useAction(api.voice.getDeepgramKey);
 
@@ -71,6 +72,24 @@ function useDeepgramNative(): UseVoiceResult {
   }, []);
 
   const startRecording = useCallback(async () => {
+    // Increment session ID to invalidate any pending cleanup from previous recordings
+    sessionIdRef.current += 1;
+    const currentSession = sessionIdRef.current;
+    console.log(`[Voice] Starting new recording session ${currentSession}`);
+
+    // Clean up any previous recording state
+    if (wsRef.current) {
+      console.log("[Voice] Closing previous WebSocket before starting new recording");
+      wsRef.current.onclose = null; // Prevent onclose from stopping our new stream
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (isStreamingRef.current) {
+      console.log("[Voice] Stopping previous audio stream before starting new recording");
+      LiveAudioStream.stop();
+      isStreamingRef.current = false;
+    }
+
     setIsConnecting(true);
     setError(null);
     setTranscript("");
@@ -217,13 +236,18 @@ function useDeepgramNative(): UseVoiceResult {
       };
 
       ws.onclose = (e) => {
-        console.log(`[Deepgram Native] WebSocket closed: code=${e.code}, reason="${e.reason}"`);
-        setIsConnected(false);
-        // Stop audio stream if still running
-        if (isStreamingRef.current) {
-          console.log("[Deepgram Native] Stopping LiveAudioStream due to WebSocket close");
-          LiveAudioStream.stop();
-          isStreamingRef.current = false;
+        console.log(`[Deepgram Native] WebSocket closed: code=${e.code}, reason="${e.reason}", session=${currentSession}, currentSession=${sessionIdRef.current}`);
+        // Only clean up if this WebSocket belongs to the current session
+        if (currentSession === sessionIdRef.current) {
+          setIsConnected(false);
+          // Stop audio stream if still running
+          if (isStreamingRef.current) {
+            console.log("[Deepgram Native] Stopping LiveAudioStream due to WebSocket close");
+            LiveAudioStream.stop();
+            isStreamingRef.current = false;
+          }
+        } else {
+          console.log("[Deepgram Native] Ignoring close from old session");
         }
       };
 
