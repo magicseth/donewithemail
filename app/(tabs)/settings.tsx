@@ -317,17 +317,42 @@ export default function SettingsScreen() {
 
   const handleFeatureTranscript = useCallback(async (transcript: string) => {
     setFeatureTranscript(transcript);
-    setIsSubmittingFeature(true);
-    try {
-      await submitFeatureRequest({ transcript });
-      const msg = `Feature request submitted!\n\n"${transcript}"`;
-      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Submitted", msg);
+
+    const doSubmit = async () => {
+      setIsSubmittingFeature(true);
+      try {
+        await submitFeatureRequest({ transcript });
+        const msg = `Feature request submitted!\n\n"${transcript}"`;
+        Platform.OS === "web" ? window.alert(msg) : Alert.alert("Submitted", msg);
+        setFeatureTranscript(null);
+      } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : "Unknown error";
+        Platform.OS === "web" ? window.alert(`Error: ${errorMsg}`) : Alert.alert("Error", errorMsg);
+      } finally {
+        setIsSubmittingFeature(false);
+      }
+    };
+
+    const doClear = () => {
       setFeatureTranscript(null);
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : "Unknown error";
-      Platform.OS === "web" ? window.alert(`Error: ${errorMsg}`) : Alert.alert("Error", errorMsg);
-    } finally {
-      setIsSubmittingFeature(false);
+    };
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm(`Submit this feature request?\n\n"${transcript}"`);
+      if (confirmed) {
+        await doSubmit();
+      } else {
+        doClear();
+      }
+    } else {
+      Alert.alert(
+        "Confirm Feature Request",
+        `Submit this request?\n\n"${transcript}"`,
+        [
+          { text: "Cancel", style: "cancel", onPress: doClear },
+          { text: "Submit", onPress: doSubmit },
+        ]
+      );
     }
   }, [submitFeatureRequest]);
 
