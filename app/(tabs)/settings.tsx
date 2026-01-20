@@ -48,7 +48,9 @@ export default function SettingsScreen() {
   // Feature request
   const [isSubmittingFeature, setIsSubmittingFeature] = useState(false);
   const [featureTranscript, setFeatureTranscript] = useState<string | null>(null);
+  const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
   const submitFeatureRequest = useMutation(api.featureRequests.submit);
+  const cancelFeatureRequest = useMutation(api.featureRequests.cancel);
   const myFeatureRequests = useQuery(api.featureRequests.getMine);
 
   const checkForUpdates = async () => {
@@ -332,6 +334,38 @@ export default function SettingsScreen() {
   const handleFeatureError = useCallback((error: string) => {
     Platform.OS === "web" ? window.alert(error) : Alert.alert("Error", error);
   }, []);
+
+  const handleCancelFeatureRequest = useCallback(async (requestId: string) => {
+    const doCancel = async () => {
+      setCancellingRequestId(requestId);
+      try {
+        await cancelFeatureRequest({ id: requestId as any });
+        const msg = "Feature request cancelled";
+        Platform.OS === "web" ? window.alert(msg) : Alert.alert("Cancelled", msg);
+      } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : "Unknown error";
+        Platform.OS === "web" ? window.alert(`Error: ${errorMsg}`) : Alert.alert("Error", errorMsg);
+      } finally {
+        setCancellingRequestId(null);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm("Cancel this feature request?");
+      if (confirmed) {
+        await doCancel();
+      }
+    } else {
+      Alert.alert(
+        "Cancel Feature Request",
+        "Are you sure you want to cancel this request?",
+        [
+          { text: "No", style: "cancel" },
+          { text: "Yes, Cancel", style: "destructive", onPress: doCancel },
+        ]
+      );
+    }
+  }, [cancelFeatureRequest]);
 
   const handleSignOut = async () => {
     const doSignOut = async () => {
@@ -858,9 +892,23 @@ export default function SettingsScreen() {
                         </Text>
                       )}
                     </View>
-                    <Text style={styles.featureRequestStatusText}>
-                      {req.status === "processing" ? req.progressStep || "processing" : req.status}
-                    </Text>
+                    {req.status === "pending" ? (
+                      <TouchableOpacity
+                        style={styles.featureRequestCancelButton}
+                        onPress={() => handleCancelFeatureRequest(req._id)}
+                        disabled={cancellingRequestId === req._id}
+                      >
+                        {cancellingRequestId === req._id ? (
+                          <ActivityIndicator size="small" color="#EF4444" />
+                        ) : (
+                          <Text style={styles.featureRequestCancelText}>Cancel</Text>
+                        )}
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.featureRequestStatusText}>
+                        {req.status === "processing" ? req.progressStep || "processing" : req.status}
+                      </Text>
+                    )}
                   </View>
                 ))}
               </View>
@@ -1172,5 +1220,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#999",
     marginLeft: 8,
+  },
+  featureRequestCancelButton: {
+    marginLeft: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#EF4444",
+    minWidth: 50,
+    alignItems: "center",
+  },
+  featureRequestCancelText: {
+    fontSize: 11,
+    color: "#EF4444",
+    fontWeight: "500",
   },
 });

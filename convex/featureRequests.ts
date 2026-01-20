@@ -1,5 +1,10 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation } from "./_generated/server";
+import { components, internal } from "./_generated/api";
+import { PushNotifications } from "@convex-dev/expo-push-notifications";
+
+// Initialize push notifications client
+const pushNotifications = new PushNotifications(components.pushNotifications);
 
 /**
  * Submit a new feature request from voice recording
@@ -132,6 +137,11 @@ export const markCompleted = mutation({
     easDashboardUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.id);
+    if (!request) {
+      throw new Error("Feature request not found");
+    }
+
     await ctx.db.patch(args.id, {
       status: "completed",
       progressStep: "ready",
@@ -142,6 +152,12 @@ export const markCompleted = mutation({
       easUpdateId: args.easUpdateId,
       easUpdateMessage: args.easUpdateMessage,
       easDashboardUrl: args.easDashboardUrl,
+    });
+
+    // Send notification to user
+    await ctx.scheduler.runAfter(0, internal.featureRequests.sendFeatureCompletedNotification, {
+      userId: request.userId,
+      transcript: request.transcript,
     });
   },
 });
@@ -155,9 +171,21 @@ export const markFailed = mutation({
     error: v.string(),
   },
   handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.id);
+    if (!request) {
+      throw new Error("Feature request not found");
+    }
+
     await ctx.db.patch(args.id, {
       status: "failed",
       completedAt: Date.now(),
+      error: args.error,
+    });
+
+    // Send notification to user
+    await ctx.scheduler.runAfter(0, internal.featureRequests.sendFeatureFailedNotification, {
+      userId: request.userId,
+      transcript: request.transcript,
       error: args.error,
     });
   },
@@ -197,5 +225,111 @@ export const getMine = query({
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .order("desc")
       .take(20);
+  },
+});
+
+/**
+ * Cancel a pending feature request
+ */
+export const cancel = mutation({
+  args: {
+    id: v.id("featureRequests"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const request = await ctx.db.get(args.id);
+    if (!request) {
+      throw new Error("Feature request not found");
+    }
+
+    // Verify ownership by checking user
+    const workosId = identity.subject;
+    let user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+      .first();
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
+
+    if (!user || request.userId !== user._id) {
+      throw new Error("Not authorized to cancel this request");
+    }
+
+    // Only allow cancelling pending requests
+    if (request.status !== "pending") {
+      throw new Error("Can only cancel pending requests");
+    }
+
+    // Delete the request
+    await ctx.db.delete(args.id);
+
+    return { success: true };
+  },
+});
+
+// =============================================================================
+// Internal Mutations (for notifications)
+// =============================================================================
+
+/**
+ * Send notification when a feature request is completed
+ */
+export const sendFeatureCompletedNotification = internalMutation({
+  args: {
+    userId: v.id("users"),
+    transcript: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const truncatedTranscript = args.transcript.length > 50
+      ? args.transcript.slice(0, 47) + "..."
+      : args.transcript;
+
+    await pushNotifications.sendPushNotification(ctx, {
+      userId: args.userId,
+      notification: {
+        title: "Feature Ready!",
+        body: truncatedTranscript,
+        data: {
+          type: "feature_completed",
+        },
+      },
+    });
+  },
+});
+
+/**
+ * Send notification when a feature request fails
+ */
+export const sendFeatureFailedNotification = internalMutation({
+  args: {
+    userId: v.id("users"),
+    transcript: v.string(),
+    error: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const truncatedTranscript = args.transcript.length > 40
+      ? args.transcript.slice(0, 37) + "..."
+      : args.transcript;
+
+    await pushNotifications.sendPushNotification(ctx, {
+      userId: args.userId,
+      notification: {
+        title: "Feature Failed",
+        body: truncatedTranscript,
+        data: {
+          type: "feature_failed",
+          error: args.error,
+        },
+      },
+    });
   },
 });
