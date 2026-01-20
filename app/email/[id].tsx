@@ -54,6 +54,7 @@ export default function EmailDetailScreen() {
   const { user } = useAuth();
   const fetchEmailBody = useAction(api.gmailSync.fetchEmailBody);
   const addToCalendar = useAction(api.calendar.addToCalendar);
+  const checkExistingCalendarEvents = useAction(api.calendar.checkExistingCalendarEvents);
   const reprocessEmail = useAction(api.summarizeActions.reprocessEmail);
 
   // Look up email by Convex ID (authenticated)
@@ -137,7 +138,7 @@ export default function EmailDetailScreen() {
     });
   }, [email]);
 
-  const handleAddToCalendar = useCallback(async (event: CalendarEventData) => {
+  const handleAddToCalendar = useCallback(async (event: CalendarEventData, skipDuplicateCheck = false) => {
     if (!user?.email) {
       showAlert("Error", "Not signed in");
       return;
@@ -148,6 +149,64 @@ export default function EmailDetailScreen() {
 
     setIsAddingToCalendar(true);
     try {
+      // Check for existing similar events on the calendar (unless skipping)
+      if (!skipDuplicateCheck) {
+        const existingCheck = await checkExistingCalendarEvents({
+          userEmail: user.email,
+          title: event.title,
+          startTime: event.startTime,
+          timezone,
+        });
+
+        if (existingCheck.exists && existingCheck.similarEvents.length > 0) {
+          setIsAddingToCalendar(false);
+          const similarEvent = existingCheck.similarEvents[0];
+          const similarTime = similarEvent.startTime
+            ? new Date(similarEvent.startTime).toLocaleString(undefined, {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })
+            : "";
+
+          // Ask user if they want to add anyway
+          if (Platform.OS === "web") {
+            const addAnyway = window.confirm(
+              `A similar event already exists on your calendar:\n\n"${similarEvent.title}"${similarTime ? `\n${similarTime}` : ""}\n\nDo you want to add this event anyway?`
+            );
+            if (addAnyway) {
+              // Re-call with skip flag
+              handleAddToCalendar(event, true);
+            }
+          } else {
+            Alert.alert(
+              "Similar Event Found",
+              `A similar event already exists on your calendar:\n\n"${similarEvent.title}"${similarTime ? `\n${similarTime}` : ""}`,
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Add Anyway",
+                  onPress: () => handleAddToCalendar(event, true),
+                },
+                {
+                  text: "View Existing",
+                  onPress: () => {
+                    if (similarEvent.htmlLink) {
+                      if (Platform.OS === "web") {
+                        window.open(similarEvent.htmlLink, "_blank");
+                      }
+                    }
+                  },
+                },
+              ]
+            );
+          }
+          return;
+        }
+      }
+
       const result = await addToCalendar({
         userEmail: user.email,
         title: event.title,
@@ -170,7 +229,7 @@ export default function EmailDetailScreen() {
     } finally {
       setIsAddingToCalendar(false);
     }
-  }, [user?.email, addToCalendar, convexId]);
+  }, [user?.email, addToCalendar, checkExistingCalendarEvents, convexId]);
 
   const handleContactPress = useCallback((contactId?: string) => {
     if (contactId) {

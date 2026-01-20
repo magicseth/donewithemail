@@ -293,6 +293,216 @@ export const addToCalendar = action({
 });
 
 /**
+ * Check if a similar calendar event already exists
+ * Returns matching events if found
+ */
+export const checkExistingCalendarEvents = action({
+  args: {
+    userEmail: v.string(),
+    title: v.string(),
+    startTime: v.optional(v.string()),
+    timezone: v.string(),
+  },
+  handler: async (ctx, args): Promise<{
+    exists: boolean;
+    similarEvents: Array<{
+      id: string;
+      title: string;
+      startTime: string;
+      htmlLink: string;
+    }>;
+  }> => {
+    // Get user's tokens
+    type UserWithTokens = {
+      _id: any;
+      gmailAccessToken?: string;
+      gmailRefreshToken?: string;
+      gmailTokenExpiresAt?: number;
+    };
+    const user: UserWithTokens | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+      email: args.userEmail,
+    });
+
+    if (!user?.gmailAccessToken) {
+      // Can't check calendar without token, return false to allow adding
+      return { exists: false, similarEvents: [] };
+    }
+
+    // Refresh token if needed
+    let accessToken: string = user.gmailAccessToken;
+    if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
+      const refreshed = await refreshTokenIfNeeded(
+        user.gmailAccessToken,
+        user.gmailRefreshToken,
+        user.gmailTokenExpiresAt
+      );
+      accessToken = refreshed.accessToken;
+
+      if (refreshed.refreshed) {
+        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+          userId: user._id,
+          accessToken: refreshed.accessToken,
+          expiresAt: refreshed.expiresAt,
+        });
+      }
+    }
+
+    // Parse the start time to get a date range to search
+    let searchTimeMin: string;
+    let searchTimeMax: string;
+
+    if (args.startTime) {
+      const parsedStart = parseRelativeTime(args.startTime);
+      if (parsedStart) {
+        // Search ±1 day around the event time
+        const startDate = new Date(parsedStart);
+        const minDate = new Date(startDate);
+        minDate.setDate(minDate.getDate() - 1);
+        const maxDate = new Date(startDate);
+        maxDate.setDate(maxDate.getDate() + 1);
+        searchTimeMin = minDate.toISOString();
+        searchTimeMax = maxDate.toISOString();
+      } else {
+        // Can't parse time, search next 30 days
+        const now = new Date();
+        searchTimeMin = now.toISOString();
+        const maxDate = new Date(now);
+        maxDate.setDate(maxDate.getDate() + 30);
+        searchTimeMax = maxDate.toISOString();
+      }
+    } else {
+      // No start time provided, search next 30 days
+      const now = new Date();
+      searchTimeMin = now.toISOString();
+      const maxDate = new Date(now);
+      maxDate.setDate(maxDate.getDate() + 30);
+      searchTimeMax = maxDate.toISOString();
+    }
+
+    // Query Google Calendar for events in the time range
+    const params = new URLSearchParams({
+      timeMin: searchTimeMin,
+      timeMax: searchTimeMax,
+      singleEvents: "true",
+      maxResults: "50",
+    });
+
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.error("Failed to fetch calendar events:", await response.text());
+      // On error, allow adding the event
+      return { exists: false, similarEvents: [] };
+    }
+
+    const data = await response.json();
+    const events = data.items || [];
+
+    // Normalize the search title for comparison
+    const normalizedSearchTitle = normalizeEventTitle(args.title);
+
+    // Find similar events
+    const similarEvents: Array<{
+      id: string;
+      title: string;
+      startTime: string;
+      htmlLink: string;
+    }> = [];
+
+    for (const event of events) {
+      if (!event.summary) continue;
+
+      const normalizedEventTitle = normalizeEventTitle(event.summary);
+
+      // Check if titles are similar
+      if (areTitlesSimilar(normalizedSearchTitle, normalizedEventTitle)) {
+        // Also check if times are close (within 2 hours)
+        const eventStart = event.start?.dateTime || event.start?.date;
+        if (eventStart && args.startTime) {
+          const parsedStart = parseRelativeTime(args.startTime);
+          if (parsedStart) {
+            const searchDate = new Date(parsedStart);
+            const eventDate = new Date(eventStart);
+            const hoursDiff = Math.abs(searchDate.getTime() - eventDate.getTime()) / (1000 * 60 * 60);
+
+            // Events within 2 hours with similar titles are considered duplicates
+            if (hoursDiff <= 2) {
+              similarEvents.push({
+                id: event.id,
+                title: event.summary,
+                startTime: eventStart,
+                htmlLink: event.htmlLink || "",
+              });
+            }
+          }
+        } else {
+          // No time to compare, just use title match
+          similarEvents.push({
+            id: event.id,
+            title: event.summary,
+            startTime: event.start?.dateTime || event.start?.date || "",
+            htmlLink: event.htmlLink || "",
+          });
+        }
+      }
+    }
+
+    return {
+      exists: similarEvents.length > 0,
+      similarEvents,
+    };
+  },
+});
+
+/**
+ * Normalize event title for comparison
+ * Removes common prefixes/suffixes, extra whitespace, and lowercases
+ */
+function normalizeEventTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/^(re:|fwd:|fw:)\s*/gi, "") // Remove email prefixes
+    .replace(/\s+/g, " ") // Normalize whitespace
+    .replace(/[^\w\s]/g, "") // Remove punctuation
+    .trim();
+}
+
+/**
+ * Check if two normalized titles are similar
+ * Uses word overlap to detect similarity
+ */
+function areTitlesSimilar(title1: string, title2: string): boolean {
+  // Exact match
+  if (title1 === title2) return true;
+
+  // One contains the other
+  if (title1.includes(title2) || title2.includes(title1)) return true;
+
+  // Word overlap check
+  const words1 = new Set(title1.split(" ").filter(w => w.length > 2));
+  const words2 = new Set(title2.split(" ").filter(w => w.length > 2));
+
+  if (words1.size === 0 || words2.size === 0) return false;
+
+  // Count overlapping words
+  let overlap = 0;
+  for (const word of words1) {
+    if (words2.has(word)) overlap++;
+  }
+
+  // Consider similar if >50% word overlap
+  const minWords = Math.min(words1.size, words2.size);
+  return overlap >= minWords * 0.5;
+}
+
+/**
  * Batch add multiple calendar events from emails
  */
 export const batchAddToCalendar = action({
