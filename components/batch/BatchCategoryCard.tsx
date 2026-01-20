@@ -111,11 +111,18 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
   transcript,
 }: BatchCategoryCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  // Track if this is the first time expanding (for animation trigger)
+  const [hasExpandedOnce, setHasExpandedOnce] = useState(false);
   const config = CATEGORY_CONFIG[category];
 
   const handleToggleExpand = useCallback(() => {
-    setIsExpanded(prev => !prev);
-  }, []);
+    setIsExpanded(prev => {
+      if (!prev && !hasExpandedOnce) {
+        setHasExpandedOnce(true);
+      }
+      return !prev;
+    });
+  }, [hasExpandedOnce]);
 
   // Count how many are NOT punted (will be marked done)
   // Include isInTodo emails as "punted" since they're already in TODO
@@ -157,7 +164,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
       {/* Email list - expanded */}
       {isExpanded && (
         <View style={styles.emailList}>
-          {emails.map(email => (
+          {emails.map((email, index) => (
             <BatchEmailRow
               key={email._id}
               email={email}
@@ -167,6 +174,8 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
               isRecording={recordingForId === email._id}
               isRecordingConnected={isRecordingConnected}
               transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
+              switchAnimationDelay={index * 100}
+              triggerSwitchAnimation={isExpanded}
               onPunt={() => onPuntEmail(email._id)}
               onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
               onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}

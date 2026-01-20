@@ -115,6 +115,10 @@ interface BatchEmailRowProps {
   isRecordingConnected?: boolean;
   /** Live transcript while recording */
   transcript?: string;
+  /** Delay in ms before switch animates to "Done" state. Used for cascade effect. */
+  switchAnimationDelay?: number;
+  /** If true, trigger the switch animation (used for scroll-into-view) */
+  triggerSwitchAnimation?: boolean;
   onPunt: () => void;
   onAccept?: () => void;
   onQuickReply?: (reply: QuickReplyOption) => void;
@@ -139,6 +143,8 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   isRecording = false,
   isRecordingConnected = false,
   transcript,
+  switchAnimationDelay = 0,
+  triggerSwitchAnimation = true,
   onPunt,
   onAccept,
   onQuickReply,
@@ -152,6 +158,33 @@ export const BatchEmailRow = memo(function BatchEmailRow({
 }: BatchEmailRowProps) {
   const [showReplyOptions, setShowReplyOptions] = useState(expandReplyByDefault);
   const [showPreview, setShowPreview] = useState(false);
+
+  // Animation state: starts as "TODO" (false), animates to "Done" (true) after delay
+  // This creates the visual effect of switches flipping to "Done"
+  const [hasAnimatedToDone, setHasAnimatedToDone] = useState(false);
+  const hasUserInteracted = useRef(false);
+
+  // Trigger animation when component becomes visible (via triggerSwitchAnimation prop)
+  useEffect(() => {
+    // Don't animate if user has manually interacted or if already punted
+    if (hasUserInteracted.current || isPunted) {
+      setHasAnimatedToDone(true); // Skip animation, go directly to actual state
+      return;
+    }
+
+    if (triggerSwitchAnimation && !hasAnimatedToDone) {
+      const timer = setTimeout(() => {
+        setHasAnimatedToDone(true);
+      }, switchAnimationDelay);
+      return () => clearTimeout(timer);
+    }
+  }, [triggerSwitchAnimation, switchAnimationDelay, hasAnimatedToDone, isPunted]);
+
+  // The visual switch value: false during animation, then follows actual state
+  const switchValue = hasAnimatedToDone ? !isPunted : false;
+  const switchLabel = hasAnimatedToDone
+    ? (isPunted ? "Reply" : "Done")
+    : "Todo";
 
   // Track mic press state for native responder system
   const micPressActive = useRef(false);
@@ -234,12 +267,14 @@ export const BatchEmailRow = memo(function BatchEmailRow({
 
         {/* Action buttons */}
         <View style={styles.actionButtons}>
-          {/* Done switch - ON by default (done), OFF = needs reply/TODO */}
+          {/* Done switch - animates from TODO to Done on load, OFF = needs reply/TODO */}
           {onNeedsReplyPress && (
             <View style={styles.doneSwitchContainer}>
               <Switch
-                value={!isPunted}
+                value={switchValue}
                 onValueChange={(isDone) => {
+                  hasUserInteracted.current = true;
+                  setHasAnimatedToDone(true); // Ensure we're past animation state
                   if (isDone) {
                     // Switched to ON (Done) - remove from TODO and hide replies
                     onNeedsReplyPress();
@@ -251,11 +286,15 @@ export const BatchEmailRow = memo(function BatchEmailRow({
                   }
                 }}
                 trackColor={{ false: "#6366F1", true: "#D1D5DB" }}
-                thumbColor={isPunted ? "#fff" : "#fff"}
+                thumbColor="#fff"
                 ios_backgroundColor="#D1D5DB"
               />
-              <Text style={[styles.doneSwitchLabel, isPunted && styles.doneSwitchLabelActive]}>
-                {isPunted ? "Reply" : "Done"}
+              <Text style={[
+                styles.doneSwitchLabel,
+                !hasAnimatedToDone && styles.doneSwitchLabelTodo,
+                hasAnimatedToDone && isPunted && styles.doneSwitchLabelActive
+              ]}>
+                {switchLabel}
               </Text>
             </View>
           )}
@@ -496,6 +535,8 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   if (prevProps.expandReplyByDefault !== nextProps.expandReplyByDefault) return false;
   if (prevProps.isAccepting !== nextProps.isAccepting) return false;
   if (prevProps.isUnsubscribing !== nextProps.isUnsubscribing) return false;
+  if (prevProps.switchAnimationDelay !== nextProps.switchAnimationDelay) return false;
+  if (prevProps.triggerSwitchAnimation !== nextProps.triggerSwitchAnimation) return false;
 
   // For functions, only check if defined status changed (not reference)
   if (!!prevProps.onAccept !== !!nextProps.onAccept) return false;
@@ -663,6 +704,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: "#666",
+  },
+  doneSwitchLabelTodo: {
+    color: "#6366F1",
   },
   doneSwitchLabelActive: {
     color: "#6366F1",
