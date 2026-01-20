@@ -12,13 +12,13 @@ WebBrowser.maybeCompleteAuthSession();
 
 // Generate redirect URI using Expo's method
 const REDIRECT_URI = AuthSession.makeRedirectUri({
-  scheme: "tokmail",
+  scheme: "donewith",
   path: "callback",
 });
 
 console.log("OAuth Redirect URI:", REDIRECT_URI);
 
-const AUTH_STORAGE_KEY = "tokmail_auth";
+const AUTH_STORAGE_KEY = "donewith_auth";
 
 interface User {
   id: string;

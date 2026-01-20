@@ -1,10 +1,14 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useAction, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../lib/authContext";
 
 // Module-level cache persists across component mounts/unmounts
 let lastEmailsCache: any[] | null = null;
+
+// Module-level flag to prevent multiple simultaneous auth refresh attempts
+let isRefreshingAuth = false;
+let lastRefreshAttempt = 0;
 
 export interface QuickReply {
   label: string;
@@ -68,17 +72,26 @@ export function useGmail(sessionStart?: number) {
 
   // Detect auth mismatch: local auth says yes, but Convex says no
   // This can happen when the token exists locally but Convex hasn't synced yet
-  // Use a ref to ensure we only attempt refresh once per mount
-  const hasAttemptedRefresh = useRef(false);
+  // Use module-level variables to coordinate across all useGmail instances
   useEffect(() => {
-    if (isAuthenticated && !convexAuthenticated && !convexLoading && !hasAttemptedRefresh.current) {
-      console.log("[useGmail] Auth mismatch detected - triggering token refresh (once)");
-      hasAttemptedRefresh.current = true;
-      refreshAccessToken();
-    }
-    // Reset the flag when we become authenticated
-    if (convexAuthenticated) {
-      hasAttemptedRefresh.current = false;
+    const now = Date.now();
+    // Only attempt refresh if:
+    // - Local auth says authenticated but Convex doesn't
+    // - Not already refreshing
+    // - At least 5 seconds since last attempt (prevent rapid looping)
+    if (
+      isAuthenticated &&
+      !convexAuthenticated &&
+      !convexLoading &&
+      !isRefreshingAuth &&
+      now - lastRefreshAttempt > 5000
+    ) {
+      console.log("[useGmail] Auth mismatch detected - triggering token refresh");
+      isRefreshingAuth = true;
+      lastRefreshAttempt = now;
+      refreshAccessToken().finally(() => {
+        isRefreshingAuth = false;
+      });
     }
   }, [isAuthenticated, convexAuthenticated, convexLoading, refreshAccessToken]);
 

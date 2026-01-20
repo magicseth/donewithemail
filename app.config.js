@@ -2,7 +2,7 @@
 const IS_DEV = process.env.APP_VARIANT === "development";
 
 module.exports = ({ config }) => {
-  const bundleIdentifier = IS_DEV ? "com.tokmail.app.dev" : "com.tokmail.app";
+  const bundleIdentifier = IS_DEV ? "com.donewithemail.app.dev" : "com.donewithemail.app";
   const appName = IS_DEV ? "DoneWith (Dev)" : "DoneWith";
 
   return {

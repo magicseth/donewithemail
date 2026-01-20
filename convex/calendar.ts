@@ -4,13 +4,13 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 
-// Build SayLess attribution footer for calendar events
-function buildSayLessFooter(
+// Build DoneWith attribution footer for calendar events
+function buildDoneWithFooter(
   emailInfo: { subject?: string; fromName?: string; fromEmail?: string } | null
 ): string {
   const lines: string[] = [];
   lines.push("---");
-  lines.push("Scheduled by SayLess");
+  lines.push("Scheduled by DoneWith");
 
   if (emailInfo) {
     if (emailInfo.fromName || emailInfo.fromEmail) {
@@ -224,11 +224,11 @@ export const addToCalendar = action({
       });
     }
 
-    // Build description with SayLess attribution
+    // Build description with DoneWith attribution
     let description = args.description || "";
-    const saylessFooter = buildSayLessFooter(emailInfo);
-    if (saylessFooter) {
-      description = description ? `${description}\n\n${saylessFooter}` : saylessFooter;
+    const donewithFooter = buildDoneWithFooter(emailInfo);
+    if (donewithFooter) {
+      description = description ? `${description}\n\n${donewithFooter}` : donewithFooter;
     }
 
     // Build event object with client's timezone
@@ -392,11 +392,11 @@ export const batchAddToCalendar = action({
           emailId,
         });
 
-        // Build description with SayLess attribution
+        // Build description with DoneWith attribution
         let description = event.description || "";
-        const saylessFooter = buildSayLessFooter(emailInfo);
-        if (saylessFooter) {
-          description = description ? `${description}\n\n${saylessFooter}` : saylessFooter;
+        const donewithFooter = buildDoneWithFooter(emailInfo);
+        if (donewithFooter) {
+          description = description ? `${description}\n\n${donewithFooter}` : donewithFooter;
         }
 
         // Build event object

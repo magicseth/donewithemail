@@ -192,6 +192,10 @@ interface BatchCategoryCardProps {
   pendingTranscriptForId?: string | null;
   /** Live transcript while recording or pending */
   transcript?: string;
+  /** Controlled expanded state (for single-expand mode) */
+  isExpanded?: boolean;
+  /** Callback when expand is toggled */
+  onToggleExpand?: () => void;
 }
 
 export const BatchCategoryCard = memo(function BatchCategoryCard({
@@ -214,8 +218,13 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
   isRecordingConnected,
   pendingTranscriptForId,
   transcript,
+  isExpanded: controlledIsExpanded,
+  onToggleExpand,
 }: BatchCategoryCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  // Support both controlled and uncontrolled modes
+  const [internalIsExpanded, setInternalIsExpanded] = useState(false);
+  const isExpanded = controlledIsExpanded !== undefined ? controlledIsExpanded : internalIsExpanded;
+
   // Track if this is the first time expanding (for animation trigger)
   const [hasExpandedOnce, setHasExpandedOnce] = useState(false);
   const config = CATEGORY_CONFIG[category];
@@ -262,14 +271,47 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
     });
   }, [emails]);
 
+  // Flatten sender groups into a list with headers for FlatList (native)
+  type FlatListItem =
+    | { type: "header"; senderEmail: string; senderName: string; avatarUrl?: string; emailCount: number }
+    | { type: "email"; email: BatchEmailPreview; globalIndex: number };
+
+  const flattenedItems = useMemo((): FlatListItem[] => {
+    const items: FlatListItem[] = [];
+    let globalIndex = 0;
+    for (const group of senderGroups) {
+      items.push({
+        type: "header",
+        senderEmail: group.senderEmail,
+        senderName: group.senderName,
+        avatarUrl: group.avatarUrl,
+        emailCount: group.emails.length,
+      });
+      for (const email of group.emails) {
+        items.push({ type: "email", email, globalIndex });
+        globalIndex++;
+      }
+    }
+    return items;
+  }, [senderGroups]);
+
   const handleToggleExpand = useCallback(() => {
-    setIsExpanded(prev => {
-      if (!prev && !hasExpandedOnce) {
+    if (onToggleExpand) {
+      // Controlled mode - use parent's handler
+      if (!isExpanded && !hasExpandedOnce) {
         setHasExpandedOnce(true);
       }
-      return !prev;
-    });
-  }, [hasExpandedOnce]);
+      onToggleExpand();
+    } else {
+      // Uncontrolled mode - use internal state
+      setInternalIsExpanded(prev => {
+        if (!prev && !hasExpandedOnce) {
+          setHasExpandedOnce(true);
+        }
+        return !prev;
+      });
+    }
+  }, [hasExpandedOnce, isExpanded, onToggleExpand]);
 
   // Count how many are NOT punted (will be marked done)
   // Include isInTodo emails as "punted" since they're already in TODO
@@ -282,7 +324,12 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: config.backgroundColor }]}>
+    <View style={[
+      styles.container,
+      { backgroundColor: config.backgroundColor },
+      // When expanded (rendered outside ScrollView), fill available space
+      isExpanded && { flex: 1 },
+    ]}>
       {/* Header - always visible */}
       <TouchableOpacity style={styles.header} onPress={handleToggleExpand} activeOpacity={0.7}>
         <View style={styles.headerLeft}>
@@ -310,7 +357,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
 
       {/* Email list - expanded, grouped by sender with sticky headers */}
       {isExpanded && (
-        <View style={styles.emailList}>
+        <View style={[styles.emailList, Platform.OS !== "web" && { flex: 1 }]}>
           {/* On web, render directly with CSS sticky; on native, use SectionList */}
           {Platform.OS === "web" ? (
             <>
@@ -394,11 +441,9 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                 />
               )}
               renderItem={({ item: email, index, section }) => {
-                // Calculate global index for animation delay
                 const sectionIndex = senderGroups.findIndex(g => g.senderEmail === section.senderEmail);
                 const prevItemsCount = senderGroups.slice(0, sectionIndex).reduce((sum, g) => sum + g.emails.length, 0);
                 const globalIndex = prevItemsCount + index;
-
                 return (
                   <BatchEmailRow
                     email={email}
@@ -426,7 +471,6 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
               }}
               ListFooterComponent={
                 <>
-                  {/* Mark all as done button */}
                   {unpuntedCount > 0 && (
                     <TouchableOpacity
                       style={[styles.markDoneButton, isProcessing && styles.markDoneButtonDisabled]}
@@ -442,8 +486,6 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                       )}
                     </TouchableOpacity>
                   )}
-
-                  {/* All saved message */}
                   {unpuntedCount === 0 && (
                     <View style={styles.allSavedMessage}>
                       <Text style={styles.allSavedText}>All emails saved to TODO</Text>
@@ -451,7 +493,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                   )}
                 </>
               }
-              scrollEnabled={false}
+              style={{ flex: 1 }}
             />
           )}
         </View>

@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from "react";
+import React, { useCallback, useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   TouchableOpacity,
+  LayoutChangeEvent,
 } from "react-native";
 import { BatchCategoryCard } from "./BatchCategoryCard";
 import { QuickReplyOption } from "./BatchEmailRow";
@@ -60,6 +61,35 @@ export function BatchTriageView({
     acceptingIds,
     unsubscribingIds,
   } = useBatchTriage(userEmail);
+
+  // Only one category can be expanded at a time
+  const [expandedCategory, setExpandedCategory] = useState<BatchCategory | null>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const categoryYPositions = useRef<Map<BatchCategory, number>>(new Map());
+
+  // Handle category expand/collapse - only one at a time
+  const handleToggleExpand = useCallback((category: BatchCategory) => {
+    setExpandedCategory(prev => {
+      if (prev === category) {
+        // Collapsing current category
+        return null;
+      }
+      // Expanding new category - scroll to it
+      const yPos = categoryYPositions.current.get(category);
+      if (yPos !== undefined && scrollViewRef.current) {
+        // Small delay to let the collapse animation start
+        setTimeout(() => {
+          scrollViewRef.current?.scrollTo({ y: yPos - 10, animated: true });
+        }, 50);
+      }
+      return category;
+    });
+  }, []);
+
+  // Track category positions for scrolling
+  const handleCategoryLayout = useCallback((category: BatchCategory, event: LayoutChangeEvent) => {
+    categoryYPositions.current.set(category, event.nativeEvent.layout.y);
+  }, []);
 
   // Clear sender cache when component unmounts (switching to swipe mode or leaving tab)
   useEffect(() => {
@@ -195,13 +225,59 @@ export function BatchTriageView({
   // Check if any emails are still pending AI processing
   const hasPendingEmails = categories.pending.length > 0;
 
+  // Helper to get emails for expanded category
+  const getExpandedCategoryData = () => {
+    if (!expandedCategory) return null;
+    const emailsMap: Record<BatchCategory, typeof categories.done> = {
+      done: categories.done,
+      lowConfidence: categories.lowConfidence,
+      actionNeeded: categories.actionNeeded,
+      humanWaiting: categories.humanWaiting,
+      calendar: categories.calendar,
+      pending: categories.pending,
+    };
+    return emailsMap[expandedCategory];
+  };
+
+  const expandedEmails = getExpandedCategoryData();
+
   return (
     <View style={styles.container}>
-      {/* Scrollable categories */}
+      {/* When a category is expanded on native, render it outside ScrollView */}
+      {expandedCategory && expandedEmails && (
+        <View style={styles.expandedContainer}>
+          <BatchCategoryCard
+            category={expandedCategory}
+            emails={expandedEmails}
+            puntedEmails={puntedEmails}
+            onPuntEmail={togglePuntEmail}
+            onMarkAllDone={() => handleMarkCategoryDone(expandedCategory)}
+            onAcceptCalendar={handleAcceptCalendar}
+            onQuickReply={onQuickReply}
+            onMicPressIn={onMicPressIn}
+            onMicPressOut={onMicPressOut}
+            onSendTranscript={onSendTranscript}
+            onUnsubscribe={handleUnsubscribe}
+            onNeedsReplyPress={handleNeedsReplyPress}
+            acceptingIds={acceptingIds}
+            unsubscribingIds={unsubscribingIds}
+            isProcessing={processingCategory === expandedCategory}
+            recordingForId={recordingForId}
+            isRecordingConnected={isRecordingConnected}
+            pendingTranscriptForId={pendingTranscriptForId}
+            transcript={transcript}
+            isExpanded={true}
+            onToggleExpand={() => handleToggleExpand(expandedCategory)}
+          />
+        </View>
+      )}
+
+      {/* Scrollable categories - hidden when one is expanded */}
       <ScrollView
-        style={styles.scrollView}
+        ref={scrollViewRef}
+        style={[styles.scrollView, expandedCategory && styles.hidden]}
         contentContainerStyle={styles.scrollContent}
-        scrollEnabled={!isRecording}
+        scrollEnabled={!isRecording && expandedCategory === null}
         refreshControl={
           onRefresh ? (
             <RefreshControl
@@ -221,143 +297,84 @@ export function BatchTriageView({
         </View>
 
         {/* FYI category (was "Done") - newsletters, receipts, etc. */}
-        <BatchCategoryCard
-          category="done"
-          emails={categories.done}
-          puntedEmails={puntedEmails}
-          onPuntEmail={togglePuntEmail}
-          onMarkAllDone={() => handleMarkCategoryDone("done")}
-          onAcceptCalendar={handleAcceptCalendar}
-          onQuickReply={onQuickReply}
-          onMicPressIn={onMicPressIn}
-          onMicPressOut={onMicPressOut}
-          onSendTranscript={onSendTranscript}
-          onUnsubscribe={handleUnsubscribe}
-          onNeedsReplyPress={handleNeedsReplyPress}
-          acceptingIds={acceptingIds}
-          unsubscribingIds={unsubscribingIds}
-          isProcessing={processingCategory === "done"}
-          recordingForId={recordingForId}
-          isRecordingConnected={isRecordingConnected}
-          pendingTranscriptForId={pendingTranscriptForId}
-          transcript={transcript}
-        />
+        {/* Cards in ScrollView are always collapsed - expanded view is rendered separately above */}
+        <View onLayout={(e) => handleCategoryLayout("done", e)}>
+          <BatchCategoryCard
+            category="done"
+            emails={categories.done}
+            puntedEmails={puntedEmails}
+            onPuntEmail={togglePuntEmail}
+            onMarkAllDone={() => handleMarkCategoryDone("done")}
+            isExpanded={false}
+            onToggleExpand={() => handleToggleExpand("done")}
+          />
+        </View>
 
         {/* Needs Review category (low confidence) */}
-        <BatchCategoryCard
-          category="lowConfidence"
-          emails={categories.lowConfidence}
-          puntedEmails={puntedEmails}
-          onPuntEmail={togglePuntEmail}
-          onMarkAllDone={() => handleMarkCategoryDone("lowConfidence")}
-          onAcceptCalendar={handleAcceptCalendar}
-          onQuickReply={onQuickReply}
-          onMicPressIn={onMicPressIn}
-          onMicPressOut={onMicPressOut}
-          onSendTranscript={onSendTranscript}
-          onUnsubscribe={handleUnsubscribe}
-          onNeedsReplyPress={handleNeedsReplyPress}
-          acceptingIds={acceptingIds}
-          unsubscribingIds={unsubscribingIds}
-          isProcessing={processingCategory === "lowConfidence"}
-          recordingForId={recordingForId}
-          isRecordingConnected={isRecordingConnected}
-          pendingTranscriptForId={pendingTranscriptForId}
-          transcript={transcript}
-        />
+        <View onLayout={(e) => handleCategoryLayout("lowConfidence", e)}>
+          <BatchCategoryCard
+            category="lowConfidence"
+            emails={categories.lowConfidence}
+            puntedEmails={puntedEmails}
+            onPuntEmail={togglePuntEmail}
+            onMarkAllDone={() => handleMarkCategoryDone("lowConfidence")}
+            isExpanded={false}
+            onToggleExpand={() => handleToggleExpand("lowConfidence")}
+          />
+        </View>
 
         {/* Action needed category */}
-        <BatchCategoryCard
-          category="actionNeeded"
-          emails={categories.actionNeeded}
-          puntedEmails={puntedEmails}
-          onPuntEmail={togglePuntEmail}
-          onMarkAllDone={() => handleMarkCategoryDone("actionNeeded")}
-          onAcceptCalendar={handleAcceptCalendar}
-          onQuickReply={onQuickReply}
-          onMicPressIn={onMicPressIn}
-          onMicPressOut={onMicPressOut}
-          onSendTranscript={onSendTranscript}
-          onUnsubscribe={handleUnsubscribe}
-          onNeedsReplyPress={handleNeedsReplyPress}
-          acceptingIds={acceptingIds}
-          unsubscribingIds={unsubscribingIds}
-          isProcessing={processingCategory === "actionNeeded"}
-          recordingForId={recordingForId}
-          isRecordingConnected={isRecordingConnected}
-          pendingTranscriptForId={pendingTranscriptForId}
-          transcript={transcript}
-        />
+        <View onLayout={(e) => handleCategoryLayout("actionNeeded", e)}>
+          <BatchCategoryCard
+            category="actionNeeded"
+            emails={categories.actionNeeded}
+            puntedEmails={puntedEmails}
+            onPuntEmail={togglePuntEmail}
+            onMarkAllDone={() => handleMarkCategoryDone("actionNeeded")}
+            isExpanded={false}
+            onToggleExpand={() => handleToggleExpand("actionNeeded")}
+          />
+        </View>
 
         {/* Human waiting category - emails requiring reply */}
-        <BatchCategoryCard
-          category="humanWaiting"
-          emails={categories.humanWaiting}
-          puntedEmails={puntedEmails}
-          onPuntEmail={togglePuntEmail}
-          onMarkAllDone={() => handleMarkCategoryDone("humanWaiting")}
-          onAcceptCalendar={handleAcceptCalendar}
-          onQuickReply={onQuickReply}
-          onMicPressIn={onMicPressIn}
-          onMicPressOut={onMicPressOut}
-          onSendTranscript={onSendTranscript}
-          onUnsubscribe={handleUnsubscribe}
-          onNeedsReplyPress={handleNeedsReplyPress}
-          acceptingIds={acceptingIds}
-          unsubscribingIds={unsubscribingIds}
-          isProcessing={processingCategory === "humanWaiting"}
-          recordingForId={recordingForId}
-          isRecordingConnected={isRecordingConnected}
-          pendingTranscriptForId={pendingTranscriptForId}
-          transcript={transcript}
-        />
+        <View onLayout={(e) => handleCategoryLayout("humanWaiting", e)}>
+          <BatchCategoryCard
+            category="humanWaiting"
+            emails={categories.humanWaiting}
+            puntedEmails={puntedEmails}
+            onPuntEmail={togglePuntEmail}
+            onMarkAllDone={() => handleMarkCategoryDone("humanWaiting")}
+            isExpanded={false}
+            onToggleExpand={() => handleToggleExpand("humanWaiting")}
+          />
+        </View>
 
         {/* Calendar category */}
-        <BatchCategoryCard
-          category="calendar"
-          emails={categories.calendar}
-          puntedEmails={puntedEmails}
-          onPuntEmail={togglePuntEmail}
-          onMarkAllDone={() => handleMarkCategoryDone("calendar")}
-          onAcceptCalendar={handleAcceptCalendar}
-          onQuickReply={onQuickReply}
-          onMicPressIn={onMicPressIn}
-          onMicPressOut={onMicPressOut}
-          onSendTranscript={onSendTranscript}
-          onUnsubscribe={handleUnsubscribe}
-          onNeedsReplyPress={handleNeedsReplyPress}
-          acceptingIds={acceptingIds}
-          unsubscribingIds={unsubscribingIds}
-          isProcessing={processingCategory === "calendar"}
-          recordingForId={recordingForId}
-          isRecordingConnected={isRecordingConnected}
-          pendingTranscriptForId={pendingTranscriptForId}
-          transcript={transcript}
-        />
+        <View onLayout={(e) => handleCategoryLayout("calendar", e)}>
+          <BatchCategoryCard
+            category="calendar"
+            emails={categories.calendar}
+            puntedEmails={puntedEmails}
+            onPuntEmail={togglePuntEmail}
+            onMarkAllDone={() => handleMarkCategoryDone("calendar")}
+            isExpanded={false}
+            onToggleExpand={() => handleToggleExpand("calendar")}
+          />
+        </View>
 
         {/* Pending/analyzing emails (if any) - shown at bottom */}
         {categories.pending.length > 0 && (
-          <BatchCategoryCard
-            category="pending"
-            emails={categories.pending}
-            puntedEmails={puntedEmails}
-            onPuntEmail={togglePuntEmail}
-            onMarkAllDone={() => handleMarkCategoryDone("pending")}
-            onAcceptCalendar={handleAcceptCalendar}
-            onQuickReply={onQuickReply}
-            onMicPressIn={onMicPressIn}
-            onMicPressOut={onMicPressOut}
-            onSendTranscript={onSendTranscript}
-            onUnsubscribe={handleUnsubscribe}
-            onNeedsReplyPress={handleNeedsReplyPress}
-            acceptingIds={acceptingIds}
-            unsubscribingIds={unsubscribingIds}
-            isProcessing={processingCategory === "pending"}
-            recordingForId={recordingForId}
-            isRecordingConnected={isRecordingConnected}
-            pendingTranscriptForId={pendingTranscriptForId}
-            transcript={transcript}
-          />
+          <View onLayout={(e) => handleCategoryLayout("pending", e)}>
+            <BatchCategoryCard
+              category="pending"
+              emails={categories.pending}
+              puntedEmails={puntedEmails}
+              onPuntEmail={togglePuntEmail}
+              onMarkAllDone={() => handleMarkCategoryDone("pending")}
+              isExpanded={false}
+              onToggleExpand={() => handleToggleExpand("pending")}
+            />
+          </View>
         )}
 
         {/* Bottom spacing */}
@@ -432,6 +449,12 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingVertical: 12,
+  },
+  hidden: {
+    display: "none",
+  },
+  expandedContainer: {
+    flex: 1,
   },
   statsRow: {
     paddingHorizontal: 16,

@@ -8,13 +8,30 @@ import { AuthErrorProvider } from "../lib/AuthErrorBoundary";
 import { usePushNotifications } from "../hooks/usePushNotifications";
 import * as SecureStore from "expo-secure-store";
 
-const AUTH_STORAGE_KEY = "tokmail_auth";
+const AUTH_STORAGE_KEY = "donewith_auth";
 
 // Signal for auth refresh - when set, the adapter will briefly clear token to force Convex re-auth
 let lastAuthRefreshSignal = 0;
 export function signalAuthRefresh() {
   lastAuthRefreshSignal = Date.now();
   console.log("[AuthAdapter] Auth refresh signaled at", lastAuthRefreshSignal);
+}
+
+// Debug: decode JWT to check expiration and issuer
+function debugJwt(token: string): { valid: boolean; exp?: number; iss?: string; error?: string } {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) {
+      return { valid: false, error: "Not a JWT (expected 3 parts)" };
+    }
+    const payload = JSON.parse(atob(parts[1]));
+    const now = Math.floor(Date.now() / 1000);
+    const isExpired = payload.exp && payload.exp < now;
+    console.log("[JWT Debug] iss:", payload.iss, "exp:", payload.exp, "now:", now, "expired:", isExpired);
+    return { valid: !isExpired, exp: payload.exp, iss: payload.iss };
+  } catch (e) {
+    return { valid: false, error: String(e) };
+  }
 }
 
 // Initialize Convex client
@@ -66,14 +83,19 @@ function useAuthAdapter() {
 
     const loadToken = async () => {
       try {
-        // Check if there's a new refresh signal - if so, briefly clear token to force Convex re-auth
+        // Check if there's a new refresh signal - force Convex to re-authenticate
+        // by briefly clearing the token, then setting the new one
         if (lastAuthRefreshSignal > lastProcessedSignal.current) {
-          console.log("[AuthAdapter] Detected refresh signal, forcing Convex re-auth");
+          console.log("[AuthAdapter] Detected refresh signal, forcing re-auth");
           lastProcessedSignal.current = lastAuthRefreshSignal;
-          // Briefly clear token to force Convex to re-authenticate
-          setToken(null);
-          // On next poll, we'll read the new token from storage
-          return;
+
+          // Clear token first to force Convex to re-authenticate
+          if (token !== null) {
+            console.log("[AuthAdapter] Clearing token to force re-auth cycle");
+            setToken(null);
+            // Return early - next poll cycle will set the new token
+            return;
+          }
         }
 
         const stored = await storage.getItem(AUTH_STORAGE_KEY);
@@ -84,19 +106,28 @@ function useAuthAdapter() {
           const accessToken = parsed.accessToken || null;
           const expiresAt = parsed.expiresAt;
 
-          // Check if token is expired (with 30 second buffer)
-          if (expiresAt && Date.now() > expiresAt - 30000) {
-            console.log("[AuthAdapter] Token expired, clearing token state");
-            // Clear the token so Convex knows auth is invalid
+          // Check if token is expired - by stored expiresAt OR by JWT exp claim
+          const isExpiredByStorage = expiresAt && Date.now() > expiresAt - 30000;
+          const jwtInfo = accessToken ? debugJwt(accessToken) : { valid: false };
+          const isExpiredByJwt = accessToken && !jwtInfo.valid;
+
+          if (isExpiredByStorage || isExpiredByJwt) {
+            console.log("[AuthAdapter] Token expired, clearing token state", { isExpiredByStorage, isExpiredByJwt });
             if (token !== null) {
               setToken(null);
             }
-          } else if (accessToken !== token) {
-            console.log("[AuthAdapter] Token updated");
+          } else if (accessToken && accessToken !== token) {
+            // Only update if we have a valid token
+            console.log("[AuthAdapter] Token updated, hasToken:", !!accessToken);
             setToken(accessToken);
+          } else if (!accessToken && token !== null) {
+            // Token was cleared from storage
+            console.log("[AuthAdapter] Token cleared from storage");
+            setToken(null);
           }
         } else {
           if (token !== null) {
+            console.log("[AuthAdapter] No stored auth, clearing token");
             setToken(null);
           }
         }
@@ -137,14 +168,25 @@ function useAuthAdapter() {
         const accessToken = parsed.accessToken || null;
         const expiresAt = parsed.expiresAt;
 
-        // Don't return expired tokens
+        // Don't return expired tokens (check our stored expiresAt)
         if (expiresAt && Date.now() > expiresAt - 10000) {
-          console.log("[AuthAdapter] fetchAccessToken: token expired");
+          console.log("[AuthAdapter] fetchAccessToken: token expired (by expiresAt)");
           return null;
         }
 
+        // Also verify the JWT itself isn't expired
+        if (accessToken) {
+          const jwtInfo = debugJwt(accessToken);
+          if (!jwtInfo.valid) {
+            console.log("[AuthAdapter] fetchAccessToken: JWT invalid/expired");
+            return null;
+          }
+        }
+
+        console.log("[AuthAdapter] fetchAccessToken: returning valid token");
         return accessToken;
       }
+      console.log("[AuthAdapter] fetchAccessToken: no stored auth");
     } catch (e) {
       console.error("[AuthAdapter] Failed to fetch access token:", e);
     }
@@ -152,11 +194,15 @@ function useAuthAdapter() {
   }, []);
 
   const result = useMemo(
-    () => ({
-      isLoading,
-      isAuthenticated: !!token,
-      fetchAccessToken,
-    }),
+    () => {
+      const isAuthenticated = !!token;
+      console.log("[AuthAdapter] useMemo result: isLoading=", isLoading, "isAuthenticated=", isAuthenticated, "hasToken=", !!token);
+      return {
+        isLoading,
+        isAuthenticated,
+        fetchAccessToken,
+      };
+    },
     [isLoading, token, fetchAccessToken]
   );
 

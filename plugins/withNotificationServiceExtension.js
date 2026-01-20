@@ -14,7 +14,7 @@ function generateUuid() {
 const withNotificationServiceExtension = (config) => {
   config = withXcodeProject(config, async (config) => {
     const xcodeProject = config.modResults;
-    const bundleIdentifier = config.ios?.bundleIdentifier || "com.tokmail.app";
+    const bundleIdentifier = config.ios?.bundleIdentifier || "com.donewithemail.app";
     const extensionName = "NotificationServiceExtension";
     const extensionBundleId = `${bundleIdentifier}.${extensionName}`;
 
