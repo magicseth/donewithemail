@@ -285,6 +285,8 @@ export default defineSchema({
     easUpdateId: v.optional(v.string()),
     easUpdateMessage: v.optional(v.string()),
     easDashboardUrl: v.optional(v.string()),
+    // Debug logs from the app when the request was submitted
+    debugLogs: v.optional(v.string()),
   })
     .index("by_status", ["status", "createdAt"])
     .index("by_user", ["userId", "createdAt"]),

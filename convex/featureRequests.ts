@@ -12,6 +12,7 @@ const pushNotifications = new PushNotifications(components.pushNotifications);
 export const submit = mutation({
   args: {
     transcript: v.string(),
+    debugLogs: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -42,6 +43,7 @@ export const submit = mutation({
       transcript: args.transcript,
       status: "pending",
       createdAt: Date.now(),
+      debugLogs: args.debugLogs,
     });
 
     return { id };

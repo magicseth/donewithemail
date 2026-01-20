@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Platform,
   Share,
+  Modal,
 } from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/authContext";
@@ -51,6 +52,9 @@ export default function SettingsScreen() {
   const [streamingTranscript, setStreamingTranscript] = useState<string | null>(null);
   const [isRecordingFeature, setIsRecordingFeature] = useState(false);
   const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
+  const [showFeatureConfirmModal, setShowFeatureConfirmModal] = useState(false);
+  const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
+  const [includeDebugLogs, setIncludeDebugLogs] = useState(false);
   const submitFeatureRequest = useMutation(api.featureRequests.submit);
   const cancelFeatureRequest = useMutation(api.featureRequests.cancel);
   const myFeatureRequests = useQuery(api.featureRequests.getMine);
@@ -317,46 +321,50 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleFeatureTranscript = useCallback(async (transcript: string) => {
+  const handleFeatureTranscript = useCallback((transcript: string) => {
     setFeatureTranscript(transcript);
+    setPendingTranscript(transcript);
+    setIncludeDebugLogs(false);
+    setShowFeatureConfirmModal(true);
+  }, []);
 
-    const doSubmit = async () => {
-      setIsSubmittingFeature(true);
-      try {
-        await submitFeatureRequest({ transcript });
-        const msg = `Feature request submitted!\n\n"${transcript}"`;
-        Platform.OS === "web" ? window.alert(msg) : Alert.alert("Submitted", msg);
-        setFeatureTranscript(null);
-      } catch (e) {
-        const errorMsg = e instanceof Error ? e.message : "Unknown error";
-        Platform.OS === "web" ? window.alert(`Error: ${errorMsg}`) : Alert.alert("Error", errorMsg);
-      } finally {
-        setIsSubmittingFeature(false);
+  const handleConfirmFeatureSubmit = useCallback(async () => {
+    if (!pendingTranscript) return;
+
+    setShowFeatureConfirmModal(false);
+    setIsSubmittingFeature(true);
+
+    try {
+      let debugLogsStr: string | undefined;
+      if (includeDebugLogs) {
+        const currentLogs = logs.map(l =>
+          `[${new Date(l.timestamp).toISOString()}] ${l.level.toUpperCase()}: ${l.message}`
+        ).join("\n");
+        debugLogsStr = currentLogs || undefined;
       }
-    };
 
-    const doClear = () => {
+      await submitFeatureRequest({
+        transcript: pendingTranscript,
+        debugLogs: debugLogsStr,
+      });
+      const msg = `Feature request submitted!\n\n"${pendingTranscript}"`;
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Submitted", msg);
       setFeatureTranscript(null);
-    };
-
-    if (Platform.OS === "web") {
-      const confirmed = window.confirm(`Submit this feature request?\n\n"${transcript}"`);
-      if (confirmed) {
-        await doSubmit();
-      } else {
-        doClear();
-      }
-    } else {
-      Alert.alert(
-        "Confirm Feature Request",
-        `Submit this request?\n\n"${transcript}"`,
-        [
-          { text: "Cancel", style: "cancel", onPress: doClear },
-          { text: "Submit", onPress: doSubmit },
-        ]
-      );
+      setPendingTranscript(null);
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : "Unknown error";
+      Platform.OS === "web" ? window.alert(`Error: ${errorMsg}`) : Alert.alert("Error", errorMsg);
+    } finally {
+      setIsSubmittingFeature(false);
     }
-  }, [submitFeatureRequest]);
+  }, [pendingTranscript, includeDebugLogs, logs, submitFeatureRequest]);
+
+  const handleCancelFeatureConfirm = useCallback(() => {
+    setShowFeatureConfirmModal(false);
+    setFeatureTranscript(null);
+    setPendingTranscript(null);
+    setIncludeDebugLogs(false);
+  }, []);
 
   const handleFeatureError = useCallback((error: string) => {
     setIsRecordingFeature(false);
@@ -976,6 +984,48 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.bottomPadding} />
+
+      {/* Feature Request Confirmation Modal */}
+      <Modal
+        visible={showFeatureConfirmModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCancelFeatureConfirm}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Confirm Feature Request</Text>
+            <Text style={styles.modalMessage}>Submit this request?</Text>
+            <Text style={styles.modalTranscript}>"{pendingTranscript}"</Text>
+
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => setIncludeDebugLogs(!includeDebugLogs)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, includeDebugLogs && styles.checkboxChecked]}>
+                {includeDebugLogs && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <Text style={styles.checkboxLabel}>Include debug logs ({logs.length})</Text>
+            </TouchableOpacity>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={handleCancelFeatureConfirm}
+              >
+                <Text style={styles.modalButtonCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSubmit]}
+                onPress={handleConfirmFeatureSubmit}
+              >
+                <Text style={styles.modalButtonSubmitText}>Submit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -1290,5 +1340,98 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#EF4444",
     fontWeight: "500",
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 24,
+    width: "100%",
+    maxWidth: 340,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  modalMessage: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  modalTranscript: {
+    fontSize: 14,
+    color: "#333",
+    fontStyle: "italic",
+    textAlign: "center",
+    marginBottom: 20,
+    paddingHorizontal: 8,
+  },
+  checkboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#ccc",
+    marginRight: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  checkboxChecked: {
+    backgroundColor: "#6366F1",
+    borderColor: "#6366F1",
+  },
+  checkmark: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    color: "#333",
+  },
+  modalButtons: {
+    flexDirection: "row",
+    marginTop: 20,
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  modalButtonCancel: {
+    backgroundColor: "#F3F4F6",
+  },
+  modalButtonSubmit: {
+    backgroundColor: "#6366F1",
+  },
+  modalButtonCancelText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#666",
+  },
+  modalButtonSubmitText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#fff",
   },
 });
