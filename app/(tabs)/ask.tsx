@@ -450,6 +450,7 @@ const styles = StyleSheet.create({
     marginTop: 32,
     width: "100%",
     maxWidth: 300,
+    alignSelf: "center",
   },
   historySectionTitle: {
     fontSize: 13,
