@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Stack } from "expo-router";
 import { ConvexReactClient, ConvexProviderWithAuth } from "convex/react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { StyleSheet, Platform } from "react-native";
+import { StyleSheet, Platform, Alert } from "react-native";
+import * as Updates from "expo-updates";
 import { AuthProvider, useAuth } from "../lib/authContext";
 import { AuthErrorProvider } from "../lib/AuthErrorBoundary";
 import { usePushNotifications } from "../hooks/usePushNotifications";
@@ -222,6 +223,37 @@ function AuthErrorHandler({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  // Check for updates on startup
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+
+    async function checkForUpdates() {
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          console.log("[Updates] New update available, downloading...");
+          await Updates.fetchUpdateAsync();
+          // Prompt user to restart
+          Alert.alert(
+            "Update Available",
+            "A new version has been downloaded. Restart to apply?",
+            [
+              { text: "Later", style: "cancel" },
+              { text: "Restart", onPress: () => Updates.reloadAsync() },
+            ]
+          );
+        }
+      } catch (e) {
+        // Don't crash on update check failure
+        console.log("[Updates] Check failed:", e);
+      }
+    }
+
+    // Small delay to let the app load first
+    const timeout = setTimeout(checkForUpdates, 2000);
+    return () => clearTimeout(timeout);
+  }, []);
+
   return (
     <GestureHandlerRootView style={styles.container}>
       <ConvexProviderWithAuth client={convex} useAuth={useAuthAdapter}>
