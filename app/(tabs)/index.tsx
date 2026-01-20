@@ -871,7 +871,7 @@ export default function InboxScreen() {
   // ============================================================================
   // INBOX MODE STATE
   // ============================================================================
-  const [inboxMode, setInboxMode] = useState<InboxMode>("swipe");
+  const [inboxMode, setInboxMode] = useState<InboxMode>("batch");
 
   // ============================================================================
   // EMAIL & SESSION STATE

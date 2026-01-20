@@ -75,7 +75,7 @@ interface BatchCategoryCardProps {
   onMicPressOut?: (emailId: string) => void;
   onSendTranscript?: (emailId: string) => void;
   onUnsubscribe?: (emailId: string) => void;
-  onNeedsReplyPress?: () => void;
+  onNeedsReplyPress?: (emailId: string) => void;
   acceptingIds?: Set<string>;
   unsubscribingIds?: Set<string>;
   isProcessing?: boolean;
@@ -173,7 +173,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
               onMicPressOut={onMicPressOut ? () => onMicPressOut(email._id) : undefined}
               onSendTranscript={onSendTranscript ? () => onSendTranscript(email._id) : undefined}
               onUnsubscribe={onUnsubscribe ? () => onUnsubscribe(email._id) : undefined}
-              onNeedsReplyPress={onNeedsReplyPress}
+              onNeedsReplyPress={onNeedsReplyPress ? () => onNeedsReplyPress(email._id) : undefined}
               isAccepting={acceptingIds?.has(email._id)}
               isUnsubscribing={unsubscribingIds?.has(email._id)}
               hideTodoButton={category === "done" || category === "lowConfidence" || category === "actionNeeded"}

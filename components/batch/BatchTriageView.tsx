@@ -120,6 +120,15 @@ export function BatchTriageView({
     showToast("Unsubscribed", "success", emailId);
   }, [unsubscribe, showToast]);
 
+  // Handle needs reply toggle - toggles TODO state and shows toast
+  const handleNeedsReplyPress = useCallback((emailId: string) => {
+    const wasPunted = puntedEmails.has(emailId);
+    togglePuntEmail(emailId);
+    if (!wasPunted) {
+      showToast("Added to the list!", "success");
+    }
+  }, [puntedEmails, togglePuntEmail, showToast]);
+
   // Loading state
   if (isLoading) {
     return (
@@ -181,6 +190,7 @@ export function BatchTriageView({
           onMicPressOut={onMicPressOut}
           onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
+          onNeedsReplyPress={handleNeedsReplyPress}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "done"}
           recordingForId={recordingForId}
@@ -201,6 +211,7 @@ export function BatchTriageView({
           onMicPressOut={onMicPressOut}
           onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
+          onNeedsReplyPress={handleNeedsReplyPress}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "lowConfidence"}
           recordingForId={recordingForId}
@@ -221,6 +232,7 @@ export function BatchTriageView({
           onMicPressOut={onMicPressOut}
           onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
+          onNeedsReplyPress={handleNeedsReplyPress}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "actionNeeded"}
           recordingForId={recordingForId}
@@ -241,6 +253,7 @@ export function BatchTriageView({
           onMicPressOut={onMicPressOut}
           onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
+          onNeedsReplyPress={handleNeedsReplyPress}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "humanWaiting"}
           recordingForId={recordingForId}
@@ -262,6 +275,7 @@ export function BatchTriageView({
           onMicPressOut={onMicPressOut}
           onSendTranscript={onSendTranscript}
           onUnsubscribe={handleUnsubscribe}
+          onNeedsReplyPress={handleNeedsReplyPress}
           acceptingIds={acceptingIds}
           unsubscribingIds={unsubscribingIds}
           isProcessing={processingCategory === "calendar"}
@@ -284,6 +298,7 @@ export function BatchTriageView({
             onMicPressOut={onMicPressOut}
             onSendTranscript={onSendTranscript}
             onUnsubscribe={handleUnsubscribe}
+            onNeedsReplyPress={handleNeedsReplyPress}
             unsubscribingIds={unsubscribingIds}
             isProcessing={processingCategory === "pending"}
             recordingForId={recordingForId}
