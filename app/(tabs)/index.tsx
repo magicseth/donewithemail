@@ -29,7 +29,7 @@ import {
   showAlert,
   ErrorBoundary,
   inboxStyles as styles,
-} from "./inbox";
+} from "../../components/inbox";
 
 // Sound feedback for mic actions
 const useMicSounds = () => {
