@@ -110,14 +110,28 @@ Important: This is a React Native Expo app. Follow existing patterns in the code
     }).trim();
     console.log(`\n✅ Commit: ${commitHash}`);
 
-    // Push the branch
-    console.log(`\n📤 Pushing branch...`);
+    // Push the feature branch (for reference)
+    console.log(`\n📤 Pushing feature branch...`);
     execSync(`git push -u origin ${branchName}`, { cwd: workDir, stdio: "inherit" });
 
-    // Run EAS update
-    console.log(`\n📱 Running EAS update...`);
+    // Merge into voice-preview branch
+    console.log(`\n🔀 Merging into voice-preview...`);
+    execSync(`git fetch origin voice-preview`, { cwd: workDir, stdio: "inherit" });
+    execSync(`git checkout voice-preview`, { cwd: workDir, stdio: "inherit" });
+    execSync(`git merge ${branchName} -m "Merge ${branchName}: ${request.transcript.slice(0, 50)}..."`, {
+      cwd: workDir,
+      stdio: "inherit"
+    });
+    execSync(`git push origin voice-preview`, { cwd: workDir, stdio: "inherit" });
+
+    // Deploy Convex changes
+    console.log(`\n☁️ Deploying Convex...`);
+    execSync(`npx convex dev --once`, { cwd: workDir, stdio: "inherit" });
+
+    // Run EAS update on voice-preview channel
+    console.log(`\n📱 Running EAS update for voice-preview...`);
     const easOutput = execSync(
-      `npx eas update --branch preview --message "Feature: ${request.transcript.slice(0, 50)}..."`,
+      `npx eas update --branch voice-preview --message "Feature: ${request.transcript.slice(0, 50)}..."`,
       { cwd: workDir, encoding: "utf-8" }
     );
 

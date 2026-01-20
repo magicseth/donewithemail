@@ -12,6 +12,14 @@
       },
       "channel": "development"
     },
+    "development-voice": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_CONVEX_URL": "https://cool-kingfisher-293.convex.cloud"
+      },
+      "channel": "voice-preview"
+    },
     "preview": {
       "distribution": "internal",
       "env": {

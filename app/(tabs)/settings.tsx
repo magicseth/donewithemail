@@ -41,6 +41,7 @@ export default function SettingsScreen() {
   const [isScanningSubscriptions, setIsScanningSubscriptions] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<string>("checking...");
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [currentChannel, setCurrentChannel] = useState<string>("checking...");
   const [showLogs, setShowLogs] = useState(false);
   const logs = useAppLogs();
 
@@ -101,11 +102,32 @@ export default function SettingsScreen() {
         `${commit}`,
       ].join(" | ");
       setUpdateInfo(info);
+      setCurrentChannel(Updates.channel || "embedded");
     } else {
       const commit = Constants.expoConfig?.extra?.gitCommit || "?";
       setUpdateInfo(`web | ${commit}`);
+      setCurrentChannel("web");
     }
   }, []);
+
+  const openDevMenu = () => {
+    if (Platform.OS === "web") {
+      Alert.alert("Not Available", "Channel switching is only available in native dev builds");
+      return;
+    }
+
+    Alert.alert(
+      "Switch Update Channel",
+      "To load updates from a different channel:\n\n" +
+      "1. Open the dev build launcher (shake or Cmd+D → 'Go Home')\n" +
+      "2. Go to the 'Extensions' tab at the bottom\n" +
+      "3. Log in to your Expo account if needed\n" +
+      "4. Tap the branch/update you want to load\n\n" +
+      "Available channels:\n• development\n• preview\n• voice-preview\n\n" +
+      "Or scan a QR code from the EAS dashboard.",
+      [{ text: "OK" }]
+    );
+  };
 
   // Check if Gmail is actually connected (has tokens stored)
   const isGmailConnected = useQuery(
@@ -719,6 +741,20 @@ export default function SettingsScreen() {
             <Text style={[styles.aboutValue, { fontSize: 10 }]}>
               {isCheckingUpdate ? "Checking..." : updateInfo}
             </Text>
+          </TouchableOpacity>
+          <View style={styles.divider} />
+          <TouchableOpacity
+            style={styles.aboutRow}
+            onPress={openDevMenu}
+            disabled={Platform.OS === "web"}
+          >
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Switch Channel</Text>
+              <Text style={styles.settingDescription}>
+                Current: {currentChannel}
+              </Text>
+            </View>
+            <Text style={styles.aboutArrow}>→</Text>
           </TouchableOpacity>
           <View style={styles.divider} />
           <TouchableOpacity style={styles.aboutRow}>
