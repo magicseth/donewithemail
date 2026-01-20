@@ -536,7 +536,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
                     <Text style={styles.markDoneButtonText}>
-                      Done with {unpuntedCount} emails
+                      ✓ Done with {unpuntedCount} email{unpuntedCount !== 1 ? "s" : ""}
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -611,7 +611,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                         <ActivityIndicator size="small" color="#fff" />
                       ) : (
                         <Text style={styles.markDoneButtonText}>
-                          Done with {unpuntedCount} emails
+                          ✓ Done with {unpuntedCount} email{unpuntedCount !== 1 ? "s" : ""}
                         </Text>
                       )}
                     </TouchableOpacity>

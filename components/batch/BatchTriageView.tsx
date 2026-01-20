@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { BatchCategoryCard } from "./BatchCategoryCard";
 import { QuickReplyOption } from "./BatchEmailRow";
+import { CelebrationOverlay } from "./CelebrationOverlay";
 import { useBatchTriage, BatchCategory } from "../../hooks/useBatchTriage";
 
 interface BatchTriageViewProps {
@@ -66,6 +67,12 @@ export function BatchTriageView({
   const [expandedCategory, setExpandedCategory] = useState<BatchCategory | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const categoryYPositions = useRef<Map<BatchCategory, number>>(new Map());
+
+  // Celebration state
+  const [celebration, setCelebration] = useState<{ visible: boolean; count: number }>({
+    visible: false,
+    count: 0,
+  });
 
   // Handle category expand/collapse - only one at a time
   const handleToggleExpand = useCallback((category: BatchCategory) => {
@@ -156,9 +163,15 @@ export function BatchTriageView({
       console.error("Batch triage errors:", result.errors);
       showToast(`${result.triaged} processed, ${result.errors.length} errors`, "error");
     } else if (result.triaged > 0) {
-      showToast(`${result.triaged} emails processed`, "success");
+      // Show celebration animation
+      setCelebration({ visible: true, count: result.triaged });
     }
   }, [markCategoryDone, showToast]);
+
+  // Handle celebration complete
+  const handleCelebrationComplete = useCallback(() => {
+    setCelebration({ visible: false, count: 0 });
+  }, []);
 
   // Handle accept calendar
   const handleAcceptCalendar = useCallback(async (emailId: string) => {
@@ -517,6 +530,13 @@ export function BatchTriageView({
           )}
         </View>
       )}
+
+      {/* Celebration overlay */}
+      <CelebrationOverlay
+        count={celebration.count}
+        visible={celebration.visible}
+        onComplete={handleCelebrationComplete}
+      />
     </View>
   );
 }
