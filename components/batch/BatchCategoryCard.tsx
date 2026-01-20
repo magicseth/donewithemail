@@ -47,6 +47,8 @@ function SenderGroupHeader({
 }: SenderGroupHeaderProps) {
   const initials = getInitials(senderName || senderEmail.split("@")[0]);
   const allFlagged = flaggedCount === emailCount;
+  // Only show bulk actions if there's more than 1 email
+  const showBulkActions = emailCount > 1;
 
   return (
     <View style={senderStyles.container}>
@@ -59,14 +61,15 @@ function SenderGroupHeader({
       )}
       <View style={senderStyles.info}>
         <Text style={senderStyles.name} numberOfLines={1}>{senderName || senderEmail}</Text>
-        <Text style={senderStyles.count}>
-          {emailCount} email{emailCount !== 1 ? "s" : ""}
-          {flaggedCount > 0 && ` · ${flaggedCount} flagged`}
-        </Text>
       </View>
-      {/* Bulk action icons */}
-      <View style={senderStyles.actions}>
-        {onMarkAllDone && (
+      {/* Right side: count badge + optional bulk action icons */}
+      <View style={senderStyles.rightSection}>
+        {emailCount > 1 && (
+          <Text style={senderStyles.countBadge}>
+            {emailCount}
+          </Text>
+        )}
+        {showBulkActions && onMarkAllDone && (
           <TouchableOpacity
             style={senderStyles.iconButton}
             onPress={onMarkAllDone}
@@ -75,7 +78,7 @@ function SenderGroupHeader({
             <Text style={senderStyles.checkmarkIcon}>✓</Text>
           </TouchableOpacity>
         )}
-        {onToggleFlagAll && (
+        {showBulkActions && onToggleFlagAll && (
           <TouchableOpacity
             style={[senderStyles.iconButton, allFlagged && senderStyles.iconButtonActive]}
             onPress={onToggleFlagAll}
@@ -132,15 +135,17 @@ const senderStyles = StyleSheet.create({
     fontWeight: "600",
     color: "#111827",
   },
-  count: {
-    fontSize: 12,
-    color: "#6B7280",
-  },
-  actions: {
+  rightSection: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     marginLeft: 8,
+  },
+  countBadge: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6B7280",
+    marginRight: 4,
   },
   iconButton: {
     width: 32,
