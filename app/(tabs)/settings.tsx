@@ -68,6 +68,7 @@ export default function SettingsScreen() {
   const submitFeatureRequest = useMutation(api.featureRequests.submit);
   const cancelFeatureRequest = useMutation(api.featureRequests.cancel);
   const myFeatureRequests = useQuery(api.featureRequests.getMine);
+  const myCosts = useQuery(api.costs.getMyTotalCosts);
 
   const checkForUpdates = async () => {
     if (Platform.OS === "web") return;
@@ -716,6 +717,43 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      )}
+
+      {/* AI Usage & Costs Section */}
+      {!isDemoMode && myCosts && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>AI Usage</Text>
+          <View style={styles.card}>
+            <View style={styles.costRow}>
+              <View style={styles.costItem}>
+                <Text style={styles.costLabel}>AI Summarization</Text>
+                <Text style={styles.costValue}>
+                  {myCosts.aiCosts ? `$${myCosts.aiCosts.totalRawCost.toFixed(4)}` : "$0.00"}
+                </Text>
+                <Text style={styles.costCount}>
+                  {myCosts.aiCosts?.count ?? 0} calls
+                </Text>
+              </View>
+              <View style={styles.costDivider} />
+              <View style={styles.costItem}>
+                <Text style={styles.costLabel}>Embeddings</Text>
+                <Text style={styles.costValue}>
+                  {myCosts.toolCosts ? `$${myCosts.toolCosts.totalRawCost.toFixed(4)}` : "$0.00"}
+                </Text>
+                <Text style={styles.costCount}>
+                  {myCosts.toolCosts?.count ?? 0} calls
+                </Text>
+              </View>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.totalCostRow}>
+              <Text style={styles.totalCostLabel}>Total AI Cost</Text>
+              <Text style={styles.totalCostValue}>
+                ${myCosts.totalCost.toFixed(4)}
+              </Text>
+            </View>
+          </View>
+        </View>
       )}
 
       {/* AI Settings Section */}
@@ -1870,5 +1908,49 @@ const styles = StyleSheet.create({
     color: "#374151",
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     lineHeight: 16,
+  },
+  costRow: {
+    flexDirection: "row",
+    padding: 16,
+  },
+  costItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  costDivider: {
+    width: 1,
+    backgroundColor: "#eee",
+  },
+  costLabel: {
+    fontSize: 13,
+    color: "#666",
+    marginBottom: 4,
+  },
+  costValue: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#1a1a1a",
+  },
+  costCount: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 2,
+  },
+  totalCostRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "#F9FAFB",
+  },
+  totalCostLabel: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#1a1a1a",
+  },
+  totalCostValue: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#6366F1",
   },
 });
