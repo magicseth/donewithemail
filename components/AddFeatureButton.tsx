@@ -79,6 +79,14 @@ export function AddFeatureButton() {
     setIncludeDebugLogs(false);
   }, []);
 
+  const handleRetryRecording = useCallback(() => {
+    setShowFeatureConfirmModal(false);
+    setFeatureTranscript(null);
+    setPendingTranscript(null);
+    setIncludeDebugLogs(false);
+    // User can now tap the voice button again to re-record
+  }, []);
+
   const handleFeatureError = useCallback((error: string) => {
     setIsRecordingFeature(false);
     setStreamingTranscript(null);
@@ -161,13 +169,19 @@ export function AddFeatureButton() {
                 style={[styles.modalButton, styles.modalButtonCancel]}
                 onPress={handleCancelFeatureConfirm}
               >
-                <Text style={styles.modalButtonCancelText}>Cancel</Text>
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonRetry]}
+                onPress={handleRetryRecording}
+              >
+                <Text style={styles.modalButtonText}>Retry</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonSubmit]}
                 onPress={handleConfirmFeatureSubmit}
               >
-                <Text style={styles.modalButtonSubmitText}>Submit</Text>
+                <Text style={styles.modalButtonTextLight}>Submit</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -303,25 +317,32 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   modalButton: {
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,
+    minWidth: 80,
+    alignItems: "center",
   },
   modalButtonCancel: {
     backgroundColor: "#f0f0f0",
   },
-  modalButtonCancelText: {
-    color: "#666",
-    fontSize: 14,
-    fontWeight: "500",
+  modalButtonRetry: {
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
   },
   modalButtonSubmit: {
     backgroundColor: "#6366F1",
   },
-  modalButtonSubmitText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "500",
+  modalButtonText: {
+    color: "#333",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  modalButtonTextLight: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
   },
   toast: {
     position: "absolute",
