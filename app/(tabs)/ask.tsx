@@ -16,6 +16,7 @@ import { api } from "../../convex/_generated/api";
 import Markdown from "react-native-markdown-display";
 import { useRouter } from "expo-router";
 import { Id } from "../../convex/_generated/dataModel";
+import { VoiceRecordButton } from "../../components/VoiceRecordButton";
 
 interface Message {
   id: string;
@@ -38,6 +39,7 @@ export default function AskScreen() {
   const [threads, setThreads] = useState<ThreadInfo[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [deletingThreadId, setDeletingThreadId] = useState<string | null>(null);
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
 
@@ -135,6 +137,25 @@ export default function AskScreen() {
     setMessages([]);
     setInput("");
     setThreadId(null);
+  }, []);
+
+  const handleVoiceTranscript = useCallback((transcript: string) => {
+    // Auto-fill the input with voice transcript
+    setInput(transcript);
+    setIsRecordingVoice(false);
+  }, []);
+
+  const handleVoiceError = useCallback((error: string) => {
+    Alert.alert("Voice Recording Error", error);
+    setIsRecordingVoice(false);
+  }, []);
+
+  const handleVoiceRecordingStart = useCallback(() => {
+    setIsRecordingVoice(true);
+  }, []);
+
+  const handleVoiceRecordingEnd = useCallback(() => {
+    setIsRecordingVoice(false);
   }, []);
 
   const handleResumeThread = useCallback(
@@ -382,26 +403,35 @@ export default function AskScreen() {
           style={styles.input}
           value={input}
           onChangeText={setInput}
-          placeholder="Type your question..."
+          placeholder="Type or speak your question..."
           placeholderTextColor="#999"
           multiline
           maxLength={500}
-          editable={!isLoading}
+          editable={!isLoading && !isRecordingVoice}
           onSubmitEditing={handleSend}
           blurOnSubmit={false}
+        />
+        <VoiceRecordButton
+          onTranscript={handleVoiceTranscript}
+          onError={handleVoiceError}
+          onRecordingStart={handleVoiceRecordingStart}
+          onRecordingEnd={handleVoiceRecordingEnd}
+          disabled={isLoading}
+          size="medium"
+          style={styles.voiceButton}
         />
         <TouchableOpacity
           style={[
             styles.sendButton,
-            (!input.trim() || isLoading) && styles.sendButtonDisabled,
+            (!input.trim() || isLoading || isRecordingVoice) && styles.sendButtonDisabled,
           ]}
           onPress={handleSend}
-          disabled={!input.trim() || isLoading}
+          disabled={!input.trim() || isLoading || isRecordingVoice}
         >
           <Text
             style={[
               styles.sendButtonText,
-              (!input.trim() || isLoading) && styles.sendButtonTextDisabled,
+              (!input.trim() || isLoading || isRecordingVoice) && styles.sendButtonTextDisabled,
             ]}
           >
             Send
@@ -593,6 +623,9 @@ const styles = StyleSheet.create({
     borderTopColor: "#eee",
     backgroundColor: "#fff",
     gap: 8,
+  },
+  voiceButton: {
+    alignSelf: "flex-end",
   },
   input: {
     flex: 1,
