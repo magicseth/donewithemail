@@ -15,6 +15,7 @@ import {
 import { router, Stack } from "expo-router";
 import { useAction } from "convex/react";
 import { useAuth } from "../../lib/authContext";
+import { useDemoMode } from "../../lib/demoModeContext";
 import { useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -76,6 +77,7 @@ const useMicSounds = () => {
 
 export default function InboxScreen() {
   const { refreshAccessToken, signIn } = useAuth();
+  const { isDemoMode } = useDemoMode();
 
   // Session state
   const [sessionStart] = useState(() => Date.now());
@@ -236,7 +238,8 @@ export default function InboxScreen() {
     setPendingTranscriptEmail(null);
   }, [pendingTranscriptEmail, gmailEmails, transcript, showToast]);
 
-  if (isLoading && gmailEmails.length === 0) {
+  // Skip loading screen in demo mode - BatchTriageView will show demo data
+  if (!isDemoMode && isLoading && gmailEmails.length === 0) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#6366F1" />
