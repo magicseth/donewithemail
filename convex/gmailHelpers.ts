@@ -125,3 +125,49 @@ export function parseSender(from: string): { name: string; email: string } {
 
   return { name: senderName, email: senderEmail };
 }
+
+/**
+ * Attachment metadata extracted from Gmail payload.
+ */
+export type AttachmentInfo = {
+  filename: string;
+  mimeType: string;
+  size: number;
+  attachmentId: string;
+  contentId?: string;
+};
+
+/**
+ * Extract attachment metadata from Gmail payload.
+ * Returns list of attachments with their Gmail attachment IDs.
+ * Does NOT download the actual file data - that's done separately via Gmail API.
+ */
+export function extractAttachments(payload: any): AttachmentInfo[] {
+  const attachments: AttachmentInfo[] = [];
+
+  function processPayload(part: any) {
+    // Check if this part is an attachment
+    // Attachments have a filename and an attachmentId in the body
+    if (part.filename && part.body?.attachmentId) {
+      attachments.push({
+        filename: part.filename,
+        mimeType: part.mimeType || "application/octet-stream",
+        size: part.body.size || 0,
+        attachmentId: part.body.attachmentId,
+        contentId: part.headers
+          ? getHeader(part.headers, "Content-ID")?.replace(/^<|>$/g, "")
+          : undefined,
+      });
+    }
+
+    // Recursively process nested parts
+    if (part.parts) {
+      for (const nested of part.parts) {
+        processPayload(nested);
+      }
+    }
+  }
+
+  processPayload(payload);
+  return attachments;
+}

@@ -61,6 +61,21 @@ export default defineSchema({
   })
     .index("by_email", ["emailId"]),
 
+  // Email attachments stored separately with files in Convex storage
+  attachments: defineTable({
+    emailId: v.id("emails"),
+    userId: v.id("users"),
+    filename: piiField(), // Original filename (ENCRYPTED)
+    mimeType: v.string(), // e.g., "application/pdf", "image/png"
+    size: v.number(), // Size in bytes
+    storageId: v.optional(v.id("_storage")), // Reference to file in Convex storage
+    attachmentId: v.string(), // Gmail attachment ID for fetching
+    contentId: v.optional(v.string()), // For inline images (Content-ID header)
+    createdAt: v.number(),
+  })
+    .index("by_email", ["emailId"])
+    .index("by_user", ["userId"]),
+
   // AI-generated email summaries (separate table for cleaner data model)
   emailSummaries: defineTable({
     emailId: v.id("emails"),
