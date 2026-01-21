@@ -2,6 +2,7 @@
  * In-app logger that captures logs for display in settings.
  * Intercepts console.log/warn/error to capture all app logs.
  */
+import { useSyncExternalStore } from "react";
 
 export interface LogEntry {
   timestamp: number;
@@ -12,6 +13,18 @@ export interface LogEntry {
 const MAX_LOGS = 200;
 const logs: LogEntry[] = [];
 const listeners: Set<() => void> = new Set();
+
+// Snapshot for useSyncExternalStore - returns a stable reference when logs haven't changed
+let logsSnapshot: LogEntry[] = [];
+
+function updateSnapshot() {
+  logsSnapshot = [...logs];
+}
+
+function notifyListeners() {
+  updateSnapshot();
+  listeners.forEach(listener => listener());
+}
 
 // Store original console methods
 const originalConsole = {
@@ -111,19 +124,19 @@ function addLog(level: LogEntry["level"], message: string, alsoLogToConsole: boo
   notifyListeners();
 }
 
-function notifyListeners() {
-  listeners.forEach(listener => listener());
+// Hook for React components - uses useSyncExternalStore to avoid
+// "cannot update a component while rendering a different component" errors
+function getSnapshot(): LogEntry[] {
+  return logsSnapshot;
 }
 
-// Hook for React components
-import { useState, useEffect } from "react";
+function subscribe(onStoreChange: () => void): () => void {
+  listeners.add(onStoreChange);
+  return () => {
+    listeners.delete(onStoreChange);
+  };
+}
 
 export function useAppLogs() {
-  const [, forceUpdate] = useState(0);
-
-  useEffect(() => {
-    return appLogger.subscribe(() => forceUpdate(n => n + 1));
-  }, []);
-
-  return appLogger.getLogs();
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
