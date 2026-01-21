@@ -437,7 +437,13 @@ Example response if not combining:
       prompt,
     });
 
-    const result = JSON.parse(text);
+    // Strip markdown code blocks if present
+    let jsonText = text.trim();
+    if (jsonText.startsWith("```")) {
+      jsonText = jsonText.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+    }
+
+    const result = JSON.parse(jsonText);
 
     if (!result.shouldCombine) {
       console.log(`   ✓ No similar requests found: ${result.reason}`);
