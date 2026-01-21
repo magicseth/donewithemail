@@ -40,6 +40,8 @@ export default function AskScreen() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [deletingThreadId, setDeletingThreadId] = useState<string | null>(null);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [streamingTranscript, setStreamingTranscript] = useState("");
+  const [processingStages, setProcessingStages] = useState<string[]>([]);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
 
@@ -92,6 +94,18 @@ export default function AskScreen() {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
+    setProcessingStages([]);
+
+    // Simulate processing stages for visual feedback
+    const stagesTimer = setTimeout(() => {
+      setProcessingStages(["Searching emails..."]);
+      setTimeout(() => {
+        setProcessingStages((prev) => [...prev, "Analyzing content..."]);
+        setTimeout(() => {
+          setProcessingStages((prev) => [...prev, "Generating response..."]);
+        }, 800);
+      }, 800);
+    }, 300);
 
     try {
       let response: string;
@@ -112,6 +126,8 @@ export default function AskScreen() {
         response = result.response;
       }
 
+      clearTimeout(stagesTimer);
+
       // Add assistant message
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -120,6 +136,7 @@ export default function AskScreen() {
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
+      clearTimeout(stagesTimer);
       console.error("Failed to send message:", err);
       // Add error message
       const errorMessage: Message = {
@@ -130,6 +147,7 @@ export default function AskScreen() {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      setProcessingStages([]);
     }
   }, [input, isLoading, threadId, startChat, continueChat]);
 
@@ -143,6 +161,12 @@ export default function AskScreen() {
     // Auto-fill the input with voice transcript
     setInput(transcript);
     setIsRecordingVoice(false);
+    setStreamingTranscript("");
+  }, []);
+
+  const handleStreamingTranscript = useCallback((transcript: string) => {
+    // Update streaming transcript in real-time
+    setStreamingTranscript(transcript);
   }, []);
 
   const handleVoiceError = useCallback((error: string) => {
@@ -152,6 +176,7 @@ export default function AskScreen() {
 
   const handleVoiceRecordingStart = useCallback(() => {
     setIsRecordingVoice(true);
+    setStreamingTranscript("");
   }, []);
 
   const handleVoiceRecordingEnd = useCallback(() => {
@@ -389,11 +414,32 @@ export default function AskScreen() {
         />
       )}
 
-      {/* Loading indicator */}
+      {/* Loading indicator with processing stages */}
       {isLoading && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color="#6366F1" />
-          <Text style={styles.loadingText}>Searching your emails...</Text>
+          <View style={styles.loadingTextContainer}>
+            {processingStages.length === 0 ? (
+              <Text style={styles.loadingText}>Processing your question...</Text>
+            ) : (
+              processingStages.map((stage, index) => (
+                <View key={index} style={styles.stageRow}>
+                  <Text style={styles.stageCheckmark}>✓</Text>
+                  <Text style={[styles.stageText, index === processingStages.length - 1 && styles.stageTextActive]}>
+                    {stage}
+                  </Text>
+                </View>
+              ))
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* Real-time transcript display */}
+      {isRecordingVoice && streamingTranscript && (
+        <View style={styles.transcriptContainer}>
+          <Text style={styles.transcriptLabel}>Listening...</Text>
+          <Text style={styles.transcriptText}>{streamingTranscript}</Text>
         </View>
       )}
 
@@ -413,6 +459,7 @@ export default function AskScreen() {
         />
         <VoiceRecordButton
           onTranscript={handleVoiceTranscript}
+          onStreamingTranscript={handleStreamingTranscript}
           onError={handleVoiceError}
           onRecordingStart={handleVoiceRecordingStart}
           onRecordingEnd={handleVoiceRecordingEnd}
@@ -605,14 +652,59 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "center",
     paddingVertical: 12,
-    gap: 8,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  loadingTextContainer: {
+    flex: 1,
+    alignItems: "flex-start",
   },
   loadingText: {
     fontSize: 14,
     color: "#666",
+  },
+  stageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 4,
+  },
+  stageCheckmark: {
+    fontSize: 14,
+    color: "#10B981",
+  },
+  stageText: {
+    fontSize: 14,
+    color: "#999",
+  },
+  stageTextActive: {
+    color: "#6366F1",
+    fontWeight: "500",
+  },
+  transcriptContainer: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    padding: 12,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: "#DC2626",
+  },
+  transcriptLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#DC2626",
+    marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  transcriptText: {
+    fontSize: 15,
+    color: "#1a1a1a",
+    lineHeight: 22,
   },
   inputContainer: {
     flexDirection: "row",

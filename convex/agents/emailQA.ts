@@ -120,6 +120,51 @@ const getEmailDetailsTool = createTool({
   },
 });
 
+// Tool to create calendar events
+const createCalendarEventTool = createTool({
+  description:
+    "Create a calendar event from email information. Use this when the user explicitly asks to add an event to their calendar or schedule something.",
+  args: z.object({
+    title: z.string().describe("Event title/summary"),
+    startTime: z.string().describe("Start time in ISO format or relative format like 'tomorrow 2pm' or 'next Tuesday 10am'"),
+    endTime: z.string().optional().describe("End time in ISO format or relative format. Defaults to 1 hour after start."),
+    location: z.string().optional().describe("Event location if available"),
+    description: z.string().optional().describe("Event description or notes"),
+    emailId: z.string().optional().describe("Associated email ID for attribution"),
+  }),
+  handler: async (ctx: EmailToolCtx, args): Promise<{ success: boolean; eventLink?: string; error?: string }> => {
+    try {
+      console.log(`[CreateCalendarEventTool] Creating event: "${args.title}" at ${args.startTime}`);
+
+      // Get user's timezone (default to America/Los_Angeles if not available)
+      const timezone = "America/Los_Angeles"; // TODO: Get from user settings
+
+      const result = await ctx.runAction(internal.calendar.addToCalendar, {
+        title: args.title,
+        startTime: args.startTime,
+        endTime: args.endTime,
+        location: args.location,
+        description: args.description,
+        timezone,
+        emailId: args.emailId as Id<"emails"> | undefined,
+      });
+
+      console.log(`[CreateCalendarEventTool] Event created: ${result.htmlLink}`);
+
+      return {
+        success: true,
+        eventLink: result.htmlLink,
+      };
+    } catch (error) {
+      console.error(`[CreateCalendarEventTool] Error:`, error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to create calendar event",
+      };
+    }
+  },
+});
+
 /**
  * Email Q&A Agent
  *
@@ -136,6 +181,7 @@ When answering questions:
 2. If needed, use getEmailDetails to read the full content of specific emails
 3. Answer the question accurately based on the email content
 4. If you can't find relevant emails, say so clearly
+5. If the user asks to add something to their calendar or schedule an event, use the createCalendarEvent tool
 
 Guidelines:
 - Be concise and accurate
@@ -143,6 +189,7 @@ Guidelines:
 - If the user asks about reservations, appointments, or events, look for dates, times, and confirmation details
 - If you find multiple relevant emails, summarize the key information from each
 - IMPORTANT: When citing an email, use a markdown link with the format [Email Subject](email:EMAIL_ID) where EMAIL_ID is the emailId from the search results. This allows users to tap and view the original email.
+- When creating calendar events, extract all relevant details (time, location, description) from the email
 
 Example of citing an email:
 - "Based on your [iFLY Portland Order Confirmation](email:abc123xyz), your reservation is for..."
@@ -152,10 +199,13 @@ Example questions you can help with:
 - "When is my ifly reservation?"
 - "What's the confirmation number for my hotel booking?"
 - "Do I have any upcoming appointments?"
-- "What was the price in that Amazon receipt?"`,
+- "What was the price in that Amazon receipt?"
+- "Add my dentist appointment to my calendar"
+- "Schedule the team meeting from that email"`,
 
   tools: {
     searchEmails: searchEmailsTool,
     getEmailDetails: getEmailDetailsTool,
+    createCalendarEvent: createCalendarEventTool,
   },
 });
