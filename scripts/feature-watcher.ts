@@ -55,6 +55,7 @@ const WORKTREE_BASE = path.join(os.tmpdir(), "tokmail-features");
 // Get Convex deployment from environment or .env.local
 let CONVEX_DEPLOYMENT = process.env.CONVEX_DEPLOYMENT;
 let ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+let EXPO_PUBLIC_CONVEX_URL = process.env.EXPO_PUBLIC_CONVEX_URL;
 
 const envPath = path.join(__dirname, "..", ".env.local");
 if (fs.existsSync(envPath)) {
@@ -73,10 +74,20 @@ if (fs.existsSync(envPath)) {
       ANTHROPIC_API_KEY = match[1].trim();
     }
   }
+
+  if (!EXPO_PUBLIC_CONVEX_URL) {
+    const match = envContent.match(/EXPO_PUBLIC_CONVEX_URL=([^\s#]+)/);
+    if (match) {
+      EXPO_PUBLIC_CONVEX_URL = match[1].trim();
+    }
+  }
 }
 
 if (!CONVEX_DEPLOYMENT) {
   console.error("Warning: CONVEX_DEPLOYMENT not found. Convex deploy may prompt interactively.");
+}
+if (!EXPO_PUBLIC_CONVEX_URL) {
+  console.error("Warning: EXPO_PUBLIC_CONVEX_URL not found. Convex deploy may fail.");
 }
 if (!ANTHROPIC_API_KEY) {
   console.error("Warning: ANTHROPIC_API_KEY not found. Claude Code may not work.");
@@ -89,6 +100,7 @@ const anthropic = createAnthropic();
 console.log("🔄 Feature Request Watcher starting...");
 console.log(`   Convex URL: ${convexUrl}`);
 console.log(`   Convex Deployment: ${CONVEX_DEPLOYMENT || "(not set)"}`);
+console.log(`   Expo Public Convex URL: ${EXPO_PUBLIC_CONVEX_URL || "(not set)"}`);
 console.log(`   Anthropic API Key: ${ANTHROPIC_API_KEY ? "✓ found" : "(not set)"}`);
 console.log(`   Repo: ${REPO_URL}`);
 console.log(`   Worktree base: ${WORKTREE_BASE}`);
@@ -161,7 +173,7 @@ async function processFeatureRequest(request: {
 "${request.transcript}"
 
 After implementing:
-1. Run \`npx convex dev --once --typecheck=disable\` to deploy Convex changes
+1. Run \`npx convex dev --once\` to deploy Convex changes
 2. Run \`npx tsc --noEmit\` to check for TypeScript errors
 3. Fix any TypeScript errors you find
 4. Commit your changes with a descriptive message
@@ -181,12 +193,13 @@ Important: Do not consider the task complete until convex dev and tsc both pass 
       // Check Convex
       let convexError: string | null = null;
       try {
-        execSync(`npx convex dev --once --typecheck=disable`, {
+        execSync(`npx convex dev --once`, {
           cwd: workDir,
           encoding: "utf-8",
           env: {
             ...process.env,
             CONVEX_DEPLOYMENT: CONVEX_DEPLOYMENT || "",
+            EXPO_PUBLIC_CONVEX_URL: EXPO_PUBLIC_CONVEX_URL || "",
           },
         });
         console.log(`   ✓ Convex deployment successful`);
@@ -240,7 +253,7 @@ Important: Do not consider the task complete until convex dev and tsc both pass 
 ${convexError ? `CONVEX DEPLOYMENT ERRORS:\n${convexError.slice(0, 2000)}\n\n` : ""}${tscError ? `TYPESCRIPT ERRORS:\n${tscError.slice(0, 2000)}` : ""}
 
 Please fix these errors. After fixing:
-1. Run \`npx convex dev --once --typecheck=disable\` to verify Convex works
+1. Run \`npx convex dev --once\` to verify Convex works
 2. Run \`npx tsc --noEmit\` to verify TypeScript compiles
 3. Commit your fixes
 
@@ -313,6 +326,7 @@ Do not consider the task complete until both commands pass without errors.`;
       env: {
         ...process.env,
         CONVEX_DEPLOYMENT: CONVEX_DEPLOYMENT || "",
+        EXPO_PUBLIC_CONVEX_URL: EXPO_PUBLIC_CONVEX_URL || "",
       },
     });
 
