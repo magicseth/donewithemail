@@ -189,7 +189,7 @@ export function PullToRevealHeader({
           </View>
 
           {/* Quick reply buttons */}
-          {expandedEmail.quickReplies && expandedEmail.quickReplies.length > 0 && (
+          {expandedEmail.quickReplies && Array.isArray(expandedEmail.quickReplies) && expandedEmail.quickReplies.length > 0 && (
             <QuickReplyButtons
               replies={expandedEmail.quickReplies}
               onSelectReply={onQuickReply}

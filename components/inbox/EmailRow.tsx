@@ -85,7 +85,7 @@ export const EmailRow = React.memo(function EmailRow({
   }, [item._id]);
 
   // Determine if this is a compact row (no quick replies and no calendar)
-  const hasQuickReplies = item.quickReplies && item.quickReplies.length > 0;
+  const hasQuickReplies = item.quickReplies && Array.isArray(item.quickReplies) && item.quickReplies.length > 0;
   const hasCalendar = !!item.calendarEvent;
   const isCompact = !hasQuickReplies && !hasCalendar;
 
@@ -200,7 +200,7 @@ export const EmailRow = React.memo(function EmailRow({
         )}
 
           {/* Quick reply chips - only render if there are quick replies */}
-        {item.quickReplies && item.quickReplies.length > 0 && (
+        {item.quickReplies && Array.isArray(item.quickReplies) && item.quickReplies.length > 0 && (
           <View style={styles.quickReplyRow}>
             {item.quickReplies.slice(0, 3).map((reply, idx) => (
               <TouchableOpacity
