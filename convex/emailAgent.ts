@@ -6,6 +6,7 @@ import { internal } from "./_generated/api";
 import { emailQAAgent } from "./agents/emailQA";
 import { Doc } from "./_generated/dataModel";
 import { stepCountIs } from "@convex-dev/agent";
+import { costs } from "./costs";
 
 // Helper to get authenticated user in actions
 async function getAuthenticatedUser(ctx: ActionCtx): Promise<Doc<"users">> {
@@ -56,6 +57,29 @@ export const startChat = action({
       console.log(`[EmailAgent] Tool calls:`, result.toolCalls?.length ?? 0);
       console.log(`[EmailAgent] Tool results:`, result.toolResults?.length ?? 0);
 
+      // Track AI cost
+      try {
+        const usage = result.usage;
+        if (usage) {
+          const inputTokens = usage.inputTokens ?? 0;
+          const outputTokens = usage.outputTokens ?? 0;
+          await costs.addAICost(ctx, {
+            messageId: `agent-chat-${threadId}-${Date.now()}`,
+            userId: user._id,
+            threadId: threadId,
+            usage: {
+              promptTokens: inputTokens,
+              completionTokens: outputTokens,
+              totalTokens: inputTokens + outputTokens,
+            },
+            modelId: "claude-sonnet-4-20250514",
+            providerId: "anthropic",
+          });
+        }
+      } catch (e) {
+        console.error("[EmailAgent] Failed to track cost:", e);
+      }
+
       // Return tool results for frontend to show visual feedback
       return {
         threadId,
@@ -85,6 +109,29 @@ export const continueChat = action({
       { threadId: args.threadId, userId: user._id },
       { prompt: args.message, stopWhen: stepCountIs(5) } as any
     );
+
+    // Track AI cost
+    try {
+      const usage = result.usage;
+      if (usage) {
+        const inputTokens = usage.inputTokens ?? 0;
+        const outputTokens = usage.outputTokens ?? 0;
+        await costs.addAICost(ctx, {
+          messageId: `agent-chat-${args.threadId}-${Date.now()}`,
+          userId: user._id,
+          threadId: args.threadId,
+          usage: {
+            promptTokens: inputTokens,
+            completionTokens: outputTokens,
+            totalTokens: inputTokens + outputTokens,
+          },
+          modelId: "claude-sonnet-4-20250514",
+          providerId: "anthropic",
+        });
+      }
+    } catch (e) {
+      console.error("[EmailAgent] Failed to track cost:", e);
+    }
 
     return {
       response: result.text,
