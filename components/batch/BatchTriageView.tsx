@@ -76,6 +76,7 @@ export interface VoiceEmailData {
 
 interface BatchTriageViewProps {
   userEmail: string | undefined;
+  sessionStart?: number;
   onRefresh?: () => void;
   refreshing?: boolean;
   onQuickReply?: (emailId: string, reply: QuickReplyOption) => void;
@@ -95,6 +96,7 @@ interface BatchTriageViewProps {
 
 export function BatchTriageView({
   userEmail,
+  sessionStart,
   onRefresh,
   refreshing = false,
   onQuickReply,
@@ -123,7 +125,7 @@ export function BatchTriageView({
     processingCategory,
     acceptingIds,
     unsubscribingIds,
-  } = useBatchTriageData(userEmail);
+  } = useBatchTriageData(userEmail, sessionStart);
 
   // Only one category can be expanded at a time
   const [expandedCategory, setExpandedCategory] = useState<BatchCategory | null>(null);

@@ -314,7 +314,7 @@ export declare const api: {
     getMyBatchTriagePreview: FunctionReference<
       "query",
       "public",
-      { limit?: number },
+      { limit?: number; sessionStart?: number },
       any
     >;
     getMyEmail: FunctionReference<

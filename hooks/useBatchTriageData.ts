@@ -5,9 +5,9 @@ import { useMemo, useState, useCallback } from "react";
 import { useBatchTriage, BatchCategory, BatchEmailPreview, BatchTriageResult } from "./useBatchTriage";
 import { useDemoMode } from "../lib/demoModeContext";
 
-export function useBatchTriageData(userEmail: string | undefined): BatchTriageResult {
+export function useBatchTriageData(userEmail: string | undefined, sessionStart?: number): BatchTriageResult {
   const { isDemoMode, demoEmails, demoSummaries, triageEmail } = useDemoMode();
-  const realBatchTriage = useBatchTriage(userEmail);
+  const realBatchTriage = useBatchTriage(userEmail, sessionStart);
 
   // Local state for demo mode
   const [puntedEmails, setPuntedEmails] = useState<Set<string>>(new Set());

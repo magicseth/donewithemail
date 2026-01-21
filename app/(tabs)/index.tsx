@@ -284,6 +284,7 @@ export default function InboxScreen() {
 
         <BatchTriageView
           userEmail={userEmail}
+          sessionStart={sessionStart}
           onRefresh={handleRefresh}
           refreshing={refreshing}
           onQuickReply={handleBatchQuickReply}

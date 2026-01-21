@@ -75,13 +75,13 @@ export interface BatchTriageResult {
   unsubscribingIds: Set<string>;
 }
 
-export function useBatchTriage(userEmail: string | undefined): BatchTriageResult {
+export function useBatchTriage(userEmail: string | undefined, sessionStart?: number): BatchTriageResult {
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
 
-  // Query for batch triage preview
+  // Query for batch triage preview with session stability
   const batchPreview = useQuery(
     api.emails.getMyBatchTriagePreview,
-    isAuthenticated && !authLoading ? {} : "skip"
+    isAuthenticated && !authLoading ? { sessionStart } : "skip"
   );
 
   // Mutations and actions

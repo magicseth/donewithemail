@@ -1244,10 +1244,12 @@ interface BatchEmailPreview {
 
 /**
  * Get untriaged emails grouped by AI recommendation for batch triage
+ * Uses sessionStart to prevent UI refresh during active triage session
  */
 export const getMyBatchTriagePreview = authedQuery({
   args: {
     limit: v.optional(v.number()),
+    sessionStart: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<{
     done: BatchEmailPreview[];
@@ -1270,18 +1272,35 @@ export const getMyBatchTriagePreview = authedQuery({
       .take(limit);
 
     // Filter out outgoing emails
-    const untriagedEmails = rawUntriagedEmails.filter(
-      (e) => e.direction !== "outgoing"
-    );
+    // If sessionStart provided, only show emails received before session started
+    // This prevents new emails from appearing mid-triage
+    const untriagedEmails = rawUntriagedEmails.filter((e) => {
+      if (e.direction === "outgoing") return false;
+      if (args.sessionStart && e.receivedAt > args.sessionStart) return false;
+      return true;
+    });
 
     // Also get triaged emails marked as reply_needed (TODO) for Human Waiting section
-    const todoEmails = await ctx.db
+    // If sessionStart provided, include emails triaged after session start OR
+    // emails that already existed in TODO before session
+    const rawTodoEmails = await ctx.db
       .query("emails")
       .withIndex("by_user_reply_needed", (q) =>
         q.eq("userId", ctx.userId).eq("triageAction", "reply_needed")
       )
       .order("desc")
       .take(limit);
+
+    const todoEmails = args.sessionStart
+      ? rawTodoEmails.filter((e) => {
+          const sessionStart = args.sessionStart!;
+          // Include if triaged during this session (after sessionStart)
+          if (e.triagedAt && e.triagedAt >= sessionStart) return true;
+          // Include if already in TODO before session started
+          if (e.triagedAt && e.triagedAt < sessionStart) return true;
+          return false;
+        })
+      : rawTodoEmails;
 
     // Combine all emails for batch lookups
     const allEmails = [...untriagedEmails, ...todoEmails];
