@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { costs } from "./costs";
 
 // Initialize Anthropic provider
 const anthropic = createAnthropic({
@@ -26,6 +27,7 @@ const BATCH_SIZE = 10;
  */
 export const analyzeEmailsForMissedTodos = internalAction({
   args: {
+    userId: v.id("users"),
     emails: v.array(
       v.object({
         id: v.string(),
@@ -57,7 +59,7 @@ export const analyzeEmailsForMissedTodos = internalAction({
       }));
 
       try {
-        const { text } = await generateText({
+        const { text, usage } = await generateText({
           model: anthropic("claude-sonnet-4-20250514"),
           prompt: `Analyze these emails and determine which ones need a personal response.
 
@@ -118,6 +120,24 @@ Respond with only a valid JSON array, no markdown or explanation.`,
           needsResponse: r.needsResponse === true,
           reason: r.reason || "",
         }));
+
+        // Track AI usage cost per user
+        try {
+          await costs.addAICost(ctx, {
+            messageId: `missed-todos-batch-${i}`,
+            userId: args.userId,
+            threadId: `missed-todos-${Date.now()}`,
+            usage: {
+              promptTokens: usage?.inputTokens ?? 0,
+              completionTokens: usage?.outputTokens ?? 0,
+              totalTokens: usage?.totalTokens ?? 0,
+            },
+            modelId: "claude-sonnet-4-20250514",
+            providerId: "anthropic",
+          });
+        } catch (e) {
+          console.error("[MissedTodos] Failed to track AI cost:", e);
+        }
 
         results.push(...normalizedResults);
       } catch (error) {

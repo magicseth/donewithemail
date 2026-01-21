@@ -107,23 +107,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const loadAuth = async () => {
       try {
+        console.log("[Auth] loadAuth - attempting to read from storage, platform:", Platform.OS);
         const stored = await storage.getItem(AUTH_STORAGE_KEY);
-        console.log("[Auth] loadAuth - stored:", stored ? "found" : "not found");
+        console.log("[Auth] loadAuth - stored:", stored ? `found (${stored.length} bytes)` : "not found");
         if (stored) {
           const parsed: StoredAuth = JSON.parse(stored);
           console.log("[Auth] loadAuth - parsed:", {
             hasUser: !!parsed.user,
+            userEmail: parsed.user?.email,
             hasToken: !!parsed.accessToken,
+            tokenPrefix: parsed.accessToken?.substring(0, 20) + "...",
             hasRefresh: !!parsed.refreshToken,
             expiresAt: parsed.expiresAt ? new Date(parsed.expiresAt).toISOString() : null,
+            isExpired: parsed.expiresAt ? parsed.expiresAt < Date.now() : "no expiry",
           });
           setUser(parsed.user);
           setAccessToken(parsed.accessToken);
           setRefreshToken(parsed.refreshToken || null);
           setExpiresAt(parsed.expiresAt || null);
+        } else {
+          console.log("[Auth] loadAuth - no stored auth found, user needs to sign in");
         }
       } catch (e) {
-        console.error("Failed to load stored auth:", e);
+        console.error("[Auth] Failed to load stored auth:", e);
       }
       setIsLoading(false);
     };
@@ -159,12 +165,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Clear auth
   const clearAuth = useCallback(async () => {
+    // Log stack trace to understand what triggered the clear
+    console.log("[Auth] clearAuth called - clearing stored auth");
+    console.log("[Auth] clearAuth stack:", new Error().stack);
     await storage.removeItem(AUTH_STORAGE_KEY);
     if (Platform.OS === "web" && typeof window !== "undefined") {
       sessionStorage.clear();
     }
     setUser(null);
     setAccessToken(null);
+    setRefreshToken(null);
+    setExpiresAt(null);
   }, []);
 
   // Sign in using Expo WebBrowser
@@ -288,6 +299,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return null;
     } catch (e) {
       console.error("[Auth] Token refresh failed:", e);
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      const lowerMessage = errorMessage.toLowerCase();
 
       // Check if this is a connection error - if so, schedule retry instead of signing out
       if (isConnectionError(e)) {
@@ -297,17 +310,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Check if this is a transient OCC error - retry instead of signing out
-      const errorMessage = e instanceof Error ? e.message : String(e);
       if (errorMessage.includes("Data read or written in this mutation changed")) {
         console.log("[Auth] OCC error during refresh (transient), will retry when app becomes active");
         pendingRefreshRef.current = true;
         return accessToken; // Return existing token, don't clear auth
       }
 
-      // For other errors (invalid token, etc.), sign out
-      console.log("[Auth] Non-recoverable refresh error, signing out");
-      await clearAuth();
-      return null;
+      // Check if this is a transient server error - retry instead of signing out
+      // This catches 5xx errors, rate limits, Convex issues, etc.
+      const isTransientError =
+        lowerMessage.includes("500") ||
+        lowerMessage.includes("502") ||
+        lowerMessage.includes("503") ||
+        lowerMessage.includes("504") ||
+        lowerMessage.includes("429") ||
+        lowerMessage.includes("rate limit") ||
+        lowerMessage.includes("server error") ||
+        lowerMessage.includes("internal error") ||
+        lowerMessage.includes("temporarily") ||
+        lowerMessage.includes("try again") ||
+        lowerMessage.includes("overloaded");
+
+      if (isTransientError) {
+        console.log("[Auth] Transient server error during refresh, will retry when app becomes active");
+        pendingRefreshRef.current = true;
+        return accessToken; // Return existing token, don't clear auth
+      }
+
+      // Only sign out for definitive auth failures (invalid/expired refresh token)
+      const isDefinitiveAuthFailure =
+        lowerMessage.includes("invalid_grant") ||
+        lowerMessage.includes("invalid refresh token") ||
+        lowerMessage.includes("refresh token expired") ||
+        lowerMessage.includes("refresh token revoked") ||
+        lowerMessage.includes("unauthorized") ||
+        lowerMessage.includes("401");
+
+      if (isDefinitiveAuthFailure) {
+        console.log("[Auth] Definitive auth failure, signing out:", errorMessage);
+        await clearAuth();
+        return null;
+      }
+
+      // For unknown errors, don't sign out - schedule retry
+      console.log("[Auth] Unknown error during refresh, will retry when app becomes active:", errorMessage);
+      pendingRefreshRef.current = true;
+      return accessToken;
     } finally {
       setIsRefreshing(false);
     }

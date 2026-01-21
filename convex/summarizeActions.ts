@@ -1,10 +1,11 @@
 "use node";
 
 import { v } from "convex/values";
-import { action, internalAction } from "./_generated/server";
+import { action, internalAction, ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { costs } from "./costs";
 
 // Initialize Anthropic provider
 const anthropic = createAnthropic({
@@ -15,24 +16,47 @@ const anthropic = createAnthropic({
 const OPUS_MODEL = "claude-opus-4-5-20251101";
 const SONNET_MODEL = "claude-sonnet-4-20250514";
 
+// Usage stats type (aligned with neutral-cost API)
+interface UsageStats {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
 // Generate text with Opus, falling back to Sonnet on overload
-async function generateTextWithFallback(prompt: string): Promise<{ text: string; model: string }> {
+async function generateTextWithFallback(prompt: string): Promise<{ text: string; model: string; usage: UsageStats }> {
   try {
-    const { text } = await generateText({
+    const result = await generateText({
       model: anthropic(OPUS_MODEL),
       prompt,
     });
-    return { text, model: OPUS_MODEL };
+    return {
+      text: result.text,
+      model: OPUS_MODEL,
+      usage: {
+        promptTokens: result.usage?.inputTokens ?? 0,
+        completionTokens: result.usage?.outputTokens ?? 0,
+        totalTokens: result.usage?.totalTokens ?? 0,
+      },
+    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     // Check if it's an overload error
     if (errorMessage.includes("Overloaded") || errorMessage.includes("overloaded") || errorMessage.includes("529")) {
       console.log(`[Summarize] Opus overloaded, falling back to Sonnet`);
-      const { text } = await generateText({
+      const result = await generateText({
         model: anthropic(SONNET_MODEL),
         prompt,
       });
-      return { text, model: SONNET_MODEL };
+      return {
+        text: result.text,
+        model: SONNET_MODEL,
+        usage: {
+          promptTokens: result.usage?.inputTokens ?? 0,
+          completionTokens: result.usage?.outputTokens ?? 0,
+          totalTokens: result.usage?.totalTokens ?? 0,
+        },
+      };
     }
     // Re-throw other errors
     throw error;
@@ -186,7 +210,7 @@ ${bodyText}
     const now = new Date();
     const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
     const today = `${dayOfWeek}, ${now.toISOString().split("T")[0]}`; // e.g., "Saturday, 2025-01-18"
-    const { text } = await generateTextWithFallback(`Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
+    const { text, model, usage } = await generateTextWithFallback(`Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
 
 TODAY'S DATE: ${today}
 
@@ -306,6 +330,24 @@ Respond with only valid JSON, no markdown or explanation.`);
       deadline: sanitizedDeadline,
       deadlineDescription: sanitizedDeadlineDescription,
     });
+
+    // Track AI usage cost per user
+    try {
+      await costs.addAICost(ctx, {
+        messageId: args.emailId,
+        userId: email.userId,
+        threadId: email.threadId || args.emailId,
+        usage: {
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          totalTokens: usage.totalTokens,
+        },
+        modelId: model,
+        providerId: "anthropic",
+      });
+    } catch (e) {
+      console.error("[Summarize] Failed to track AI cost:", e);
+    }
 
     // Generate embedding for semantic search (async, don't block)
     ctx.scheduler.runAfter(0, internal.emailEmbeddings.generateEmbedding, {
@@ -436,7 +478,7 @@ ${bodyText}`.trim();
           const now = new Date();
           const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
           const today = `${dayOfWeek}, ${now.toISOString().split("T")[0]}`; // e.g., "Saturday, 2025-01-18"
-          const { text } = await generateTextWithFallback(`Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
+          const { text, model, usage } = await generateTextWithFallback(`Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
 
 TODAY'S DATE: ${today}
 
@@ -560,6 +602,24 @@ Respond with only valid JSON, no markdown or explanation.`);
             deadline: sanitizedDeadline,
             deadlineDescription: sanitizedDeadlineDescription,
           });
+
+          // Track AI usage cost per user
+          try {
+            await costs.addAICost(ctx, {
+              messageId: email._id,
+              userId: email.userId,
+              threadId: email.threadId || email._id,
+              usage: {
+                promptTokens: usage.promptTokens,
+                completionTokens: usage.completionTokens,
+                totalTokens: usage.totalTokens,
+              },
+              modelId: model,
+              providerId: "anthropic",
+            });
+          } catch (e) {
+            console.error("[Summarize] Failed to track AI cost:", e);
+          }
 
           // Save AI-suggested facts to contact's dossier
           if (result.suggestedFacts && result.suggestedFacts.length > 0 && email.from) {
@@ -763,7 +823,7 @@ Provide a JSON analysis of the sender's writing style when communicating with th
 Return ONLY valid JSON, no other text.`;
 
     try {
-      const { text } = await generateTextWithFallback(prompt);
+      const { text, model, usage } = await generateTextWithFallback(prompt);
 
       // Parse JSON from response
       const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -786,6 +846,24 @@ Return ONLY valid JSON, no other text.`;
           analyzedAt: Date.now(),
         },
       });
+
+      // Track AI usage cost per user
+      try {
+        await costs.addAICost(ctx, {
+          messageId: args.contactId,
+          userId: args.userId,
+          threadId: args.contactId,
+          usage: {
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+            totalTokens: usage.totalTokens,
+          },
+          modelId: model,
+          providerId: "anthropic",
+        });
+      } catch (e) {
+        console.error("[WritingStyle] Failed to track AI cost:", e);
+      }
 
       return { success: true };
     } catch (error) {

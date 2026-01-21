@@ -51,7 +51,7 @@ Gmail API → emailSync.ts → emails table → Real-time Convex queries → UI
 
 | File | Purpose |
 |------|---------|
-| `schema.ts` | Database tables: users, emails, emailSummaries, contacts, aiProcessingQueue |
+| `schema.ts` | Database tables: users, emails, emailBodies, emailSummaries, contacts, subscriptions, featureRequests |
 | `emailSync.ts` | Gmail API integration, token refresh, fetch/store emails |
 | `emailWorkflow.ts` | Orchestrated email processing: fetch → store → summarize → notify |
 | `summarizeActions.ts` | Claude AI analysis: summary, urgency, quick replies, calendar events |
@@ -60,16 +60,27 @@ Gmail API → emailSync.ts → emails table → Real-time Convex queries → UI
 | `notifications.ts` | Push notification registration and sending |
 | `crons.ts` | Background job: checks new emails every 1 minute |
 | `auth.ts` | WorkOS OAuth flow, token exchange |
+| `gmailAuth.ts` | Direct Gmail OAuth (separate from WorkOS) |
+| `subscriptions.ts` | Newsletter/subscription management and unsubscribe |
+| `voice.ts` | Deepgram API key for voice transcription |
+| `featureRequests.ts` | Voice-driven feature request tracking |
+| `agents/` | Convex Agent definitions for summarizer, autoResponder, emailQA |
+| `convex.config.ts` | Component registration: agent, migrations, pushNotifications, workpool, workflow |
 
 ### App Screens (expo-router)
 
 | Route | Screen |
 |-------|--------|
-| `(tabs)/index.tsx` | TODOs list - emails marked reply_needed |
-| `(tabs)/inbox.tsx` | Inbox with auto-triage on scroll |
+| `(tabs)/index.tsx` | Inbox with AI batch triage interface |
+| `(tabs)/todos.tsx` | TODOs list - emails marked reply_needed |
+| `(tabs)/ask.tsx` | AI chat interface for email questions |
 | `(tabs)/settings.tsx` | Sign in, preferences |
 | `email/[id].tsx` | Email detail with AI summary |
+| `person/[id].tsx` | Contact detail with facts/dossier |
+| `subscriptions.tsx` | Manage newsletter subscriptions |
+| `compose.tsx` | Compose new email |
 | `callback.tsx` | WorkOS OAuth callback handler |
+| `gmail-callback.tsx` | Direct Gmail OAuth callback |
 
 ### Email Triage States
 
@@ -78,24 +89,20 @@ Gmail API → emailSync.ts → emails table → Real-time Convex queries → UI
 - `triageAction: "reply_needed"` → Appears in TODOs
 - `triageAction: "delegated"` → Delegated
 
-### Triage Ball System
+### Demo Mode
 
-The inbox uses a ball-and-target triage UI. See detailed documentation at the top of `app/(tabs)/index.tsx`.
+The app has a demo mode that works without authentication, using generated sample data:
+- Enter via "Try Demo" button on sign-in screen
+- Uses `DemoModeProvider` context (`lib/demoModeContext.tsx`)
+- Generates fake contacts, emails, and summaries in `lib/demoMode.ts`
+- Hooks check `isDemoMode` to return demo data instead of querying Convex
 
-**Quick summary:**
-- Each email row has a ball at the top
-- Only the "active" row's ball moves with finger drag
-- Targets (Done, Reply, Mic, Unsub) are fixed at top of screen
-- Dragging ball to a target triggers that action
-- `lastTriggeredTarget` prevents cascade triggers when ball resets to center
+### Email Body Storage
 
-**Key state:**
-- `activeIndex` - which row is being triaged
-- `ballX` - computed from finger position
-- `lastTriggeredTarget` - prevents re-triggering same target
-- `isProcessing` - lock during handler execution
-
-**Adding a new target:** Add entry to `TARGETS` array, add handler case if needed.
+Email bodies are stored separately from email metadata to keep queries fast:
+- `emails` table: metadata only (subject, from, to, preview)
+- `emailBodies` table: full body content, HTML, raw payload
+- Joined on read via `emailBodies.by_email` index
 
 ## Key Patterns
 
@@ -137,13 +144,24 @@ Gesture.Pan()
   .failOffsetY([-15, 15])                  // Cancel if vertical
 ```
 
+### Convex Components
+This project uses several `@convex-dev` components configured in `convex.config.ts`:
+- `@convex-dev/agent` - AI agent framework for email Q&A
+- `@convex-dev/workflow` - Multi-step reliable workflows
+- `@convex-dev/workpool` - Job queue management
+- `@convex-dev/expo-push-notifications` - Push notification handling
+- `@convex-dev/migrations` - Database migrations
+
 ## Schema Indexes
 
 Important for query performance:
 - `emails.by_external_id` - Gmail message ID lookup
 - `emails.by_thread` - Thread grouping
-- `emails.by_user_untriaged` - Inbox query (userId + isTriaged)
+- `emails.by_user_untriaged` - Inbox query (userId + isTriaged + receivedAt)
+- `emails.by_user_reply_needed` - TODOs query (userId + triageAction + triagedAt)
 - `contacts.by_user_email` - Contact lookup
+- `emailBodies.by_email` - Join body to email
+- `emailSummaries.by_embedding` - Vector search for semantic email queries
 
 ## Authentication Flow
 
@@ -171,6 +189,7 @@ Important for query performance:
 - **Convex logs**: Check dashboard at https://dashboard.convex.dev
 - **Gesture handlers**: Use `runOnJS(console.log)(data)` (they run on UI thread)
 - **Triage logging**: Server logs `[Triage] Action: done | Subject: "..."` on each triage
+- **Demo mode logging**: Prefixed with `[DemoMode]` in console
 
 ## React Native Reanimated Gotchas
 
@@ -226,7 +245,12 @@ See `app/(tabs)/index.tsx` - `moduleEmails` for the pattern.
 
 ## Environment Variables
 
-Required in Convex dashboard or `.env.local`:
-- `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
-- `ANTHROPIC_API_KEY`
+Required in Convex dashboard:
+- `WORKOS_CLIENT_ID`, `WORKOS_API_KEY` - WorkOS authentication
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` - Gmail OAuth
+- `ANTHROPIC_API_KEY` - Claude AI for summarization
+- `DEEPGRAM_API_KEY` - Voice transcription
+- `OPENAI_API_KEY` - Optional, for embeddings
+
+Required in `.env.local`:
+- `EXPO_PUBLIC_CONVEX_URL` - Convex deployment URL
