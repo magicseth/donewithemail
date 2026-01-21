@@ -80,5 +80,9 @@
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"
   },
+  "optionalDependencies": {
+    "@convex-dev/encrypted-pii": "file:../encryptedComponent/convex-dev-encrypted-pii-0.1.0.tgz",
+    "@get-convex/self-static-hosting": "file:../self-static-hosting/get-convex-self-static-hosting-0.1.0.tgz"
+  },
   "private": true
 }
