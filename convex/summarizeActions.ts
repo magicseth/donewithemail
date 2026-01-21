@@ -166,6 +166,14 @@ interface SummarizeResult {
   deadline?: Deadline;
   // AI prediction: should user accept this calendar invite?
   shouldAcceptCalendar?: boolean;
+  // Meeting request detection with proposed time slots
+  meetingRequest?: {
+    isMeetingRequest: boolean;
+    proposedTimes?: Array<{
+      startTime: string;
+      endTime: string;
+    }>;
+  };
   // NEW facts about the sender discovered from this email
   suggestedFacts?: string[];
   // Filenames of important attachments that should be shown in inbox
@@ -272,7 +280,14 @@ FIELDS:
    - Spam calendar invites → likely decline
    - Events at inconvenient times or conflicting with work → likely decline
    Only include this field when calendarEvent is present.
-11. importantAttachments: If the email has attachments, identify which ones (if any) are important enough to show in the inbox preview. Array of EXACT filenames (as shown in the Attachments list). Important attachments are:
+11. meetingRequest: Detect if this email is asking the recipient to schedule a meeting and contains proposed time slots. Return {isMeetingRequest: true, proposedTimes: [{startTime, endTime}, ...]} if:
+   - Sender is asking recipient to meet (not just announcing a scheduled meeting)
+   - Email contains 2 or more specific time options/suggestions for the recipient to choose from
+   - Times should be in ISO 8601 format (e.g., "2025-01-20T14:00:00")
+   - Examples: "Are you free Tuesday 2pm or Wednesday 3pm?", "Could we meet Jan 20 at 10am or Jan 21 at 2pm?"
+   - NOT meeting requests: Single fixed meeting time, meetings already scheduled, calendar invites without options
+   If not a meeting request with multiple options, return {isMeetingRequest: false}.
+12. importantAttachments: If the email has attachments, identify which ones (if any) are important enough to show in the inbox preview. Array of EXACT filenames (as shown in the Attachments list). Important attachments are:
    - Documents that require review/approval (contracts, proposals, reports, invoices)
    - Files explicitly mentioned in the email body as needing action
    - Documents with deadlines or time-sensitive content
@@ -359,6 +374,7 @@ Respond with only valid JSON, no markdown or explanation.`);
       quickReplies: result.quickReplies || undefined,
       calendarEvent: sanitizedCalendarEvent,
       shouldAcceptCalendar: sanitizedCalendarEvent ? result.shouldAcceptCalendar : undefined,
+      meetingRequest: result.meetingRequest || undefined,
       deadline: sanitizedDeadline,
       deadlineDescription: sanitizedDeadlineDescription,
       importantAttachmentIds,
@@ -632,9 +648,10 @@ Respond with only valid JSON, no markdown or explanation.`);
             quickReplies: result.quickReplies || undefined,
             calendarEvent: sanitizedCalendarEvent,
             shouldAcceptCalendar: sanitizedCalendarEvent ? result.shouldAcceptCalendar : undefined,
+            meetingRequest: result.meetingRequest || undefined,
             deadline: sanitizedDeadline,
             deadlineDescription: sanitizedDeadlineDescription,
-          });
+          } as any);
 
           // Track AI usage cost per user
           try {

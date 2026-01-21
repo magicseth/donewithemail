@@ -83,6 +83,14 @@ export interface CalendarEventData {
   calendarEventLink?: string;
 }
 
+export interface MeetingRequestData {
+  isMeetingRequest: boolean;
+  proposedTimes?: Array<{
+    startTime: string;
+    endTime: string;
+  }>;
+}
+
 export interface EmailCardData {
   _id: string;
   subject: string;
@@ -94,6 +102,7 @@ export interface EmailCardData {
   urgencyReason?: string;
   suggestedReply?: string;
   calendarEvent?: CalendarEventData;
+  meetingRequest?: MeetingRequestData;
   fromName?: string; // Sender name as it appeared in this email
   fromContact?: {
     _id: string;
@@ -121,6 +130,19 @@ interface EmailCardProps {
   onContactPress?: (contactId?: string) => void;
   onUseReply?: () => void;
   onAddToCalendar?: (event: CalendarEventData) => void;
+  onSelectMeetingTime?: (startTime: string, endTime: string) => void;
+  meetingAvailability?: Array<{
+    startTime: string;
+    endTime: string;
+    isAvailable: boolean;
+    conflicts: Array<{
+      id: string;
+      title: string;
+      startTime: string;
+      endTime: string;
+      htmlLink: string;
+    }>;
+  }>;
   showFullContent?: boolean;
   isAddingToCalendar?: boolean;
 }
@@ -131,6 +153,8 @@ export function EmailCard({
   onContactPress,
   onUseReply,
   onAddToCalendar,
+  onSelectMeetingTime,
+  meetingAvailability,
   showFullContent = false,
   isAddingToCalendar = false,
 }: EmailCardProps) {
@@ -252,6 +276,63 @@ export function EmailCard({
               )}
             </TouchableOpacity>
           )}
+        </View>
+      )}
+
+      {/* Meeting Request with Proposed Times */}
+      {email.meetingRequest?.isMeetingRequest && email.meetingRequest.proposedTimes && showFullContent && (
+        <View style={styles.meetingRequestContainer}>
+          <View style={styles.meetingRequestHeader}>
+            <Text style={styles.meetingRequestIcon}>🗓️</Text>
+            <Text style={styles.meetingRequestLabel}>Meeting Request - Choose a Time</Text>
+          </View>
+          {email.meetingRequest.proposedTimes.map((time, index) => {
+            const availability = meetingAvailability?.find(
+              a => a.startTime === time.startTime && a.endTime === time.endTime
+            );
+            const isAvailable = availability?.isAvailable ?? true;
+            const conflicts = availability?.conflicts ?? [];
+
+            return (
+              <View key={index} style={styles.timeSlotContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.timeSlot,
+                    !isAvailable && styles.timeSlotConflict,
+                  ]}
+                  onPress={() => onSelectMeetingTime?.(time.startTime, time.endTime)}
+                  disabled={isAddingToCalendar}
+                >
+                  <View style={styles.timeSlotLeft}>
+                    <Text style={[
+                      styles.timeSlotText,
+                      !isAvailable && styles.timeSlotTextConflict,
+                    ]}>
+                      {formatEventTime(time.startTime, time.endTime)}
+                    </Text>
+                    {isAvailable && (
+                      <Text style={styles.availabilityBadge}>✓ Available</Text>
+                    )}
+                    {!isAvailable && conflicts.length > 0 && (
+                      <Text style={styles.conflictBadge}>
+                        ⚠️ {conflicts.length} conflict{conflicts.length > 1 ? 's' : ''}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.selectButton}>Select</Text>
+                </TouchableOpacity>
+                {!isAvailable && conflicts.length > 0 && (
+                  <View style={styles.conflictsList}>
+                    {conflicts.map((conflict, cidx) => (
+                      <Text key={cidx} style={styles.conflictText} numberOfLines={1}>
+                        • {conflict.title}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+            );
+          })}
         </View>
       )}
 
@@ -497,5 +578,82 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "600",
+  },
+  meetingRequestContainer: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+  },
+  meetingRequestHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  meetingRequestIcon: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  meetingRequestLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4338CA",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  timeSlotContainer: {
+    marginBottom: 8,
+  },
+  timeSlot: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  timeSlotConflict: {
+    backgroundColor: "#FEF2F2",
+    borderColor: "#FCA5A5",
+  },
+  timeSlotLeft: {
+    flex: 1,
+  },
+  timeSlotText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginBottom: 4,
+  },
+  timeSlotTextConflict: {
+    color: "#991B1B",
+  },
+  availabilityBadge: {
+    fontSize: 12,
+    color: "#10B981",
+    fontWeight: "500",
+  },
+  conflictBadge: {
+    fontSize: 12,
+    color: "#DC2626",
+    fontWeight: "500",
+  },
+  selectButton: {
+    fontSize: 14,
+    color: "#6366F1",
+    fontWeight: "600",
+  },
+  conflictsList: {
+    marginTop: 4,
+    marginLeft: 12,
+  },
+  conflictText: {
+    fontSize: 12,
+    color: "#991B1B",
+    marginTop: 2,
   },
 });
