@@ -1473,8 +1473,9 @@ export const batchTriageMyEmails = authedMutation({
           continue;
         }
 
-        // Skip if already triaged
-        if (email.isTriaged) {
+        // Allow re-triaging from reply_needed to done (e.g., marking TODO item as done)
+        // Skip if already triaged with the same action
+        if (email.isTriaged && email.triageAction === action) {
           continue;
         }
 
