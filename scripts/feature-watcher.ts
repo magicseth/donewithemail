@@ -48,7 +48,6 @@ if (!convexUrl) {
 }
 
 const client = new ConvexHttpClient(convexUrl);
-const anthropic = createAnthropic();
 const REPO_URL = "https://github.com/magicseth/donewithemail.git"; // Adjust to your repo
 const POLL_INTERVAL = 5000; // 5 seconds
 const WORKTREE_BASE = path.join(os.tmpdir(), "tokmail-features");
@@ -82,6 +81,10 @@ if (!CONVEX_DEPLOYMENT) {
 if (!ANTHROPIC_API_KEY) {
   console.error("Warning: ANTHROPIC_API_KEY not found. Claude Code may not work.");
 }
+
+// Set env var so AI SDK can find it, then create client
+process.env.ANTHROPIC_API_KEY = ANTHROPIC_API_KEY;
+const anthropic = createAnthropic();
 
 console.log("🔄 Feature Request Watcher starting...");
 console.log(`   Convex URL: ${convexUrl}`);
