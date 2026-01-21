@@ -442,6 +442,10 @@ export function BatchTriageView({
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("done")}
+          onMarkSenderDone={handleMarkSenderDone}
+          onToggleSenderFlag={handleToggleSenderFlag}
+          onUnsubscribe={handleUnsubscribe}
+          unsubscribingIds={unsubscribingIds}
           isExpanded={false}
           onToggleExpand={() => handleToggleExpand("done")}
         />
@@ -455,6 +459,10 @@ export function BatchTriageView({
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("lowConfidence")}
+          onMarkSenderDone={handleMarkSenderDone}
+          onToggleSenderFlag={handleToggleSenderFlag}
+          onUnsubscribe={handleUnsubscribe}
+          unsubscribingIds={unsubscribingIds}
           isExpanded={false}
           onToggleExpand={() => handleToggleExpand("lowConfidence")}
         />
@@ -468,6 +476,10 @@ export function BatchTriageView({
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("actionNeeded")}
+          onMarkSenderDone={handleMarkSenderDone}
+          onToggleSenderFlag={handleToggleSenderFlag}
+          onUnsubscribe={handleUnsubscribe}
+          unsubscribingIds={unsubscribingIds}
           isExpanded={false}
           onToggleExpand={() => handleToggleExpand("actionNeeded")}
         />
@@ -481,6 +493,10 @@ export function BatchTriageView({
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("humanWaiting")}
+          onMarkSenderDone={handleMarkSenderDone}
+          onToggleSenderFlag={handleToggleSenderFlag}
+          onUnsubscribe={handleUnsubscribe}
+          unsubscribingIds={unsubscribingIds}
           isExpanded={false}
           onToggleExpand={() => handleToggleExpand("humanWaiting")}
         />
@@ -494,6 +510,10 @@ export function BatchTriageView({
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("calendar")}
+          onMarkSenderDone={handleMarkSenderDone}
+          onToggleSenderFlag={handleToggleSenderFlag}
+          onUnsubscribe={handleUnsubscribe}
+          unsubscribingIds={unsubscribingIds}
           isExpanded={false}
           onToggleExpand={() => handleToggleExpand("calendar")}
         />
@@ -508,6 +528,10 @@ export function BatchTriageView({
             puntedEmails={puntedEmails}
             onPuntEmail={togglePuntEmail}
             onMarkAllDone={() => handleMarkCategoryDone("pending")}
+            onMarkSenderDone={handleMarkSenderDone}
+            onToggleSenderFlag={handleToggleSenderFlag}
+            onUnsubscribe={handleUnsubscribe}
+            unsubscribingIds={unsubscribingIds}
             isExpanded={false}
             onToggleExpand={() => handleToggleExpand("pending")}
           />
