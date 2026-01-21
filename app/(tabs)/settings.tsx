@@ -11,6 +11,8 @@ import {
   Platform,
   Share,
   Modal,
+  Animated,
+  Dimensions,
 } from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/authContext";
@@ -478,24 +480,115 @@ export default function SettingsScreen() {
     }
   };
 
+  // Animation values for sign-in page
+  const [fadeAnim] = useState(new Animated.Value(0));
+  const [slideAnim] = useState(new Animated.Value(50));
+  const [scaleAnim] = useState(new Animated.Value(0.9));
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 50,
+          friction: 7,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isAuthenticated]);
+
   if (!isAuthenticated) {
+    const { width, height } = Dimensions.get("window");
+
     return (
       <View style={styles.signInContainer}>
-        <Text style={styles.signInTitle}>Welcome to donewith</Text>
-        <Text style={styles.signInSubtitle}>
-          Sign in to connect your email and start triaging
-        </Text>
-        <TouchableOpacity
-          style={styles.signInButton}
-          onPress={signIn}
-          disabled={isLoading}
+        {/* Gradient Background Effect */}
+        <View style={styles.gradientBackground}>
+          <View style={[styles.gradientCircle, styles.gradientCircle1]} />
+          <View style={[styles.gradientCircle, styles.gradientCircle2]} />
+          <View style={[styles.gradientCircle, styles.gradientCircle3]} />
+        </View>
+
+        <Animated.View
+          style={[
+            styles.signInContent,
+            {
+              opacity: fadeAnim,
+              transform: [
+                { translateY: slideAnim },
+                { scale: scaleAnim },
+              ],
+            },
+          ]}
         >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.signInButtonText}>Sign in with Google</Text>
-          )}
-        </TouchableOpacity>
+          {/* App Icon */}
+          <View style={styles.appIcon}>
+            <Text style={styles.appIconText}>✓</Text>
+          </View>
+
+          {/* Title */}
+          <Text style={styles.signInTitle}>Welcome to donewith</Text>
+
+          {/* Subtitle */}
+          <Text style={styles.signInSubtitle}>
+            AI-powered email triage that helps you focus on what matters
+          </Text>
+
+          {/* Features List */}
+          <View style={styles.featuresList}>
+            <View style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Text style={styles.featureIconText}>⚡</Text>
+              </View>
+              <Text style={styles.featureText}>Smart AI summarization</Text>
+            </View>
+            <View style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Text style={styles.featureIconText}>👆</Text>
+              </View>
+              <Text style={styles.featureText}>Swipe to triage</Text>
+            </View>
+            <View style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Text style={styles.featureIconText}>🔔</Text>
+              </View>
+              <Text style={styles.featureText}>Smart notifications</Text>
+            </View>
+          </View>
+
+          {/* Sign In Button */}
+          <TouchableOpacity
+            style={[styles.signInButton, isLoading && styles.signInButtonDisabled]}
+            onPress={signIn}
+            disabled={isLoading}
+            activeOpacity={0.8}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Text style={styles.googleIcon}>G</Text>
+                <Text style={styles.signInButtonText}>Continue with Google</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Privacy Notice */}
+          <Text style={styles.privacyText}>
+            By signing in, you agree to our Terms of Service and Privacy Policy
+          </Text>
+        </Animated.View>
       </View>
     );
   }
@@ -1314,34 +1407,164 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 40,
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "#F8F9FE",
+    overflow: "hidden",
+  },
+  gradientBackground: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+    overflow: "hidden",
+  },
+  gradientCircle: {
+    position: "absolute",
+    borderRadius: 9999,
+    opacity: 0.15,
+  },
+  gradientCircle1: {
+    width: 400,
+    height: 400,
+    backgroundColor: "#6366F1",
+    top: -100,
+    right: -100,
+  },
+  gradientCircle2: {
+    width: 300,
+    height: 300,
+    backgroundColor: "#8B5CF6",
+    bottom: -80,
+    left: -80,
+  },
+  gradientCircle3: {
+    width: 250,
+    height: 250,
+    backgroundColor: "#EC4899",
+    top: "40%",
+    left: "50%",
+    marginLeft: -125,
+    marginTop: -125,
+  },
+  signInContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 40,
+    maxWidth: 480,
+    width: "100%",
+    zIndex: 1,
+  },
+  appIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
+    backgroundColor: "#6366F1",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 32,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  appIconText: {
+    fontSize: 40,
+    color: "#fff",
+    fontWeight: "700",
   },
   signInTitle: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: "700",
     color: "#1a1a1a",
     marginBottom: 12,
+    textAlign: "center",
   },
   signInSubtitle: {
-    fontSize: 16,
+    fontSize: 17,
     color: "#666",
     textAlign: "center",
-    marginBottom: 32,
-    lineHeight: 24,
+    marginBottom: 40,
+    lineHeight: 26,
+    maxWidth: 400,
+  },
+  featuresList: {
+    width: "100%",
+    marginBottom: 40,
+    gap: 16,
+  },
+  featureItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  featureIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "#F0F1FF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
+  },
+  featureIconText: {
+    fontSize: 20,
+  },
+  featureText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#1a1a1a",
+    flex: 1,
   },
   signInButton: {
+    flexDirection: "row",
     backgroundColor: "#6366F1",
     paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-    minWidth: 200,
+    paddingVertical: 18,
+    borderRadius: 16,
+    width: "100%",
     alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 4,
+    gap: 12,
+  },
+  signInButtonDisabled: {
+    opacity: 0.6,
+  },
+  googleIcon: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#fff",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    textAlign: "center",
+    lineHeight: 32,
+    overflow: "hidden",
   },
   signInButtonText: {
     color: "#fff",
     fontSize: 18,
     fontWeight: "600",
+  },
+  privacyText: {
+    fontSize: 13,
+    color: "#999",
+    textAlign: "center",
+    marginTop: 24,
+    lineHeight: 20,
+    maxWidth: 320,
   },
   featureRequestsContainer: {
     padding: 16,
