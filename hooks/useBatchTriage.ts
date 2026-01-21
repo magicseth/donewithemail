@@ -62,6 +62,7 @@ export interface BatchTriageResult {
   // Actions
   togglePuntEmail: (emailId: string) => void;
   markCategoryDone: (category: BatchCategory) => Promise<{ triaged: number; errors: string[] }>;
+  markEmailDone: (emailId: string) => Promise<void>;
   acceptCalendar: (emailId: string) => Promise<void>;
   unsubscribe: (emailId: string) => Promise<void>;
   untriage: (emailId: string) => Promise<void>;
@@ -341,6 +342,16 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
     }
   }, [batchTriageMutation]);
 
+  // Mark a single email as done
+  const markEmailDone = useCallback(async (emailId: string) => {
+    await batchTriageMutation({
+      triageActions: [{
+        emailId: emailId as Id<"emails">,
+        action: "done",
+      }],
+    });
+  }, [batchTriageMutation]);
+
   // Untriage an email (undo triage action)
   const untriage = useCallback(async (emailId: string) => {
     await untriageMutation({ emailId: emailId as Id<"emails"> });
@@ -354,6 +365,7 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
     puntedEmails,
     togglePuntEmail,
     markCategoryDone,
+    markEmailDone,
     acceptCalendar,
     unsubscribe,
     untriage,

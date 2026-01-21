@@ -115,6 +115,7 @@ export function BatchTriageView({
     puntedEmails,
     togglePuntEmail,
     markCategoryDone,
+    markEmailDone,
     acceptCalendar,
     unsubscribe,
     untriage,
@@ -264,25 +265,13 @@ export function BatchTriageView({
 
   // Handle mark single email as done
   const handleMarkEmailDone = useCallback(async (emailId: string) => {
-    // Find the email to get subject for toast
-    const allEmails = [
-      ...categories.done,
-      ...categories.humanWaiting,
-      ...categories.actionNeeded,
-      ...categories.calendar,
-      ...categories.lowConfidence,
-      ...categories.pending,
-    ];
-    const email = allEmails.find(e => e._id === emailId);
-
     try {
-      await markCategoryDone(expandedCategory!); // This will triage all unpunted in category
-      // For single email, we'd need a separate mutation - for now this flags and uses category done
+      await markEmailDone(emailId);
       showToast("Marked as done", "success", emailId);
     } catch (err) {
       showToast("Failed to mark done", "error");
     }
-  }, [categories, expandedCategory, markCategoryDone, showToast]);
+  }, [markEmailDone, showToast]);
 
   // Handle mark all emails from a sender as done
   const handleMarkSenderDone = useCallback(async (senderEmail: string) => {

@@ -177,6 +177,18 @@ export function useBatchTriageData(userEmail: string | undefined): BatchTriageRe
     [isDemoMode]
   );
 
+  const markEmailDone = useCallback(
+    async (emailId: string) => {
+      if (!isDemoMode) return;
+
+      // Simulate API delay
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      triageEmail(emailId, "done");
+    },
+    [isDemoMode, triageEmail]
+  );
+
   const clearSenderCache = useCallback(() => {
     // No-op in demo mode
   }, []);
@@ -191,6 +203,7 @@ export function useBatchTriageData(userEmail: string | undefined): BatchTriageRe
       puntedEmails,
       togglePuntEmail,
       markCategoryDone,
+      markEmailDone,
       acceptCalendar,
       unsubscribe,
       untriage,
