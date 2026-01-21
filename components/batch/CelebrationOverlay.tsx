@@ -1,6 +1,6 @@
 /**
  * CelebrationOverlay - Shows a celebratory animation when emails are triaged.
- * Displays confetti-like particles and a success message.
+ * Displays confetti-like particles, animated background waves, and a success message.
  */
 import React, { useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, Dimensions } from "react-native";
@@ -13,12 +13,75 @@ import Animated, {
   withSequence,
   runOnJS,
   Easing,
+  withRepeat,
+  interpolate,
+  Extrapolation,
 } from "react-native-reanimated";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 // Confetti particle colors
 const COLORS = ["#10B981", "#6366F1", "#F59E0B", "#EC4899", "#3B82F6"];
+
+// Animated background wave ripple
+interface BackgroundWaveProps {
+  delay: number;
+  size: number;
+}
+
+function BackgroundWave({ delay, size }: BackgroundWaveProps) {
+  const scale = useSharedValue(0);
+  const opacity = useSharedValue(0.6);
+
+  useEffect(() => {
+    scale.value = withDelay(
+      delay,
+      withTiming(size, { duration: 1200, easing: Easing.out(Easing.cubic) })
+    );
+    opacity.value = withDelay(
+      delay,
+      withTiming(0, { duration: 1200, easing: Easing.out(Easing.quad) })
+    );
+  }, [delay, size, scale, opacity]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  return <Animated.View style={[styles.wave, animatedStyle]} />;
+}
+
+// Animated gradient background that pulses
+function AnimatedBackground() {
+  const pulseValue = useSharedValue(0);
+
+  useEffect(() => {
+    pulseValue.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 800, easing: Easing.inOut(Easing.quad) }),
+        withTiming(0, { duration: 800, easing: Easing.inOut(Easing.quad) })
+      ),
+      -1,
+      true
+    );
+  }, [pulseValue]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const backgroundColor = interpolate(
+      pulseValue.value,
+      [0, 1],
+      [0.85, 0.95],
+      Extrapolation.CLAMP
+    );
+
+    return {
+      opacity: backgroundColor,
+    };
+  });
+
+  return <Animated.View style={[styles.backgroundGradient, animatedStyle]} />;
+}
 
 // Individual confetti particle
 interface ParticleProps {
@@ -35,19 +98,23 @@ function Particle({ delay, startX, color }: ParticleProps) {
   const scale = useSharedValue(0);
 
   useEffect(() => {
-    // Animate particle falling
+    // Animate particle falling with more dynamic movement
+    const randomBounce = Math.random() * 0.3 + 0.7;
     scale.value = withDelay(delay, withSpring(1, { damping: 8 }));
     translateY.value = withDelay(
       delay,
-      withTiming(SCREEN_HEIGHT * 0.4, { duration: 1500, easing: Easing.out(Easing.quad) })
+      withSequence(
+        withTiming(SCREEN_HEIGHT * 0.3 * randomBounce, { duration: 1000, easing: Easing.out(Easing.quad) }),
+        withSpring(SCREEN_HEIGHT * 0.4, { damping: 10 })
+      )
     );
     translateX.value = withDelay(
       delay,
-      withTiming(startX + (Math.random() - 0.5) * 100, { duration: 1500 })
+      withTiming(startX + (Math.random() - 0.5) * 150, { duration: 1500, easing: Easing.inOut(Easing.quad) })
     );
     rotate.value = withDelay(
       delay,
-      withTiming(Math.random() * 720 - 360, { duration: 1500 })
+      withTiming(Math.random() * 1080 - 540, { duration: 1500 })
     );
     opacity.value = withDelay(delay + 800, withTiming(0, { duration: 700 }));
   }, [delay, startX, translateY, translateX, rotate, opacity, scale]);
@@ -124,15 +191,32 @@ export function CelebrationOverlay({ count, visible, onComplete }: CelebrationOv
   if (!visible) return null;
 
   // Generate confetti particles
-  const particles = Array.from({ length: 20 }, (_, i) => ({
+  const particles = Array.from({ length: 30 }, (_, i) => ({
     id: i,
-    delay: Math.random() * 300,
-    startX: (SCREEN_WIDTH / 20) * i - SCREEN_WIDTH * 0.1,
+    delay: Math.random() * 400,
+    startX: (SCREEN_WIDTH / 30) * i - SCREEN_WIDTH * 0.05,
     color: COLORS[i % COLORS.length],
+  }));
+
+  // Generate background waves
+  const waves = Array.from({ length: 3 }, (_, i) => ({
+    id: i,
+    delay: i * 200,
+    size: 2 + i * 0.5,
   }));
 
   return (
     <Animated.View style={[styles.overlay, overlayStyle]} pointerEvents="none">
+      {/* Animated gradient background */}
+      <AnimatedBackground />
+
+      {/* Background waves */}
+      <View style={styles.wavesContainer}>
+        {waves.map((w) => (
+          <BackgroundWave key={w.id} delay={w.delay} size={w.size} />
+        ))}
+      </View>
+
       {/* Confetti particles */}
       <View style={styles.particlesContainer}>
         {particles.map((p) => (
@@ -161,6 +245,25 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.9)",
     zIndex: 1000,
   },
+  backgroundGradient: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+  },
+  wavesContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  wave: {
+    position: "absolute",
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 3,
+    borderColor: "#10B981",
+    backgroundColor: "transparent",
+  },
   particlesContainer: {
     ...StyleSheet.absoluteFillObject,
     overflow: "hidden",
@@ -174,6 +277,7 @@ const styles = StyleSheet.create({
   },
   centerContent: {
     alignItems: "center",
+    zIndex: 10,
   },
   checkmarkCircle: {
     width: 80,
