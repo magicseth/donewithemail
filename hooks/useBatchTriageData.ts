@@ -16,6 +16,7 @@ export function useBatchTriageData(userEmail: string | undefined, sessionStart?:
   const [unsubscribingIds, setUnsubscribingIds] = useState<Set<string>>(new Set());
 
   // Convert demo emails to batch preview format
+  // Punted emails should appear in humanWaiting regardless of their original category
   const demoCategories = useMemo(() => {
     if (!isDemoMode) {
       return {
@@ -68,6 +69,12 @@ export function useBatchTriageData(userEmail: string | undefined, sessionStart?:
         isInTodo: false,
       };
 
+      // If email is punted, it goes to humanWaiting regardless of AI categorization
+      if (puntedEmails.has(email._id)) {
+        categories.humanWaiting.push(preview);
+        return;
+      }
+
       // Categorize based on AI summary
       if (!summary) {
         categories.pending.push(preview);
@@ -85,7 +92,7 @@ export function useBatchTriageData(userEmail: string | undefined, sessionStart?:
     });
 
     return categories;
-  }, [isDemoMode, demoEmails, demoSummaries]);
+  }, [isDemoMode, demoEmails, demoSummaries, puntedEmails]);
 
   const togglePuntEmail = useCallback((emailId: string) => {
     setPuntedEmails((prev) => {

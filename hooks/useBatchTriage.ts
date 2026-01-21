@@ -153,6 +153,7 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
   }, [getSenderKey]);
 
   // Categories data sorted by sender
+  // Punted emails should appear in humanWaiting regardless of their original category
   const categoriesData = useMemo(() => {
     if (!batchPreview) {
       return {
@@ -176,15 +177,67 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
     ];
     buildSenderCache(allEmails);
 
+    // Separate punted and unpunted emails from each category
+    const puntedSet = puntedEmails;
+
+    // Collect all punted emails (except those already in humanWaiting with isInTodo flag)
+    const puntedEmailsList: BatchEmailPreview[] = [];
+    const unpuntedDone: BatchEmailPreview[] = [];
+    const unpuntedActionNeeded: BatchEmailPreview[] = [];
+    const unpuntedCalendar: BatchEmailPreview[] = [];
+    const unpuntedLowConfidence: BatchEmailPreview[] = [];
+
+    // Filter done category
+    for (const email of batchPreview.done) {
+      if (puntedSet.has(email._id) && !email.isInTodo) {
+        puntedEmailsList.push(email);
+      } else {
+        unpuntedDone.push(email);
+      }
+    }
+
+    // Filter actionNeeded category
+    for (const email of batchPreview.actionNeeded) {
+      if (puntedSet.has(email._id) && !email.isInTodo) {
+        puntedEmailsList.push(email);
+      } else {
+        unpuntedActionNeeded.push(email);
+      }
+    }
+
+    // Filter calendar category
+    for (const email of batchPreview.calendar) {
+      if (puntedSet.has(email._id) && !email.isInTodo) {
+        puntedEmailsList.push(email);
+      } else {
+        unpuntedCalendar.push(email);
+      }
+    }
+
+    // Filter lowConfidence category
+    for (const email of batchPreview.lowConfidence) {
+      if (puntedSet.has(email._id) && !email.isInTodo) {
+        puntedEmailsList.push(email);
+      } else {
+        unpuntedLowConfidence.push(email);
+      }
+    }
+
+    // Combine humanWaiting: existing ones + all punted emails
+    const combinedHumanWaiting = [
+      ...batchPreview.humanWaiting,
+      ...puntedEmailsList,
+    ];
+
     return {
-      done: sortBySender(batchPreview.done),
-      humanWaiting: sortBySender(batchPreview.humanWaiting),
-      actionNeeded: sortBySender(batchPreview.actionNeeded),
-      calendar: sortBySender(batchPreview.calendar),
-      lowConfidence: sortBySender(batchPreview.lowConfidence),
+      done: sortBySender(unpuntedDone),
+      humanWaiting: sortBySender(combinedHumanWaiting),
+      actionNeeded: sortBySender(unpuntedActionNeeded),
+      calendar: sortBySender(unpuntedCalendar),
+      lowConfidence: sortBySender(unpuntedLowConfidence),
       pending: batchPreview.pending, // Don't sort pending - keep processing order
     };
-  }, [batchPreview, sortBySender, buildSenderCache]);
+  }, [batchPreview, sortBySender, buildSenderCache, puntedEmails]);
 
   // Toggle punt state for an email
   const togglePuntEmail = useCallback((emailId: string) => {
