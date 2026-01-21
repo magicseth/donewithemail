@@ -8,7 +8,7 @@
  */
 import { v } from "convex/values";
 import { action, internalAction, internalMutation, query } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { encryptedPii } from "./pii";
 
@@ -994,7 +994,7 @@ export const downloadAttachment = action({
     }
 
     // Get attachment metadata from database to verify it exists and get filename
-    const attachments = await ctx.runQuery(internal.gmailSync.getEmailAttachments, {
+    const attachments = await ctx.runQuery(api.gmailSync.getEmailAttachments, {
       emailId: args.emailId,
     });
 
