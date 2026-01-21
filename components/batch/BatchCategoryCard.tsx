@@ -9,6 +9,7 @@ import {
   Image,
   SectionList,
 } from "react-native";
+import { router } from "expo-router";
 import { BatchEmailRow, QuickReplyOption } from "./BatchEmailRow";
 import type { BatchEmailPreview, BatchCategory } from "../../hooks/useBatchTriage";
 import type { VoiceEmailData } from "./BatchTriageView";
@@ -41,6 +42,8 @@ interface SenderGroupHeaderProps {
   onMarkAllDone?: () => void;
   /** Toggle flag on all emails from this sender */
   onToggleFlagAll?: () => void;
+  /** Open the email when tapped (only if there's one email) */
+  onPress?: () => void;
 }
 
 function SenderGroupHeader({
@@ -54,14 +57,22 @@ function SenderGroupHeader({
   isUnsubscribing,
   onMarkAllDone,
   onToggleFlagAll,
+  onPress,
 }: SenderGroupHeaderProps) {
   const initials = getInitials(senderName || senderEmail.split("@")[0]);
   const allFlagged = flaggedCount === emailCount;
   // Only show bulk actions if there's more than 1 email
   const showBulkActions = emailCount > 1;
 
+  // If there's only one email and onPress is provided, make it tappable
+  const Container = emailCount === 1 && onPress ? TouchableOpacity : View;
+  const containerProps = emailCount === 1 && onPress ? {
+    onPress,
+    activeOpacity: 0.7,
+  } : {};
+
   return (
-    <View style={senderStyles.container}>
+    <Container style={senderStyles.container} {...containerProps}>
       {avatarUrl ? (
         <Image source={{ uri: avatarUrl }} style={senderStyles.avatar as any} />
       ) : (
@@ -114,7 +125,7 @@ function SenderGroupHeader({
           </TouchableOpacity>
         )}
       </View>
-    </View>
+    </Container>
   );
 }
 
@@ -492,6 +503,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                       isUnsubscribing={group.subscriptionEmailId ? unsubscribingIds?.has(group.subscriptionEmailId) : false}
                       onMarkAllDone={onMarkSenderDone ? () => onMarkSenderDone(group.senderEmail) : undefined}
                       onToggleFlagAll={onToggleSenderFlag ? () => onToggleSenderFlag(group.senderEmail) : undefined}
+                      onPress={group.emails.length === 1 ? () => router.push(`/email/${group.emails[0]._id}`) : undefined}
                     />
                     {group.emails.map((email, index) => {
                       const globalIndex = prevItemsCount + index;
@@ -568,6 +580,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                     isUnsubscribing={section.subscriptionEmailId ? unsubscribingIds?.has(section.subscriptionEmailId) : false}
                     onMarkAllDone={onMarkSenderDone ? () => onMarkSenderDone(section.senderEmail) : undefined}
                     onToggleFlagAll={onToggleSenderFlag ? () => onToggleSenderFlag(section.senderEmail) : undefined}
+                    onPress={section.emails.length === 1 ? () => router.push(`/email/${section.emails[0]._id}`) : undefined}
                   />
                 </View>
               )}
