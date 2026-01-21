@@ -856,7 +856,7 @@ export default function SettingsScreen() {
               <View style={styles.costItem}>
                 <Text style={styles.costLabel}>AI Summarization</Text>
                 <Text style={styles.costValue}>
-                  {myCosts.aiCosts?.totalRawCost != null ? `$${myCosts.aiCosts.totalRawCost.toFixed(4)}` : "$0.00"}
+                  {myCosts.aiCosts?.totalAmount != null ? `$${myCosts.aiCosts.totalAmount.toFixed(4)}` : "$0.00"}
                 </Text>
                 <Text style={styles.costCount}>
                   {myCosts.aiCosts?.count ?? 0} calls
@@ -866,7 +866,7 @@ export default function SettingsScreen() {
               <View style={styles.costItem}>
                 <Text style={styles.costLabel}>Embeddings</Text>
                 <Text style={styles.costValue}>
-                  {myCosts.toolCosts?.totalRawCost != null ? `$${myCosts.toolCosts.totalRawCost.toFixed(4)}` : "$0.00"}
+                  {myCosts.toolCosts?.totalAmount != null ? `$${myCosts.toolCosts.totalAmount.toFixed(4)}` : "$0.00"}
                 </Text>
                 <Text style={styles.costCount}>
                   {myCosts.toolCosts?.count ?? 0} calls
