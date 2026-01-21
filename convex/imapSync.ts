@@ -21,6 +21,7 @@ export const syncImapForUser = internalAction({
   },
   handler: async (ctx, args) => {
     const imapSimple = await import("imap-simple");
+    // @ts-ignore - mailparser types not available in Node.js action context
     const { simpleParser } = await import("mailparser");
 
     // Get user

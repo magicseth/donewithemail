@@ -149,29 +149,36 @@ export default function SettingsScreen() {
   // IMAP accounts
   const [imapAccounts, setImapAccounts] = useState<Array<{ email: string; host?: string; port?: number }>>([]);
   const [isLoadingImapAccounts, setIsLoadingImapAccounts] = useState(false);
+  const [hasLoadedImapAccounts, setHasLoadedImapAccounts] = useState(false);
   const listImapAccounts = useMutation(api.imapAuth.listImapAccounts);
   const removeImapAccount = useMutation(api.imapAuth.removeImapAccount);
 
   // Load IMAP accounts on mount
   useEffect(() => {
-    if (!isDemoMode && user) {
+    if (!isDemoMode && user && !hasLoadedImapAccounts) {
       setIsLoadingImapAccounts(true);
       listImapAccounts()
-        .then(setImapAccounts)
+        .then((accounts) => {
+          setImapAccounts(accounts);
+          setHasLoadedImapAccounts(true);
+        })
         .catch(console.error)
         .finally(() => setIsLoadingImapAccounts(false));
     }
-  }, [isDemoMode, user]);
+  }, [isDemoMode, user, hasLoadedImapAccounts]);
 
   const handleRemoveImap = async (email: string) => {
     const doRemove = async () => {
       try {
         await removeImapAccount({ email });
-        // Reload accounts
+        // Reload accounts by fetching again
+        setIsLoadingImapAccounts(true);
         const accounts = await listImapAccounts();
         setImapAccounts(accounts);
       } catch (error) {
         console.error("Remove IMAP error:", error);
+      } finally {
+        setIsLoadingImapAccounts(false);
       }
     };
 
