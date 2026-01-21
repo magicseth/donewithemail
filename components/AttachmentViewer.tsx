@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,8 +10,12 @@ import {
   Platform,
   ScrollView,
   Image,
+  Alert,
 } from "react-native";
 import { WebViewWrapper } from "./WebViewWrapper";
+import { Paths, File as ExpoFile } from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import * as Print from "expo-print";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -27,7 +31,7 @@ interface AttachmentViewerProps {
   mimeType?: string;
   isLoading: boolean;
   onClose: () => void;
-  onDownload: () => void;
+  onDownload?: () => void;
 }
 
 // Convert base64url to base64
@@ -45,6 +49,158 @@ export function AttachmentViewer({
   onDownload,
 }: AttachmentViewerProps) {
   const contentType = mimeType || attachment.mimeType;
+
+  // Handle share functionality
+  const handleShare = useCallback(async () => {
+    if (!data) return;
+
+    try {
+      const base64Data = base64UrlToBase64(data);
+
+      if (Platform.OS === "web") {
+        // Web: Use Web Share API if available
+        if (navigator.share) {
+          // Convert base64 to blob
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: contentType });
+          const file = new File([blob], attachment.filename, { type: contentType });
+
+          await navigator.share({
+            files: [file],
+            title: attachment.filename,
+          });
+        } else {
+          Alert.alert("Share not supported", "Sharing is not supported in this browser. Please use the download button instead.");
+        }
+      } else {
+        // Mobile: Save to file system and use expo-sharing
+        const file = new ExpoFile(Paths.cache, attachment.filename);
+
+        // Convert base64 to Uint8Array
+        const byteCharacters = atob(base64Data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+
+        // Write file
+        await file.write(byteArray);
+
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(file.uri, {
+            mimeType: contentType,
+            dialogTitle: `Share ${attachment.filename}`,
+          });
+        } else {
+          Alert.alert("Share not available", "Sharing is not available on this device.");
+        }
+      }
+    } catch (error) {
+      console.error("Share error:", error);
+      const message = error instanceof Error ? error.message : "Failed to share file";
+      Alert.alert("Share Error", message);
+    }
+  }, [data, contentType, attachment.filename]);
+
+  // Handle print functionality
+  const handlePrint = useCallback(async () => {
+    if (!data) return;
+
+    try {
+      const base64Data = base64UrlToBase64(data);
+
+      if (Platform.OS === "web") {
+        // Web: Use browser print for PDFs, open in new window for images
+        if (contentType.includes("pdf")) {
+          const pdfWindow = window.open("", "_blank");
+          if (pdfWindow) {
+            pdfWindow.document.write(`
+              <html>
+                <head><title>Print ${attachment.filename}</title></head>
+                <body style="margin:0">
+                  <embed src="data:${contentType};base64,${base64Data}"
+                         width="100%" height="100%" type="${contentType}" />
+                </body>
+              </html>
+            `);
+            pdfWindow.document.close();
+            setTimeout(() => {
+              pdfWindow.print();
+            }, 500);
+          }
+        } else if (contentType.startsWith("image/")) {
+          const printWindow = window.open("", "_blank");
+          if (printWindow) {
+            printWindow.document.write(`
+              <html>
+                <head>
+                  <title>Print ${attachment.filename}</title>
+                  <style>
+                    body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+                    img { max-width: 100%; height: auto; }
+                  </style>
+                </head>
+                <body>
+                  <img src="data:${contentType};base64,${base64Data}" onload="window.print()" />
+                </body>
+              </html>
+            `);
+            printWindow.document.close();
+          }
+        } else {
+          Alert.alert("Print not supported", "This file type cannot be printed directly.");
+        }
+      } else {
+        // Mobile: Use expo-print
+        if (contentType.includes("pdf")) {
+          // For PDFs, we can print directly
+          const file = new ExpoFile(Paths.cache, attachment.filename);
+
+          // Convert base64 to Uint8Array
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+
+          // Write file
+          await file.write(byteArray);
+          await Print.printAsync({ uri: file.uri });
+        } else if (contentType.startsWith("image/")) {
+          // For images, wrap in HTML for printing
+          const html = `
+            <html>
+              <head>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                  body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+                  img { max-width: 100%; height: auto; }
+                </style>
+              </head>
+              <body>
+                <img src="data:${contentType};base64,${base64Data}" />
+              </body>
+            </html>
+          `;
+          await Print.printAsync({ html });
+        } else {
+          Alert.alert("Print not supported", "This file type cannot be printed on mobile.");
+        }
+      }
+    } catch (error) {
+      console.error("Print error:", error);
+      const message = error instanceof Error ? error.message : "Failed to print file";
+      Alert.alert("Print Error", message);
+    }
+  }, [data, contentType, attachment.filename]);
 
   // Render content based on MIME type
   const renderContent = useMemo(() => {
@@ -156,25 +312,57 @@ export function AttachmentViewer({
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.headerButton} onPress={onClose}>
-            <Text style={styles.headerButtonText}>✕ Close</Text>
+            <Text style={styles.headerButtonText}>✕</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>
             {attachment.filename}
           </Text>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={onDownload}
-            disabled={isLoading || !data}
-          >
-            <Text
-              style={[
-                styles.headerButtonText,
-                (isLoading || !data) && styles.headerButtonDisabled,
-              ]}
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handlePrint}
+              disabled={isLoading || !data}
             >
-              ⬇️ Download
-            </Text>
-          </TouchableOpacity>
+              <Text
+                style={[
+                  styles.actionIcon,
+                  (isLoading || !data) && styles.headerButtonDisabled,
+                ]}
+              >
+                🖨️
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handleShare}
+              disabled={isLoading || !data}
+            >
+              <Text
+                style={[
+                  styles.actionIcon,
+                  (isLoading || !data) && styles.headerButtonDisabled,
+                ]}
+              >
+                📤
+              </Text>
+            </TouchableOpacity>
+            {onDownload && (
+              <TouchableOpacity
+                style={styles.iconButton}
+                onPress={onDownload}
+                disabled={isLoading || !data}
+              >
+                <Text
+                  style={[
+                    styles.actionIcon,
+                    (isLoading || !data) && styles.headerButtonDisabled,
+                  ]}
+                >
+                  ⬇️
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* Content */}
@@ -212,9 +400,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   headerButtonText: {
-    fontSize: 14,
+    fontSize: 20,
     fontWeight: "600",
     color: "#6366F1",
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  iconButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
+  actionIcon: {
+    fontSize: 20,
   },
   headerButtonDisabled: {
     opacity: 0.4,
