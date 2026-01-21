@@ -55,6 +55,12 @@ export default function SettingsScreen() {
   const [showFeatureConfirmModal, setShowFeatureConfirmModal] = useState(false);
   const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
   const [includeDebugLogs, setIncludeDebugLogs] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [selectedErrorRequest, setSelectedErrorRequest] = useState<{
+    transcript: string;
+    error: string;
+    claudeOutput?: string;
+  } | null>(null);
   const submitFeatureRequest = useMutation(api.featureRequests.submit);
   const cancelFeatureRequest = useMutation(api.featureRequests.cancel);
   const myFeatureRequests = useQuery(api.featureRequests.getMine);
@@ -417,6 +423,20 @@ export default function SettingsScreen() {
       );
     }
   }, [cancelFeatureRequest]);
+
+  const handleShowErrorDetails = useCallback((
+    transcript: string,
+    error: string,
+    claudeOutput?: string
+  ) => {
+    setSelectedErrorRequest({ transcript, error, claudeOutput });
+    setShowErrorModal(true);
+  }, []);
+
+  const handleCloseErrorModal = useCallback(() => {
+    setShowErrorModal(false);
+    setSelectedErrorRequest(null);
+  }, []);
 
   const handleSignOut = async () => {
     const doSignOut = async () => {
@@ -923,53 +943,69 @@ export default function SettingsScreen() {
               <View style={styles.divider} />
               <View style={styles.featureRequestsContainer}>
                 <Text style={styles.featureRequestsTitle}>Recent Requests</Text>
-                {myFeatureRequests.slice(0, 3).map((req) => (
-                  <View key={req._id} style={styles.featureRequestRow}>
-                    <View style={[
-                      styles.featureRequestStatus,
-                      req.status === "completed" && styles.featureRequestStatusCompleted,
-                      req.status === "processing" && styles.featureRequestStatusProcessing,
-                      req.status === "failed" && styles.featureRequestStatusFailed,
-                    ]} />
-                    <View style={styles.featureRequestContent}>
-                      <Text style={styles.featureRequestText} numberOfLines={2}>
-                        {req.transcript}
-                      </Text>
-                      {req.status === "processing" && req.progressMessage && (
-                        <Text style={styles.featureRequestProgress}>
-                          {req.progressMessage}
+                {myFeatureRequests.slice(0, 3).map((req) => {
+                  const isFailed = req.status === "failed";
+                  const RowWrapper = isFailed ? TouchableOpacity : View;
+
+                  return (
+                    <RowWrapper
+                      key={req._id}
+                      style={styles.featureRequestRow}
+                      {...(isFailed ? {
+                        onPress: () => handleShowErrorDetails(
+                          req.transcript,
+                          req.error || "Unknown error",
+                          req.claudeOutput
+                        ),
+                        activeOpacity: 0.7
+                      } : {})}
+                    >
+                      <View style={[
+                        styles.featureRequestStatus,
+                        req.status === "completed" && styles.featureRequestStatusCompleted,
+                        req.status === "processing" && styles.featureRequestStatusProcessing,
+                        req.status === "failed" && styles.featureRequestStatusFailed,
+                      ]} />
+                      <View style={styles.featureRequestContent}>
+                        <Text style={styles.featureRequestText} numberOfLines={2}>
+                          {req.transcript}
                         </Text>
-                      )}
-                      {req.status === "completed" && req.easDashboardUrl && (
-                        <Text style={styles.featureRequestReady}>
-                          Ready to test in voice-preview
-                        </Text>
-                      )}
-                      {req.status === "failed" && req.error && (
-                        <Text style={styles.featureRequestError} numberOfLines={1}>
-                          {req.error}
-                        </Text>
-                      )}
-                    </View>
-                    {(req.status === "pending" || req.status === "processing") ? (
-                      <TouchableOpacity
-                        style={styles.featureRequestCancelButton}
-                        onPress={() => handleCancelFeatureRequest(req._id)}
-                        disabled={cancellingRequestId === req._id}
-                      >
-                        {cancellingRequestId === req._id ? (
-                          <ActivityIndicator size="small" color="#EF4444" />
-                        ) : (
-                          <Text style={styles.featureRequestCancelText}>Cancel</Text>
+                        {req.status === "processing" && req.progressMessage && (
+                          <Text style={styles.featureRequestProgress}>
+                            {req.progressMessage}
+                          </Text>
                         )}
-                      </TouchableOpacity>
-                    ) : (
-                      <Text style={styles.featureRequestStatusText}>
-                        {req.status}
-                      </Text>
-                    )}
-                  </View>
-                ))}
+                        {req.status === "completed" && req.easDashboardUrl && (
+                          <Text style={styles.featureRequestReady}>
+                            Ready to test in voice-preview
+                          </Text>
+                        )}
+                        {req.status === "failed" && req.error && (
+                          <Text style={styles.featureRequestError} numberOfLines={1}>
+                            {req.error} • Tap for details
+                          </Text>
+                        )}
+                      </View>
+                      {(req.status === "pending" || req.status === "processing") ? (
+                        <TouchableOpacity
+                          style={styles.featureRequestCancelButton}
+                          onPress={() => handleCancelFeatureRequest(req._id)}
+                          disabled={cancellingRequestId === req._id}
+                        >
+                          {cancellingRequestId === req._id ? (
+                            <ActivityIndicator size="small" color="#EF4444" />
+                          ) : (
+                            <Text style={styles.featureRequestCancelText}>Cancel</Text>
+                          )}
+                        </TouchableOpacity>
+                      ) : (
+                        <Text style={styles.featureRequestStatusText}>
+                          {req.status}
+                        </Text>
+                      )}
+                    </RowWrapper>
+                  );
+                })}
               </View>
             </>
           )}
@@ -1023,6 +1059,48 @@ export default function SettingsScreen() {
                 <Text style={styles.modalButtonSubmitText}>Submit</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Error Details Modal */}
+      <Modal
+        visible={showErrorModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCloseErrorModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, styles.errorModalContent]}>
+            <Text style={styles.modalTitle}>Feature Request Failed</Text>
+
+            <View style={styles.errorSection}>
+              <Text style={styles.errorSectionTitle}>Request</Text>
+              <Text style={styles.errorSectionText}>"{selectedErrorRequest?.transcript}"</Text>
+            </View>
+
+            <View style={styles.errorSection}>
+              <Text style={styles.errorSectionTitle}>Error</Text>
+              <ScrollView style={styles.errorScrollView} nestedScrollEnabled>
+                <Text style={styles.errorText}>{selectedErrorRequest?.error}</Text>
+              </ScrollView>
+            </View>
+
+            {selectedErrorRequest?.claudeOutput && (
+              <View style={styles.errorSection}>
+                <Text style={styles.errorSectionTitle}>Claude Output</Text>
+                <ScrollView style={styles.errorScrollView} nestedScrollEnabled>
+                  <Text style={styles.claudeOutputText}>{selectedErrorRequest.claudeOutput}</Text>
+                </ScrollView>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16 }]}
+              onPress={handleCloseErrorModal}
+            >
+              <Text style={styles.modalButtonSubmitText}>Close</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1433,5 +1511,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#fff",
+  },
+  errorModalContent: {
+    maxHeight: "80%",
+  },
+  errorSection: {
+    marginBottom: 16,
+    width: "100%",
+  },
+  errorSectionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 8,
+    textTransform: "uppercase",
+  },
+  errorSectionText: {
+    fontSize: 14,
+    color: "#333",
+    fontStyle: "italic",
+  },
+  errorScrollView: {
+    maxHeight: 120,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  errorText: {
+    fontSize: 13,
+    color: "#EF4444",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    lineHeight: 18,
+  },
+  claudeOutputText: {
+    fontSize: 12,
+    color: "#374151",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    lineHeight: 16,
   },
 });
