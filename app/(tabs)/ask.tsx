@@ -17,12 +17,23 @@ import Markdown from "react-native-markdown-display";
 import { useRouter } from "expo-router";
 import { Id } from "../../convex/_generated/dataModel";
 import { VoiceRecordButton } from "../../components/VoiceRecordButton";
+import { useAuth } from "../../lib/authContext";
+
+interface CalendarEventInfo {
+  title: string;
+  startTime?: string;
+  endTime?: string;
+  location?: string;
+  description?: string;
+  emailId?: string;
+}
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   toolResults?: any[];
+  calendarEvent?: CalendarEventInfo;
 }
 
 interface ThreadInfo {
@@ -44,14 +55,17 @@ export default function AskScreen() {
   const [streamingTranscript, setStreamingTranscript] = useState("");
   const [processingStages, setProcessingStages] = useState<string[]>([]);
   const [relevantEmails, setRelevantEmails] = useState<Array<{ subject: string; from: string }>>([]);
+  const [isAddingToCalendar, setIsAddingToCalendar] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
+  const { user } = useAuth();
 
   const startChat = useAction(api.emailAgent.startChat);
   const continueChat = useAction(api.emailAgent.continueChat);
   const listThreads = useAction(api.chatHistory.listThreads);
   const deleteThread = useAction(api.chatHistory.deleteThread);
   const getThreadMessages = useAction(api.chatHistory.getThreadMessages);
+  const addToCalendar = useAction(api.calendar.addToCalendar);
 
   // Load history on mount
   useEffect(() => {
@@ -125,6 +139,7 @@ export default function AskScreen() {
       }
 
       // Process tool results to extract and display relevant emails
+      let calendarEvent: CalendarEventInfo | undefined;
       if (toolResults && toolResults.length > 0) {
         const emails: Array<{ subject: string; from: string }> = [];
         const stages: string[] = ["Searching emails..."];
@@ -149,6 +164,17 @@ export default function AskScreen() {
           // Detect other tool calls
           if (toolResult.toolName === "getEmailDetails") {
             stages.push("Analyzing email content...");
+            // Check if the email has calendar event data
+            if (toolResult.result?.calendarEvent) {
+              calendarEvent = {
+                title: toolResult.result.calendarEvent.title,
+                startTime: toolResult.result.calendarEvent.startTime,
+                endTime: toolResult.result.calendarEvent.endTime,
+                location: toolResult.result.calendarEvent.location,
+                description: toolResult.result.calendarEvent.description,
+                emailId: toolResult.args?.emailId,
+              };
+            }
           } else if (toolResult.toolName === "createCalendarEvent") {
             stages.push("Creating calendar event...");
           }
@@ -167,6 +193,7 @@ export default function AskScreen() {
         role: "assistant",
         content: response,
         toolResults,
+        calendarEvent,
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
@@ -216,6 +243,43 @@ export default function AskScreen() {
   const handleVoiceRecordingEnd = useCallback(() => {
     setIsRecordingVoice(false);
   }, []);
+
+  const handleAddToCalendar = useCallback(async (event: CalendarEventInfo) => {
+    if (!user?.email) {
+      Alert.alert("Error", "Not signed in");
+      return;
+    }
+
+    // Get client timezone
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
+
+    setIsAddingToCalendar(true);
+    try {
+      const result = await addToCalendar({
+        userEmail: user.email,
+        title: event.title,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        location: event.location,
+        description: event.description,
+        timezone,
+        emailId: event.emailId as Id<"emails"> | undefined,
+      });
+
+      Alert.alert("Success", "Event added to calendar!");
+
+      // Open the calendar link on web
+      if (Platform.OS === "web" && result.htmlLink) {
+        window.open(result.htmlLink, "_blank");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to add event";
+      Alert.alert("Error", message);
+      console.error("Failed to add to calendar:", err);
+    } finally {
+      setIsAddingToCalendar(false);
+    }
+  }, [user?.email, addToCalendar]);
 
   const handleResumeThread = useCallback(
     async (thread: ThreadInfo) => {
@@ -327,25 +391,60 @@ export default function AskScreen() {
     ({ item }: { item: Message }) => {
       const isUser = item.role === "user";
       return (
-        <View
-          style={[
-            styles.messageBubble,
-            isUser ? styles.userBubble : styles.assistantBubble,
-          ]}
-        >
-          {isUser ? (
-            <Text style={[styles.messageText, styles.userMessageText]}>
-              {item.content}
-            </Text>
-          ) : (
-            <Markdown style={markdownStyles} onLinkPress={handleLinkPress}>
-              {item.content}
-            </Markdown>
+        <View>
+          <View
+            style={[
+              styles.messageBubble,
+              isUser ? styles.userBubble : styles.assistantBubble,
+            ]}
+          >
+            {isUser ? (
+              <Text style={[styles.messageText, styles.userMessageText]}>
+                {item.content}
+              </Text>
+            ) : (
+              <Markdown style={markdownStyles} onLinkPress={handleLinkPress}>
+                {item.content}
+              </Markdown>
+            )}
+          </View>
+          {/* Show calendar event button if available */}
+          {!isUser && item.calendarEvent && (
+            <View style={styles.calendarEventContainer}>
+              <View style={styles.calendarEventInfo}>
+                <Text style={styles.calendarEventTitle}>📅 {item.calendarEvent.title}</Text>
+                {item.calendarEvent.startTime && (
+                  <Text style={styles.calendarEventTime}>
+                    {new Date(item.calendarEvent.startTime).toLocaleString(undefined, {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                )}
+                {item.calendarEvent.location && (
+                  <Text style={styles.calendarEventLocation}>📍 {item.calendarEvent.location}</Text>
+                )}
+              </View>
+              <TouchableOpacity
+                style={[styles.addToCalendarButton, isAddingToCalendar && styles.addToCalendarButtonDisabled]}
+                onPress={() => handleAddToCalendar(item.calendarEvent!)}
+                disabled={isAddingToCalendar}
+              >
+                {isAddingToCalendar ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.addToCalendarButtonText}>Add to Calendar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       );
     },
-    [markdownStyles, handleLinkPress]
+    [markdownStyles, handleLinkPress, handleAddToCalendar, isAddingToCalendar]
   );
 
   const exampleQuestions = [
@@ -849,5 +948,49 @@ const styles = StyleSheet.create({
   emailFrom: {
     fontSize: 11,
     color: "#666",
+  },
+  calendarEventContainer: {
+    marginTop: 8,
+    marginLeft: 0,
+    marginRight: "15%",
+    backgroundColor: "#F0F9FF",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#BAE6FD",
+  },
+  calendarEventInfo: {
+    marginBottom: 12,
+  },
+  calendarEventTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    marginBottom: 6,
+  },
+  calendarEventTime: {
+    fontSize: 14,
+    color: "#0284C7",
+    marginBottom: 4,
+    fontWeight: "500",
+  },
+  calendarEventLocation: {
+    fontSize: 13,
+    color: "#666",
+  },
+  addToCalendarButton: {
+    backgroundColor: "#0284C7",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  addToCalendarButtonDisabled: {
+    backgroundColor: "#BAE6FD",
+  },
+  addToCalendarButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });
