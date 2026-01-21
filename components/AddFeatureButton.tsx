@@ -26,6 +26,13 @@ export function AddFeatureButton() {
   const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
   const [includeDebugLogs, setIncludeDebugLogs] = useState(false);
 
+  // Toast state
+  const [toast, setToast] = useState<{ message: string } | null>(null);
+  const showToast = useCallback((message: string) => {
+    setToast({ message });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
   const submitFeatureRequest = useMutation(api.featureRequests.submit);
 
   const handleFeatureTranscript = useCallback((transcript: string) => {
@@ -54,8 +61,7 @@ export function AddFeatureButton() {
         transcript: pendingTranscript,
         debugLogs: debugLogsStr,
       });
-      const msg = `Feature request submitted!\n\n"${pendingTranscript}"`;
-      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Submitted", msg);
+      showToast(`Feature request submitted: "${pendingTranscript}"`);
       setFeatureTranscript(null);
       setPendingTranscript(null);
     } catch (e) {
@@ -167,6 +173,13 @@ export function AddFeatureButton() {
           </View>
         </View>
       </Modal>
+
+      {/* Toast notification */}
+      {toast && (
+        <View style={styles.toast}>
+          <Text style={styles.toastText}>{toast.message}</Text>
+        </View>
+      )}
     </>
   );
 }
@@ -309,5 +322,26 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "500",
+  },
+  toast: {
+    position: "absolute",
+    bottom: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: "#10B981",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  toastText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "500",
+    textAlign: "center",
   },
 });
