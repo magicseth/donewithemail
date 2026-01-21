@@ -1204,7 +1204,7 @@ export default function SettingsScreen() {
               <View style={styles.divider} />
               <View style={styles.featureRequestsContainer}>
                 <Text style={styles.featureRequestsTitle}>Recent Requests</Text>
-                {myFeatureRequests.slice(0, 3).map((req: any) => {
+                {myFeatureRequests.map((req: any) => {
                   const isFailed = req.status === "failed";
                   const RowWrapper = isFailed ? TouchableOpacity : View;
 
