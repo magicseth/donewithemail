@@ -1609,3 +1609,6 @@ export const untriagedMyEmail = authedMutation({
     return { success: true };
   },
 });
+
+// Re-export attachment functions from gmailSync
+export { getEmailAttachments, downloadAttachment } from "./gmailSync";

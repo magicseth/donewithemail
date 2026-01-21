@@ -223,7 +223,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
     <>
     <Animated.View
       layout={Layout.duration(200)}
-      exiting={Platform.OS !== "web" ? SlideOutLeft.duration(200) : undefined}
+      exiting={SlideOutLeft.duration(200)}
     >
     <Pressable
       style={({ pressed }) => [
