@@ -7,12 +7,14 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "build": "EXPO_PUBLIC_CONVEX_URL=${VITE_CONVEX_URL:-$EXPO_PUBLIC_CONVEX_URL} npx expo export --platform web",
     "prebuild": "expo prebuild",
     "prebuild:clean": "expo prebuild --clean",
     "prebuild:dev": "APP_VARIANT=development expo prebuild --platform ios --clean && open ios/*.xcworkspace",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "deploy:static": "npx @get-convex/self-static-hosting upload --build"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.15",
@@ -26,6 +28,7 @@
     "@deepgram/sdk": "^4.11.3",
     "@expo/cli": "^54.0.21",
     "@expo/metro-runtime": "~6.1.2",
+    "@get-convex/self-static-hosting": "file:../self-static-hosting/get-convex-self-static-hosting-0.1.0.tgz",
     "@react-native-community/masked-view": "^0.1.11",
     "@workos-inc/node": "^8.0.0",
     "ai": "^6.0.39",

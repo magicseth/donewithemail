@@ -32,12 +32,14 @@ import type * as gmailOAuth from "../gmailOAuth.js";
 import type * as gmailQueries from "../gmailQueries.js";
 import type * as gmailSend from "../gmailSend.js";
 import type * as gmailSync from "../gmailSync.js";
+import type * as http from "../http.js";
 import type * as migrations from "../migrations.js";
 import type * as missedTodos from "../missedTodos.js";
 import type * as missedTodosHelpers from "../missedTodosHelpers.js";
 import type * as missedTodosWorkflow from "../missedTodosWorkflow.js";
 import type * as notifications from "../notifications.js";
 import type * as reminders from "../reminders.js";
+import type * as staticHosting from "../staticHosting.js";
 import type * as subscriptions from "../subscriptions.js";
 import type * as subscriptionsHelpers from "../subscriptionsHelpers.js";
 import type * as summarize from "../summarize.js";
@@ -79,12 +81,14 @@ declare const fullApi: ApiFromModules<{
   gmailQueries: typeof gmailQueries;
   gmailSend: typeof gmailSend;
   gmailSync: typeof gmailSync;
+  http: typeof http;
   migrations: typeof migrations;
   missedTodos: typeof missedTodos;
   missedTodosHelpers: typeof missedTodosHelpers;
   missedTodosWorkflow: typeof missedTodosWorkflow;
   notifications: typeof notifications;
   reminders: typeof reminders;
+  staticHosting: typeof staticHosting;
   subscriptions: typeof subscriptions;
   subscriptionsHelpers: typeof subscriptionsHelpers;
   summarize: typeof summarize;
@@ -3739,6 +3743,71 @@ export declare const components: {
           pageStatus?: "SplitRecommended" | "SplitRequired" | null;
           splitCursor?: string | null;
         }
+      >;
+    };
+  };
+  selfStaticHosting: {
+    lib: {
+      gcOldAssets: FunctionReference<
+        "mutation",
+        "internal",
+        { currentDeploymentId: string },
+        Array<string>
+      >;
+      generateUploadUrl: FunctionReference<"mutation", "internal", {}, string>;
+      getByPath: FunctionReference<
+        "query",
+        "internal",
+        { path: string },
+        {
+          _creationTime: number;
+          _id: string;
+          contentType: string;
+          deploymentId: string;
+          path: string;
+          storageId: string;
+        } | null
+      >;
+      getCurrentDeployment: FunctionReference<
+        "query",
+        "internal",
+        {},
+        {
+          _creationTime: number;
+          _id: string;
+          currentDeploymentId: string;
+          deployedAt: number;
+        } | null
+      >;
+      listAssets: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          contentType: string;
+          deploymentId: string;
+          path: string;
+          storageId: string;
+        }>
+      >;
+      recordAsset: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          contentType: string;
+          deploymentId: string;
+          path: string;
+          storageId: string;
+        },
+        string | null
+      >;
+      setCurrentDeployment: FunctionReference<
+        "mutation",
+        "internal",
+        { deploymentId: string },
+        null
       >;
     };
   };
