@@ -5,6 +5,7 @@ import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import OpenAI from "openai";
 import { Id } from "./_generated/dataModel";
+import { costs } from "./costs";
 
 // Generate embedding for an email after it's been summarized
 export const generateEmbedding = internalAction({
@@ -43,6 +44,25 @@ export const generateEmbedding = internalAction({
     });
 
     const embedding = response.data[0].embedding;
+    const tokensUsed = response.usage?.total_tokens ?? 0;
+
+    // Track embedding cost
+    try {
+      await costs.addAICost(ctx, {
+        messageId: `embedding-${args.emailId}`,
+        userId: email.userId,
+        threadId: email.threadId || args.emailId,
+        usage: {
+          promptTokens: tokensUsed,
+          completionTokens: 0,
+          totalTokens: tokensUsed,
+        },
+        modelId: "text-embedding-3-small",
+        providerId: "openai",
+      });
+    } catch (e) {
+      console.error("[Embeddings] Failed to track cost:", e);
+    }
 
     // Save embedding to emailSummaries
     await ctx.runMutation(internal.emailEmbeddingsHelpers.saveEmbedding, {
@@ -50,7 +70,7 @@ export const generateEmbedding = internalAction({
       embedding,
     });
 
-    console.log(`[Embeddings] Generated embedding for email: ${args.emailId}`);
+    console.log(`[Embeddings] Generated embedding for email: ${args.emailId} (${tokensUsed} tokens)`);
   },
 });
 
@@ -81,7 +101,26 @@ export const searchSimilarEmails = internalAction({
       input: args.query,
     });
     const queryEmbedding = response.data[0].embedding;
+    const tokensUsed = response.usage?.total_tokens ?? 0;
     console.log(`[SearchSimilarEmails] Embedding generated, dimensions: ${queryEmbedding.length}`);
+
+    // Track search embedding cost
+    try {
+      await costs.addAICost(ctx, {
+        messageId: `search-embedding-${Date.now()}`,
+        userId: args.userId,
+        threadId: `search-${args.userId}`,
+        usage: {
+          promptTokens: tokensUsed,
+          completionTokens: 0,
+          totalTokens: tokensUsed,
+        },
+        modelId: "text-embedding-3-small",
+        providerId: "openai",
+      });
+    } catch (e) {
+      console.error("[SearchSimilarEmails] Failed to track cost:", e);
+    }
 
     // Vector search on emailSummaries
     console.log(`[SearchSimilarEmails] Running vector search...`);

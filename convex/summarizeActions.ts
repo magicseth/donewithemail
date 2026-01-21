@@ -800,7 +800,7 @@ export const analyzeWritingStyle = internalAction({
     }
 
     // Build email samples for analysis
-    const emailSamples = emails.slice(0, 10).map((e, i) => {
+    const emailSamples = emails.slice(0, 10).map((e: { subject: string; bodyFull?: string; bodyPreview: string }, i: number) => {
       const body = htmlToPlainText(e.bodyFull || e.bodyPreview).slice(0, 500);
       return `Email ${i + 1}:\nSubject: ${e.subject}\nBody: ${body}`;
     }).join("\n\n---\n\n");

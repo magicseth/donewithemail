@@ -8,103 +8,8 @@
  * @module
  */
 
-import type * as agents_autoResponder from "../agents/autoResponder.js";
-import type * as agents_emailQA from "../agents/emailQA.js";
-import type * as agents_summarizer from "../agents/summarizer.js";
-import type * as auth from "../auth.js";
-import type * as calendar from "../calendar.js";
-import type * as chatHistory from "../chatHistory.js";
-import type * as contacts from "../contacts.js";
-import type * as costs from "../costs.js";
-import type * as crons from "../crons.js";
-import type * as emailAgent from "../emailAgent.js";
-import type * as emailEmbeddings from "../emailEmbeddings.js";
-import type * as emailEmbeddingsHelpers from "../emailEmbeddingsHelpers.js";
-import type * as emailSync from "../emailSync.js";
-import type * as emailSyncHelpers from "../emailSyncHelpers.js";
-import type * as emailWorkflow from "../emailWorkflow.js";
-import type * as emailWorkflowHelpers from "../emailWorkflowHelpers.js";
-import type * as emails from "../emails.js";
-import type * as featureRequests from "../featureRequests.js";
-import type * as functions from "../functions.js";
-import type * as gmailAuth from "../gmailAuth.js";
-import type * as gmailHelpers from "../gmailHelpers.js";
-import type * as gmailOAuth from "../gmailOAuth.js";
-import type * as gmailQueries from "../gmailQueries.js";
-import type * as gmailSend from "../gmailSend.js";
-import type * as gmailSync from "../gmailSync.js";
-import type * as http from "../http.js";
-import type * as migrations from "../migrations.js";
-import type * as migrations_encryptExistingPii from "../migrations/encryptExistingPii.js";
-import type * as missedTodos from "../missedTodos.js";
-import type * as missedTodosHelpers from "../missedTodosHelpers.js";
-import type * as missedTodosWorkflow from "../missedTodosWorkflow.js";
-import type * as notifications from "../notifications.js";
-import type * as pii from "../pii.js";
-import type * as reminders from "../reminders.js";
-import type * as staticHosting from "../staticHosting.js";
-import type * as subscriptions from "../subscriptions.js";
-import type * as subscriptionsHelpers from "../subscriptionsHelpers.js";
-import type * as summarize from "../summarize.js";
-import type * as summarizeActions from "../summarizeActions.js";
-import type * as sync from "../sync.js";
-import type * as users from "../users.js";
-import type * as voice from "../voice.js";
-import type * as workflow from "../workflow.js";
-import type * as workosAuth from "../workosAuth.js";
-
-import type {
-  ApiFromModules,
-  FilterApi,
-  FunctionReference,
-} from "convex/server";
-
-declare const fullApi: ApiFromModules<{
-  "agents/autoResponder": typeof agents_autoResponder;
-  "agents/emailQA": typeof agents_emailQA;
-  "agents/summarizer": typeof agents_summarizer;
-  auth: typeof auth;
-  calendar: typeof calendar;
-  chatHistory: typeof chatHistory;
-  contacts: typeof contacts;
-  costs: typeof costs;
-  crons: typeof crons;
-  emailAgent: typeof emailAgent;
-  emailEmbeddings: typeof emailEmbeddings;
-  emailEmbeddingsHelpers: typeof emailEmbeddingsHelpers;
-  emailSync: typeof emailSync;
-  emailSyncHelpers: typeof emailSyncHelpers;
-  emailWorkflow: typeof emailWorkflow;
-  emailWorkflowHelpers: typeof emailWorkflowHelpers;
-  emails: typeof emails;
-  featureRequests: typeof featureRequests;
-  functions: typeof functions;
-  gmailAuth: typeof gmailAuth;
-  gmailHelpers: typeof gmailHelpers;
-  gmailOAuth: typeof gmailOAuth;
-  gmailQueries: typeof gmailQueries;
-  gmailSend: typeof gmailSend;
-  gmailSync: typeof gmailSync;
-  http: typeof http;
-  migrations: typeof migrations;
-  "migrations/encryptExistingPii": typeof migrations_encryptExistingPii;
-  missedTodos: typeof missedTodos;
-  missedTodosHelpers: typeof missedTodosHelpers;
-  missedTodosWorkflow: typeof missedTodosWorkflow;
-  notifications: typeof notifications;
-  pii: typeof pii;
-  reminders: typeof reminders;
-  staticHosting: typeof staticHosting;
-  subscriptions: typeof subscriptions;
-  subscriptionsHelpers: typeof subscriptionsHelpers;
-  summarize: typeof summarize;
-  summarizeActions: typeof summarizeActions;
-  sync: typeof sync;
-  users: typeof users;
-  voice: typeof voice;
-  workflow: typeof workflow;
-  workosAuth: typeof workosAuth;
-}>;
+import type { FunctionReference } from "convex/server";
+import type { GenericId as Id } from "convex/values";
 
 /**
  * A utility for referencing Convex functions in your app's public API.
@@ -114,10 +19,774 @@ declare const fullApi: ApiFromModules<{
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-export declare const api: FilterApi<
-  typeof fullApi,
-  FunctionReference<any, "public">
->;
+export declare const api: {
+  auth: {
+    authenticate: FunctionReference<"action", "public", { code: string }, any>;
+    getAuthUrl: FunctionReference<
+      "query",
+      "public",
+      { redirectUri: string },
+      any
+    >;
+    getUser: FunctionReference<"query", "public", { email: string }, any>;
+    hasGmailAccess: FunctionReference<
+      "query",
+      "public",
+      { email: string },
+      any
+    >;
+    refreshToken: FunctionReference<
+      "action",
+      "public",
+      { refreshToken: string },
+      any
+    >;
+    upsertUser: FunctionReference<
+      "mutation",
+      "public",
+      {
+        avatarUrl?: string;
+        email: string;
+        googleAccessToken?: string;
+        googleRefreshToken?: string;
+        name?: string;
+        workosRefreshToken?: string;
+        workosUserId: string;
+      },
+      any
+    >;
+  };
+  calendar: {
+    addToCalendar: FunctionReference<
+      "action",
+      "public",
+      {
+        description?: string;
+        emailId?: Id<"emails">;
+        endTime?: string;
+        location?: string;
+        recurrence?: string;
+        startTime?: string;
+        timezone: string;
+        title: string;
+        userEmail: string;
+      },
+      any
+    >;
+    batchAddToCalendar: FunctionReference<
+      "action",
+      "public",
+      { emailIds: Array<Id<"emails">>; timezone: string; userEmail: string },
+      any
+    >;
+    checkExistingCalendarEvents: FunctionReference<
+      "action",
+      "public",
+      {
+        startTime?: string;
+        timezone: string;
+        title: string;
+        userEmail: string;
+      },
+      any
+    >;
+  };
+  chatHistory: {
+    deleteThread: FunctionReference<
+      "action",
+      "public",
+      { threadId: string },
+      any
+    >;
+    getThreadMessages: FunctionReference<
+      "action",
+      "public",
+      { threadId: string },
+      any
+    >;
+    listThreads: FunctionReference<"action", "public", {}, any>;
+  };
+  contacts: {
+    addFact: FunctionReference<
+      "mutation",
+      "public",
+      {
+        contactId: Id<"contacts">;
+        source: "manual" | "ai";
+        sourceEmailId?: Id<"emails">;
+        text: string;
+      },
+      any
+    >;
+    deleteFact: FunctionReference<
+      "mutation",
+      "public",
+      { contactId: Id<"contacts">; factId: string },
+      any
+    >;
+    getMyContact: FunctionReference<
+      "query",
+      "public",
+      { contactId: Id<"contacts"> },
+      any
+    >;
+    getMyContactByEmail: FunctionReference<
+      "query",
+      "public",
+      { email: string },
+      any
+    >;
+    getMyContacts: FunctionReference<
+      "query",
+      "public",
+      { limit?: number },
+      any
+    >;
+    getMyContactStats: FunctionReference<
+      "query",
+      "public",
+      { contactId: Id<"contacts"> },
+      any
+    >;
+    getMyContactStatsByEmail: FunctionReference<
+      "query",
+      "public",
+      { email: string },
+      any
+    >;
+    getMyVIPContacts: FunctionReference<"query", "public", {}, any>;
+    updateFact: FunctionReference<
+      "mutation",
+      "public",
+      { contactId: Id<"contacts">; factId: string; text: string },
+      any
+    >;
+    updateMyContactRelationship: FunctionReference<
+      "mutation",
+      "public",
+      {
+        contactId: Id<"contacts">;
+        relationship: "vip" | "regular" | "unknown";
+      },
+      any
+    >;
+    updateMyContactRelationshipSummary: FunctionReference<
+      "mutation",
+      "public",
+      { contactId: Id<"contacts">; relationshipSummary: string },
+      any
+    >;
+    upsertContact: FunctionReference<
+      "mutation",
+      "public",
+      { avatarUrl?: string; email: string; name?: string; userId: Id<"users"> },
+      any
+    >;
+  };
+  costs: {
+    getAICostByMessageId: FunctionReference<
+      "query",
+      "public",
+      { messageId: string },
+      any
+    >;
+    getAICostsByThread: FunctionReference<
+      "query",
+      "public",
+      { threadId: string },
+      any
+    >;
+    getAICostsByUser: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    getAllPricing: FunctionReference<"query", "public", {}, any>;
+    getAllToolPricing: FunctionReference<"query", "public", {}, any>;
+    getMarkupMultiplier: FunctionReference<
+      "query",
+      "public",
+      { modelId?: string; providerId: string; toolId?: string },
+      any
+    >;
+    getMarkupMultiplierById: FunctionReference<
+      "query",
+      "public",
+      { markupMultiplierId: Id<"markupMultiplier"> },
+      any
+    >;
+    getMyTotalCosts: FunctionReference<"query", "public", {}, any>;
+    getPricingByProvider: FunctionReference<
+      "query",
+      "public",
+      { providerId: string },
+      any
+    >;
+    getToolCostsByThread: FunctionReference<
+      "query",
+      "public",
+      { threadId: string },
+      any
+    >;
+    getToolCostsByUser: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    getToolPricingByProvider: FunctionReference<
+      "query",
+      "public",
+      { providerId: string },
+      any
+    >;
+    getTotalAICostsByThread: FunctionReference<
+      "query",
+      "public",
+      { threadId: string },
+      any
+    >;
+    getTotalAICostsByUser: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    getTotalToolCostsByThread: FunctionReference<
+      "query",
+      "public",
+      { threadId: string },
+      any
+    >;
+    getTotalToolCostsByUser: FunctionReference<
+      "query",
+      "public",
+      { userId: string },
+      any
+    >;
+    searchPricingByModelName: FunctionReference<
+      "query",
+      "public",
+      { searchTerm: string },
+      any
+    >;
+    updatePricingData: FunctionReference<
+      "action",
+      "public",
+      { envKeys?: Record<string, string> },
+      any
+    >;
+  };
+  emailAgent: {
+    continueChat: FunctionReference<
+      "action",
+      "public",
+      { message: string; threadId: string },
+      any
+    >;
+    startChat: FunctionReference<"action", "public", { message: string }, any>;
+  };
+  emails: {
+    batchTriageMyEmails: FunctionReference<
+      "mutation",
+      "public",
+      {
+        triageActions: Array<{
+          action: "done" | "reply_needed";
+          emailId: Id<"emails">;
+        }>;
+      },
+      any
+    >;
+    getMyBatchTriagePreview: FunctionReference<
+      "query",
+      "public",
+      { limit?: number },
+      any
+    >;
+    getMyEmail: FunctionReference<
+      "query",
+      "public",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    getMyEmailBody: FunctionReference<
+      "query",
+      "public",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    getMyThreadEmails: FunctionReference<
+      "query",
+      "public",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    getMyTodoEmails: FunctionReference<
+      "query",
+      "public",
+      { limit?: number },
+      any
+    >;
+    getMyUntriagedEmails: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; sessionStart?: number },
+      any
+    >;
+    markMyEmailAsRead: FunctionReference<
+      "mutation",
+      "public",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    resetMyTriagedEmails: FunctionReference<"mutation", "public", {}, any>;
+    searchMyEmails: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; searchQuery: string },
+      any
+    >;
+    storeEmail: FunctionReference<
+      "mutation",
+      "public",
+      {
+        bodyFull: string;
+        bodyPreview: string;
+        cc?: Array<Id<"contacts">>;
+        externalId: string;
+        from: Id<"contacts">;
+        provider: "gmail" | "outlook" | "imap";
+        receivedAt: number;
+        subject: string;
+        to: Array<Id<"contacts">>;
+        userId: Id<"users">;
+      },
+      any
+    >;
+    triageMyEmail: FunctionReference<
+      "mutation",
+      "public",
+      { action: "done" | "reply_needed" | "delegated"; emailId: Id<"emails"> },
+      any
+    >;
+    triageMyEmailsFromSender: FunctionReference<
+      "mutation",
+      "public",
+      { senderEmail: string },
+      any
+    >;
+    untriagedMyEmail: FunctionReference<
+      "mutation",
+      "public",
+      { emailId: Id<"emails"> },
+      any
+    >;
+  };
+  featureRequests: {
+    cancel: FunctionReference<
+      "mutation",
+      "public",
+      { id: Id<"featureRequests"> },
+      any
+    >;
+    getMine: FunctionReference<"query", "public", {}, any>;
+    getPending: FunctionReference<"query", "public", {}, any>;
+    markCombined: FunctionReference<
+      "mutation",
+      "public",
+      { combinedIntoId: Id<"featureRequests">; id: Id<"featureRequests"> },
+      any
+    >;
+    markCompleted: FunctionReference<
+      "mutation",
+      "public",
+      {
+        branchName?: string;
+        commitHash?: string;
+        easDashboardUrl?: string;
+        easUpdateId?: string;
+        easUpdateMessage?: string;
+        id: Id<"featureRequests">;
+      },
+      any
+    >;
+    markFailed: FunctionReference<
+      "mutation",
+      "public",
+      { error: string; id: Id<"featureRequests"> },
+      any
+    >;
+    markProcessing: FunctionReference<
+      "mutation",
+      "public",
+      { id: Id<"featureRequests"> },
+      any
+    >;
+    retryFailed: FunctionReference<"mutation", "public", {}, any>;
+    submit: FunctionReference<
+      "mutation",
+      "public",
+      { debugLogs?: string; transcript: string },
+      any
+    >;
+    updateClaudeOutput: FunctionReference<
+      "mutation",
+      "public",
+      {
+        claudeOutput: string;
+        claudeSuccess: boolean;
+        id: Id<"featureRequests">;
+      },
+      any
+    >;
+    updateProgress: FunctionReference<
+      "mutation",
+      "public",
+      {
+        branchName?: string;
+        commitHash?: string;
+        id: Id<"featureRequests">;
+        progressMessage: string;
+        progressStep:
+          | "cloning"
+          | "implementing"
+          | "pushing"
+          | "merging"
+          | "deploying_backend"
+          | "uploading"
+          | "ready";
+      },
+      any
+    >;
+    updateTranscript: FunctionReference<
+      "mutation",
+      "public",
+      { id: Id<"featureRequests">; transcript: string },
+      any
+    >;
+  };
+  gmailAuth: {
+    exchangeCodeForTokens: FunctionReference<
+      "action",
+      "public",
+      { code: string; redirectUri: string },
+      any
+    >;
+    getGmailAuthUrl: FunctionReference<
+      "query",
+      "public",
+      { redirectUri: string },
+      any
+    >;
+    hasGmailConnected: FunctionReference<
+      "query",
+      "public",
+      { email: string },
+      any
+    >;
+    storeGmailTokens: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accessToken: string;
+        email: string;
+        expiresAt: number;
+        refreshToken: string;
+      },
+      any
+    >;
+  };
+  gmailOAuth: {
+    exchangeCode: FunctionReference<
+      "action",
+      "public",
+      { code: string; redirectUri: string },
+      any
+    >;
+    getGmailAuthUrl: FunctionReference<
+      "query",
+      "public",
+      { redirectUri: string },
+      any
+    >;
+    hasGmailConnected: FunctionReference<
+      "query",
+      "public",
+      { email: string },
+      any
+    >;
+    storeGmailTokens: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accessToken: string;
+        email: string;
+        expiresAt: number;
+        refreshToken: string;
+      },
+      any
+    >;
+  };
+  gmailSend: {
+    sendEmail: FunctionReference<
+      "action",
+      "public",
+      {
+        body: string;
+        replyToMessageId?: string;
+        subject: string;
+        to: string;
+        userEmail: string;
+      },
+      any
+    >;
+    sendReply: FunctionReference<
+      "action",
+      "public",
+      {
+        body: string;
+        inReplyTo?: string;
+        subject: string;
+        to: string;
+        userEmail: string;
+      },
+      any
+    >;
+  };
+  gmailSync: {
+    fetchEmailBody: FunctionReference<
+      "action",
+      "public",
+      { emailId: Id<"emails">; userEmail: string },
+      any
+    >;
+    fetchEmails: FunctionReference<
+      "action",
+      "public",
+      { maxResults?: number; pageToken?: string; userEmail: string },
+      any
+    >;
+  };
+  missedTodos: {
+    startMissedTodosSearchByEmail: FunctionReference<
+      "mutation",
+      "public",
+      { email: string },
+      any
+    >;
+  };
+  notifications: {
+    registerMyPushToken: FunctionReference<
+      "mutation",
+      "public",
+      { pushToken: string },
+      any
+    >;
+    sendMyTestCommunicationNotification: FunctionReference<
+      "mutation",
+      "public",
+      { testContactEmail?: string },
+      any
+    >;
+    sendMyTestNotificationWithAvatar: FunctionReference<
+      "mutation",
+      "public",
+      { testContactEmail?: string },
+      any
+    >;
+    sendTestNotificationForRecentEmail: FunctionReference<
+      "mutation",
+      "public",
+      {},
+      any
+    >;
+  };
+  staticHosting: {
+    getCurrentDeployment: FunctionReference<"query", "public", {}, any>;
+  };
+  subscriptions: {
+    batchUnsubscribeMy: FunctionReference<
+      "action",
+      "public",
+      { subscriptionIds: Array<Id<"subscriptions">> },
+      any
+    >;
+    forceMyRescan: FunctionReference<"action", "public", {}, any>;
+    scanMyExistingEmails: FunctionReference<"action", "public", {}, any>;
+  };
+  subscriptionsHelpers: {
+    getSubscriptions: FunctionReference<
+      "query",
+      "public",
+      { userEmail: string },
+      any
+    >;
+  };
+  summarize: {
+    clearWritingStyles: FunctionReference<
+      "mutation",
+      "public",
+      { userEmail: string },
+      any
+    >;
+    getTopRecipients: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; userEmail: string },
+      any
+    >;
+  };
+  summarizeActions: {
+    backfillWritingStyles: FunctionReference<
+      "action",
+      "public",
+      { userEmail: string },
+      any
+    >;
+    reprocessEmail: FunctionReference<
+      "action",
+      "public",
+      { emailId: Id<"emails">; userEmail: string },
+      any
+    >;
+    resetAndResummarizeAll: FunctionReference<
+      "action",
+      "public",
+      { userEmail: string },
+      any
+    >;
+    retryUnprocessedEmails: FunctionReference<
+      "action",
+      "public",
+      { userEmail: string },
+      any
+    >;
+    summarizeEmail: FunctionReference<
+      "action",
+      "public",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    summarizeEmailsByExternalIds: FunctionReference<
+      "action",
+      "public",
+      { externalIds: Array<string>; userEmail: string },
+      any
+    >;
+  };
+  sync: {
+    backfillAvatarUrls: FunctionReference<"mutation", "public", {}, any>;
+    getPendingForProcessing: FunctionReference<
+      "query",
+      "public",
+      { limit?: number },
+      any
+    >;
+    markCompleted: FunctionReference<
+      "mutation",
+      "public",
+      { queueId: Id<"aiProcessingQueue"> },
+      any
+    >;
+    markFailed: FunctionReference<
+      "mutation",
+      "public",
+      { error: string; queueId: Id<"aiProcessingQueue"> },
+      any
+    >;
+    markProcessing: FunctionReference<
+      "mutation",
+      "public",
+      { queueId: Id<"aiProcessingQueue"> },
+      any
+    >;
+    processIncomingEmail: FunctionReference<
+      "action",
+      "public",
+      {
+        rawEmail: {
+          bodyFull: string;
+          bodyPreview: string;
+          cc?: Array<{ email: string; name?: string }>;
+          from: { email: string; name?: string };
+          id: string;
+          receivedAt: number;
+          subject: string;
+          threadId: string;
+          to: Array<{ email: string; name?: string }>;
+        };
+        userId: Id<"users">;
+      },
+      any
+    >;
+  };
+  users: {
+    connectGmailAccount: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accessToken: string;
+        email: string;
+        expiresAt: number;
+        refreshToken: string;
+        userId: Id<"users">;
+      },
+      any
+    >;
+    disconnectMyProvider: FunctionReference<
+      "mutation",
+      "public",
+      { provider: "gmail" | "outlook" | "imap" },
+      any
+    >;
+    getMe: FunctionReference<"query", "public", {}, any>;
+    getMyConnectedProviders: FunctionReference<"query", "public", {}, any>;
+    updateMyPreferences: FunctionReference<
+      "mutation",
+      "public",
+      {
+        preferences: { autoProcessEmails?: boolean; urgencyThreshold?: number };
+      },
+      any
+    >;
+    upsertFromWorkOS: FunctionReference<
+      "mutation",
+      "public",
+      { avatarUrl?: string; email: string; name?: string; workosId: string },
+      any
+    >;
+  };
+  voice: {
+    getDeepgramKey: FunctionReference<"action", "public", {}, any>;
+  };
+  workosAuth: {
+    getOAuthTokens: FunctionReference<
+      "action",
+      "public",
+      { workosUserId: string },
+      any
+    >;
+    storeTokens: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accessToken: string;
+        email: string;
+        refreshToken?: string;
+        workosUserId: string;
+      },
+      any
+    >;
+    syncOAuthTokens: FunctionReference<
+      "action",
+      "public",
+      { email: string; workosUserId: string },
+      any
+    >;
+  };
+};
 
 /**
  * A utility for referencing Convex functions in your app's internal API.
@@ -127,10 +796,858 @@ export declare const api: FilterApi<
  * const myFunctionReference = internal.myModule.myFunction;
  * ```
  */
-export declare const internal: FilterApi<
-  typeof fullApi,
-  FunctionReference<any, "internal">
->;
+export declare const internal: {
+  auth: {
+    getUserIdByWorkosId: FunctionReference<
+      "query",
+      "internal",
+      { workosUserId: string },
+      any
+    >;
+    updateWorkosRefreshToken: FunctionReference<
+      "mutation",
+      "internal",
+      { userId: Id<"users">; workosRefreshToken: string },
+      any
+    >;
+  };
+  costs: {
+    refreshPricingData: FunctionReference<"action", "internal", {}, any>;
+  };
+  emailAgent: {
+    backfillEmbeddings: FunctionReference<
+      "action",
+      "internal",
+      { batchSize?: number; userId: Id<"users"> },
+      any
+    >;
+  };
+  emailEmbeddings: {
+    backfillEmbeddings: FunctionReference<
+      "action",
+      "internal",
+      { batchSize?: number; userId: Id<"users"> },
+      any
+    >;
+    generateEmbedding: FunctionReference<
+      "action",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    searchSimilarEmails: FunctionReference<
+      "action",
+      "internal",
+      { limit?: number; query: string; userId: Id<"users"> },
+      any
+    >;
+  };
+  emailEmbeddingsHelpers: {
+    getContactById: FunctionReference<
+      "query",
+      "internal",
+      { contactId: Id<"contacts"> },
+      any
+    >;
+    getEmailById: FunctionReference<
+      "query",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    getEmailsNeedingEmbeddings: FunctionReference<
+      "query",
+      "internal",
+      { limit: number; userId: Id<"users"> },
+      any
+    >;
+    getEmailWithBody: FunctionReference<
+      "query",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    getSummaryById: FunctionReference<
+      "query",
+      "internal",
+      { summaryId: Id<"emailSummaries"> },
+      any
+    >;
+    saveEmbedding: FunctionReference<
+      "mutation",
+      "internal",
+      { emailId: Id<"emails">; embedding: Array<number> },
+      any
+    >;
+  };
+  emails: {
+    getEmailBodyById: FunctionReference<
+      "query",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    getEmailById: FunctionReference<
+      "query",
+      "internal",
+      { emailId: string },
+      any
+    >;
+  };
+  emailSync: {
+    checkNewEmailsForAllUsers: FunctionReference<"action", "internal", {}, any>;
+    debugUserTokens: FunctionReference<"action", "internal", {}, any>;
+  };
+  emailSyncHelpers: {
+    checkEmailExists: FunctionReference<
+      "query",
+      "internal",
+      { externalId: string },
+      any
+    >;
+    decryptUserTokens: FunctionReference<
+      "mutation",
+      "internal",
+      { userId: Id<"users"> },
+      any
+    >;
+    getAllUsersDebug: FunctionReference<"query", "internal", {}, any>;
+    getUsersWithGmail: FunctionReference<"query", "internal", {}, any>;
+    updateLastSync: FunctionReference<
+      "mutation",
+      "internal",
+      { timestamp: number; userId: Id<"users"> },
+      any
+    >;
+    updateUserGmailTokens: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        gmailAccessToken: string;
+        gmailTokenExpiresAt: number;
+        userId: Id<"users">;
+      },
+      any
+    >;
+    updateUserTokensWithWorkOS: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        gmailAccessToken: string;
+        gmailTokenExpiresAt: number;
+        userId: Id<"users">;
+        workosRefreshToken: string;
+      },
+      any
+    >;
+  };
+  emailWorkflow: {
+    processNewEmails: FunctionReference<"mutation", "internal", any, any>;
+    startEmailProcessing: FunctionReference<
+      "mutation",
+      "internal",
+      { externalIds: Array<string>; userEmail: string; userId: Id<"users"> },
+      any
+    >;
+  };
+  emailWorkflowHelpers: {
+    filterOutSubscriptions: FunctionReference<
+      "query",
+      "internal",
+      { externalIds: Array<string> },
+      any
+    >;
+    getMostUrgentEmailDetails: FunctionReference<
+      "query",
+      "internal",
+      { externalIds: Array<string>; threshold: number },
+      any
+    >;
+  };
+  featureRequests: {
+    sendFeatureCompletedNotification: FunctionReference<
+      "mutation",
+      "internal",
+      { transcript: string; userId: Id<"users"> },
+      any
+    >;
+    sendFeatureFailedNotification: FunctionReference<
+      "mutation",
+      "internal",
+      { error: string; transcript: string; userId: Id<"users"> },
+      any
+    >;
+  };
+  gmailAuth: {
+    updateUserTokens: FunctionReference<
+      "mutation",
+      "internal",
+      { accessToken: string; expiresAt: number; userId: Id<"users"> },
+      any
+    >;
+  };
+  gmailQueries: {
+    getCachedEmails: FunctionReference<
+      "query",
+      "internal",
+      { externalIds: Array<string>; userId?: Id<"users"> },
+      any
+    >;
+    getCachedSummaries: FunctionReference<
+      "query",
+      "internal",
+      { externalIds: Array<string>; userId?: Id<"users"> },
+      any
+    >;
+    getUserByEmail: FunctionReference<
+      "query",
+      "internal",
+      { email: string },
+      any
+    >;
+  };
+  gmailSync: {
+    fetchAndStoreEmailsByIds: FunctionReference<
+      "action",
+      "internal",
+      { messageIds: Array<string>; userEmail: string },
+      any
+    >;
+    getCachedEmails: FunctionReference<
+      "query",
+      "internal",
+      { externalIds: Array<string>; userId?: Id<"users"> },
+      any
+    >;
+    getCachedSummaries: FunctionReference<
+      "query",
+      "internal",
+      { externalIds: Array<string>; userId?: Id<"users"> },
+      any
+    >;
+    getUserByEmail: FunctionReference<
+      "query",
+      "internal",
+      { email: string },
+      any
+    >;
+    storeEmailInternal: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        bodyFull: string;
+        bodyPreview: string;
+        direction?: "incoming" | "outgoing";
+        externalId: string;
+        from: Id<"contacts">;
+        isRead: boolean;
+        isSubscription?: boolean;
+        listUnsubscribe?: string;
+        listUnsubscribePost?: boolean;
+        provider: "gmail" | "outlook" | "imap";
+        receivedAt: number;
+        subject: string;
+        threadId?: string;
+        to: Array<Id<"contacts">>;
+        userId: Id<"users">;
+      },
+      any
+    >;
+    updateEmailBody: FunctionReference<
+      "mutation",
+      "internal",
+      { bodyFull: string; emailId: Id<"emails"> },
+      any
+    >;
+    updateUserTokens: FunctionReference<
+      "mutation",
+      "internal",
+      { accessToken: string; expiresAt: number; userId: Id<"users"> },
+      any
+    >;
+    upsertContact: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        avatarStorageId?: Id<"_storage">;
+        email: string;
+        name?: string;
+        userId: Id<"users">;
+      },
+      any
+    >;
+  };
+  migrations: {
+    encryptExistingPii: {
+      encryptContacts: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun?: boolean;
+          fn?: string;
+          next?: Array<string>;
+        },
+        any
+      >;
+      encryptEmailBodies: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun?: boolean;
+          fn?: string;
+          next?: Array<string>;
+        },
+        any
+      >;
+      encryptEmails: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun?: boolean;
+          fn?: string;
+          next?: Array<string>;
+        },
+        any
+      >;
+      encryptEmailSummaries: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun?: boolean;
+          fn?: string;
+          next?: Array<string>;
+        },
+        any
+      >;
+      encryptFeatureRequests: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun?: boolean;
+          fn?: string;
+          next?: Array<string>;
+        },
+        any
+      >;
+      encryptSubscriptions: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun?: boolean;
+          fn?: string;
+          next?: Array<string>;
+        },
+        any
+      >;
+      encryptUsers: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun?: boolean;
+          fn?: string;
+          next?: Array<string>;
+        },
+        any
+      >;
+      run: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun?: boolean;
+          fn?: string;
+          next?: Array<string>;
+        },
+        any
+      >;
+    };
+    migrateEmailBodies: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        batchSize?: number;
+        cursor?: string | null;
+        dryRun?: boolean;
+        fn?: string;
+        next?: Array<string>;
+      },
+      any
+    >;
+    run: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        batchSize?: number;
+        cursor?: string | null;
+        dryRun?: boolean;
+        fn?: string;
+        next?: Array<string>;
+      },
+      any
+    >;
+    runEmailBodiesMigration: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        batchSize?: number;
+        cursor?: string | null;
+        dryRun?: boolean;
+        fn?: string;
+        next?: Array<string>;
+      },
+      any
+    >;
+  };
+  missedTodos: {
+    findMissedTodos: FunctionReference<"mutation", "internal", any, any>;
+  };
+  missedTodosHelpers: {
+    getRecentUntriagedEmails: FunctionReference<
+      "query",
+      "internal",
+      { sinceTimestamp: number; userId: Id<"users"> },
+      any
+    >;
+    getUserByEmail: FunctionReference<
+      "query",
+      "internal",
+      { email: string },
+      any
+    >;
+    hasUserRepliedToThread: FunctionReference<
+      "query",
+      "internal",
+      {
+        emailTimestamp: number;
+        originalSenderEmail: string;
+        threadId: string;
+        userEmail: string;
+        userId: Id<"users">;
+      },
+      any
+    >;
+    markAsReplyNeeded: FunctionReference<
+      "mutation",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
+  };
+  missedTodosWorkflow: {
+    analyzeEmailsForMissedTodos: FunctionReference<
+      "action",
+      "internal",
+      {
+        emails: Array<{
+          bodyPreview: string;
+          fromEmail: string;
+          fromName?: string;
+          id: string;
+          subject: string;
+        }>;
+        userId: Id<"users">;
+      },
+      any
+    >;
+  };
+  notifications: {
+    sendHighPriorityNotification: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        highPriorityCount: number;
+        mostUrgentEmailId?: Id<"emails">;
+        mostUrgentSender?: string;
+        mostUrgentSenderAvatar?: string;
+        mostUrgentSubject?: string;
+        totalCount: number;
+        urgencyScore: number;
+        userId: Id<"users">;
+      },
+      any
+    >;
+    sendMissedTodosNotification: FunctionReference<
+      "mutation",
+      "internal",
+      { foundCount: number; userId: Id<"users"> },
+      any
+    >;
+    sendNewEmailNotification: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        emailCount: number;
+        senderName?: string;
+        subject?: string;
+        userId: Id<"users">;
+      },
+      any
+    >;
+  };
+  reminders: {
+    checkAndSendReminders: FunctionReference<"mutation", "internal", {}, any>;
+    getStaleReplyNeededEmails: FunctionReference<"query", "internal", {}, any>;
+    getUpcomingDeadlines: FunctionReference<"query", "internal", {}, any>;
+    markDeadlineReminderSent: FunctionReference<
+      "mutation",
+      "internal",
+      { summaryId: Id<"emailSummaries"> },
+      any
+    >;
+    markReminderSent: FunctionReference<
+      "mutation",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    sendDeadlineReminder: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        deadline: string;
+        deadlineDescription: string;
+        subject: string;
+        userId: Id<"users">;
+      },
+      any
+    >;
+    sendStaleReplyReminder: FunctionReference<
+      "mutation",
+      "internal",
+      { senderName: string; subject: string; userId: Id<"users"> },
+      any
+    >;
+  };
+  staticHosting: {
+    gcOldAssets: FunctionReference<
+      "mutation",
+      "internal",
+      { currentDeploymentId: string },
+      any
+    >;
+    generateUploadUrl: FunctionReference<"mutation", "internal", {}, any>;
+    listAssets: FunctionReference<"query", "internal", { limit?: number }, any>;
+    recordAsset: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        contentType: string;
+        deploymentId: string;
+        path: string;
+        storageId: string;
+      },
+      any
+    >;
+  };
+  subscriptions: {
+    scanExistingEmailsInternal: FunctionReference<
+      "action",
+      "internal",
+      { userEmail: string },
+      any
+    >;
+  };
+  subscriptionsHelpers: {
+    deleteSubscriptions: FunctionReference<
+      "mutation",
+      "internal",
+      { userId: Id<"users"> },
+      any
+    >;
+    getContactById: FunctionReference<
+      "query",
+      "internal",
+      { contactId: Id<"contacts"> },
+      any
+    >;
+    getEmailIdsForReset: FunctionReference<
+      "query",
+      "internal",
+      { userId: Id<"users"> },
+      any
+    >;
+    getEmailsWithoutSubscriptionCheck: FunctionReference<
+      "query",
+      "internal",
+      { userId: Id<"users"> },
+      any
+    >;
+    getSubscriptionById: FunctionReference<
+      "query",
+      "internal",
+      { subscriptionId: Id<"subscriptions"> },
+      any
+    >;
+    getUserByEmailInternal: FunctionReference<
+      "query",
+      "internal",
+      { email: string },
+      any
+    >;
+    getUserByIdInternal: FunctionReference<
+      "query",
+      "internal",
+      { userId: Id<"users"> },
+      any
+    >;
+    getUserByWorkosId: FunctionReference<
+      "query",
+      "internal",
+      { workosId: string },
+      any
+    >;
+    resetEmailSubscriptionFlags: FunctionReference<
+      "mutation",
+      "internal",
+      { emailIds: Array<Id<"emails">> },
+      any
+    >;
+    triageEmailsFromSender: FunctionReference<
+      "mutation",
+      "internal",
+      { senderEmail: string; userId: Id<"users"> },
+      any
+    >;
+    updateEmailSubscriptionHeaders: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        emailId: Id<"emails">;
+        isSubscription: boolean;
+        listUnsubscribe?: string;
+        listUnsubscribePost?: boolean;
+      },
+      any
+    >;
+    updateStatus: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        status:
+          | "subscribed"
+          | "pending"
+          | "processing"
+          | "unsubscribed"
+          | "failed"
+          | "manual_required";
+        subscriptionId: Id<"subscriptions">;
+        unsubscribedAt?: number;
+      },
+      any
+    >;
+    upsertSubscription: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        emailId: Id<"emails">;
+        listUnsubscribe?: string;
+        listUnsubscribePost?: boolean;
+        receivedAt: number;
+        senderEmail: string;
+        senderName?: string;
+        subject?: string;
+        userId: Id<"users">;
+      },
+      any
+    >;
+  };
+  summarize: {
+    deleteAllSummariesForUser: FunctionReference<
+      "mutation",
+      "internal",
+      { userId: Id<"users"> },
+      any
+    >;
+    deleteSummaryForEmail: FunctionReference<
+      "mutation",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    getContactsForWritingStyleBackfill: FunctionReference<
+      "query",
+      "internal",
+      { userId: Id<"users"> },
+      any
+    >;
+    getEmailBasicInfo: FunctionReference<
+      "query",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    getEmailByExternalId: FunctionReference<
+      "query",
+      "internal",
+      { externalId: string },
+      any
+    >;
+    getEmailForSummary: FunctionReference<
+      "query",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    getExternalIdForEmail: FunctionReference<
+      "query",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    getExternalIdsForUser: FunctionReference<
+      "query",
+      "internal",
+      { userId: Id<"users"> },
+      any
+    >;
+    getSentEmailsToContact: FunctionReference<
+      "query",
+      "internal",
+      { contactId: Id<"contacts">; limit?: number; userId: Id<"users"> },
+      any
+    >;
+    getSummary: FunctionReference<
+      "query",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    getUnprocessedExternalIdsForUser: FunctionReference<
+      "query",
+      "internal",
+      { userId: Id<"users"> },
+      any
+    >;
+    markCalendarEventAdded: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        calendarEventId: string;
+        calendarEventLink: string;
+        emailId: Id<"emails">;
+      },
+      any
+    >;
+    saveAISuggestedFacts: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        contactId: Id<"contacts">;
+        emailId: Id<"emails">;
+        facts: Array<string>;
+      },
+      any
+    >;
+    updateContactWritingStyle: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        contactId: Id<"contacts">;
+        writingStyle: {
+          analyzedAt: number;
+          characteristics?: Array<string>;
+          emailsAnalyzed: number;
+          greeting?: string;
+          samplePhrases?: Array<string>;
+          signoff?: string;
+          tone: string;
+        };
+      },
+      any
+    >;
+    updateEmailSummary: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        actionDescription?: string;
+        actionRequired?: "reply" | "action" | "fyi" | "none";
+        calendarEvent?: {
+          description?: string;
+          endTime?: string;
+          location?: string;
+          recurrence?: string;
+          recurrenceDescription?: string;
+          startTime?: string;
+          title: string;
+        };
+        deadline?: string;
+        deadlineDescription?: string;
+        emailId: Id<"emails">;
+        quickReplies?: Array<{ body: string; label: string }>;
+        shouldAcceptCalendar?: boolean;
+        suggestedReply?: string;
+        summary: string;
+        urgencyReason: string;
+        urgencyScore: number;
+      },
+      any
+    >;
+  };
+  summarizeActions: {
+    analyzeWritingStyle: FunctionReference<
+      "action",
+      "internal",
+      { contactId: Id<"contacts">; contactName?: string; userId: Id<"users"> },
+      any
+    >;
+    summarizeByExternalIds: FunctionReference<
+      "action",
+      "internal",
+      { externalIds: Array<string>; userEmail: string },
+      any
+    >;
+  };
+  sync: {
+    storeEmailInternal: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        bodyFull: string;
+        bodyPreview: string;
+        cc?: Array<Id<"contacts">>;
+        externalId: string;
+        from: Id<"contacts">;
+        provider: "gmail" | "outlook" | "imap";
+        receivedAt: number;
+        subject: string;
+        to: Array<Id<"contacts">>;
+        userId: Id<"users">;
+      },
+      any
+    >;
+    upsertContactInternal: FunctionReference<
+      "mutation",
+      "internal",
+      { email: string; name?: string; userId: Id<"users"> },
+      any
+    >;
+  };
+  users: {
+    get: FunctionReference<"query", "internal", { userId: Id<"users"> }, any>;
+    getUserForAuth: FunctionReference<
+      "query",
+      "internal",
+      { email?: string; workosId?: string },
+      any
+    >;
+    listAll: FunctionReference<"query", "internal", {}, any>;
+  };
+};
 
 export declare const components: {
   agent: {

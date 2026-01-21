@@ -17,4 +17,11 @@ crons.interval(
   internal.reminders.checkAndSendReminders
 );
 
+// Update AI pricing data daily (fetches from models.dev)
+crons.daily(
+  "update-ai-pricing",
+  { hourUTC: 6, minuteUTC: 0 }, // 6am UTC
+  internal.costs.refreshPricingData
+);
+
 export default crons;

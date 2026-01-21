@@ -13,6 +13,24 @@ interface EmailForAnalysis {
   fromName?: string;
 }
 
+// Type for email data from query
+interface EmailData {
+  _id: string;
+  subject: string;
+  bodyPreview: string;
+  fromEmail: string;
+  fromName?: string;
+  threadId?: string;
+  receivedAt: number;
+}
+
+// Type for analysis result
+interface AnalysisResult {
+  emailId: string;
+  needsResponse: boolean;
+  reason?: string;
+}
+
 /**
  * Workflow to find missed TODOs in the last 2 weeks of emails
  *
@@ -50,8 +68,8 @@ export const findMissedTodos = workflow.define({
 
     // Step 2: Filter out emails from self
     const userEmailLower = args.userEmail.toLowerCase();
-    const fromOthers = emails.filter(
-      (e) => e.fromEmail.toLowerCase() !== userEmailLower
+    const fromOthers = (emails as EmailData[]).filter(
+      (e: EmailData) => e.fromEmail.toLowerCase() !== userEmailLower
     );
 
     console.log(`${fromOthers.length} emails are from others`);
@@ -61,7 +79,7 @@ export const findMissedTodos = workflow.define({
     }
 
     // Step 3: Batch AI analysis (needs response + real person)
-    const emailsForAnalysis: EmailForAnalysis[] = fromOthers.map((e) => ({
+    const emailsForAnalysis: EmailForAnalysis[] = fromOthers.map((e: EmailData) => ({
       id: e._id,
       subject: e.subject,
       bodyPreview: e.bodyPreview,
@@ -74,13 +92,13 @@ export const findMissedTodos = workflow.define({
       { userId: args.userId, emails: emailsForAnalysis }
     );
 
-    const needsResponse = analysisResults.filter((r) => r.needsResponse);
+    const needsResponse = analysisResults.filter((r: AnalysisResult) => r.needsResponse);
     console.log(`${needsResponse.length} emails identified as needing response`);
 
     // Step 4: For emails that need response, check if replied
     let foundCount = 0;
     for (const result of needsResponse) {
-      const email = fromOthers.find((e) => e._id === result.emailId);
+      const email = fromOthers.find((e: EmailData) => e._id === result.emailId);
 
       if (!email) continue;
 
