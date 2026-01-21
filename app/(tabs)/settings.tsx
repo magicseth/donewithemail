@@ -146,6 +146,52 @@ export default function SettingsScreen() {
     user?.email ? { email: user.email } : "skip"
   );
 
+  // IMAP accounts
+  const [imapAccounts, setImapAccounts] = useState<Array<{ email: string; host?: string; port?: number }>>([]);
+  const [isLoadingImapAccounts, setIsLoadingImapAccounts] = useState(false);
+  const listImapAccounts = useMutation(api.imapAuth.listImapAccounts);
+  const removeImapAccount = useMutation(api.imapAuth.removeImapAccount);
+
+  // Load IMAP accounts on mount
+  useEffect(() => {
+    if (!isDemoMode && user) {
+      setIsLoadingImapAccounts(true);
+      listImapAccounts()
+        .then(setImapAccounts)
+        .catch(console.error)
+        .finally(() => setIsLoadingImapAccounts(false));
+    }
+  }, [isDemoMode, user]);
+
+  const handleRemoveImap = async (email: string) => {
+    const doRemove = async () => {
+      try {
+        await removeImapAccount({ email });
+        // Reload accounts
+        const accounts = await listImapAccounts();
+        setImapAccounts(accounts);
+      } catch (error) {
+        console.error("Remove IMAP error:", error);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm(`Remove IMAP account ${email}?`);
+      if (confirmed) {
+        await doRemove();
+      }
+    } else {
+      Alert.alert(
+        "Remove IMAP Account",
+        `Remove ${email}?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Remove", style: "destructive", onPress: doRemove },
+        ]
+      );
+    }
+  };
+
   const handleResetTriage = async () => {
     setIsResettingTriage(true);
     try {
@@ -694,6 +740,44 @@ export default function SettingsScreen() {
               </Text>
             </View>
           )}
+
+          {/* IMAP Accounts */}
+          {imapAccounts.map((account, index) => (
+            <View key={account.email}>
+              <View style={styles.divider} />
+              <View style={styles.providerRow}>
+                <View style={styles.providerIcon}>
+                  <Text style={styles.providerIconText}>📨</Text>
+                </View>
+                <View style={styles.providerInfo}>
+                  <Text style={styles.providerName}>IMAP</Text>
+                  <Text style={styles.providerEmail}>
+                    {account.email}
+                  </Text>
+                  {account.host && (
+                    <Text style={styles.providerDetail}>
+                      {account.host}:{account.port}
+                    </Text>
+                  )}
+                </View>
+                <TouchableOpacity
+                  style={styles.removeButton}
+                  onPress={() => handleRemoveImap(account.email)}
+                >
+                  <Text style={styles.removeButtonText}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+
+          {/* Add IMAP Account Button */}
+          <View style={styles.divider} />
+          <TouchableOpacity
+            style={styles.addAccountButton}
+            onPress={() => router.push("/add-imap")}
+          >
+            <Text style={styles.addAccountButtonText}>+ Add IMAP Account</Text>
+          </TouchableOpacity>
         </View>
       </View>
       )}
@@ -1402,6 +1486,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#666",
     marginTop: 2,
+  },
+  providerDetail: {
+    fontSize: 11,
+    color: "#999",
+    marginTop: 2,
+  },
+  removeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#FEE2E2",
+  },
+  removeButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#EF4444",
+  },
+  addAccountButton: {
+    padding: 16,
+    alignItems: "center",
+  },
+  addAccountButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6366F1",
   },
   connectedBadge: {
     backgroundColor: "#10B981",

@@ -50,6 +50,8 @@ export const getUserByEmail = internalQuery({
       avatarUrl: user.avatarUrl,
       gmailTokenExpiresAt: user.gmailTokenExpiresAt,
       createdAt: user.createdAt,
+      // Encrypted fields (will be decrypted by caller if needed)
+      connectedProviders: user.connectedProviders,
       // Decrypted fields
       name,
       gmailAccessToken,

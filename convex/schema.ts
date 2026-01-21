@@ -298,7 +298,15 @@ export type WritingStyle = {
 export type ConnectedProvider = {
   provider: "gmail" | "outlook" | "imap";
   email: string;
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: number;
+  accessToken?: string;     // Optional for IMAP (uses password instead)
+  refreshToken?: string;    // Optional for IMAP
+  expiresAt?: number;       // Optional for IMAP (no expiry for basic auth)
+
+  // IMAP-specific fields
+  imapHost?: string;        // e.g., "imap.gmail.com"
+  imapPort?: number;        // e.g., 993
+  imapPassword?: string;    // Encrypted password for IMAP
+  imapTls?: boolean;        // Use TLS (default true)
+  lastSyncUid?: number;     // Last synced UID for incremental sync
+  uidValidity?: number;     // UIDVALIDITY for mailbox state tracking
 };

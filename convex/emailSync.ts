@@ -122,14 +122,37 @@ export const checkNewEmailsForAllUsers = internalAction({
           continue;
         }
 
-        await checkNewEmailsForUser(ctx, {
-          _id: decryptedUser._id,
-          email: decryptedUser.email,
-          gmailAccessToken: decryptedUser.gmailAccessToken ?? undefined,
-          gmailRefreshToken: decryptedUser.gmailRefreshToken ?? undefined,
-          gmailTokenExpiresAt: decryptedUser.gmailTokenExpiresAt,
-          lastEmailSyncAt: rawUser.lastEmailSyncAt,
-        });
+        // Sync Gmail if user has Gmail tokens
+        if (decryptedUser.gmailAccessToken) {
+          await checkNewEmailsForUser(ctx, {
+            _id: decryptedUser._id,
+            email: decryptedUser.email,
+            gmailAccessToken: decryptedUser.gmailAccessToken ?? undefined,
+            gmailRefreshToken: decryptedUser.gmailRefreshToken ?? undefined,
+            gmailTokenExpiresAt: decryptedUser.gmailTokenExpiresAt,
+            lastEmailSyncAt: rawUser.lastEmailSyncAt,
+          });
+        }
+
+        // Sync IMAP accounts if user has any
+        if (decryptedUser.connectedProviders) {
+          const imapProviders = decryptedUser.connectedProviders.filter(
+            (p: any) => p.provider === "imap"
+          );
+
+          for (const imapProvider of imapProviders) {
+            try {
+              console.log(`[IMAP Sync] Syncing ${imapProvider.email} for user ${rawUser.email}`);
+              await ctx.runAction(internal.imapSync.syncImapForUser, {
+                userId: decryptedUser._id,
+                userEmail: rawUser.email,
+                providerEmail: imapProvider.email,
+              });
+            } catch (error) {
+              console.error(`[IMAP Sync] Failed for ${imapProvider.email}:`, error);
+            }
+          }
+        }
       } catch (error) {
         console.error(`Failed to check emails for user ${rawUser.email}:`, error);
       }
