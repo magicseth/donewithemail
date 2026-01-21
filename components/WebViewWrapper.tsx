@@ -62,12 +62,16 @@ export function WebViewWrapper({ html, style }: WebViewWrapperProps) {
       scrollEnabled={true}
       nestedScrollEnabled={true}
       showsVerticalScrollIndicator={true}
+      javaScriptEnabled={true}
+      domStorageEnabled={true}
+      allowFileAccess={true}
     />
   );
 }
 
 const styles = StyleSheet.create({
   webView: {
+    flex: 1,
     minHeight: 400,
     backgroundColor: "#fff",
   },
