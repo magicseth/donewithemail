@@ -382,7 +382,7 @@ export default function AskScreen() {
           style={styles.input}
           value={input}
           onChangeText={setInput}
-          placeholder="Ask about your emails..."
+          placeholder="Type your question..."
           placeholderTextColor="#999"
           multiline
           maxLength={500}
@@ -459,6 +459,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+    textAlign: "center",
   },
   threadItem: {
     flexDirection: "row",
