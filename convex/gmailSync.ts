@@ -921,14 +921,26 @@ export const getEmailAttachments = query({
       return [];
     }
 
-    // Get PII helper for decrypting filenames
-    const pii = await encryptedPii.forUser(ctx, email.userId);
+    // Get PII helper for decrypting filenames (use forUserQuery in query context)
+    const pii = await encryptedPii.forUserQuery(ctx, email.userId);
 
     // Get all attachments for this email
     const attachments = await ctx.db
       .query("emailAttachments")
       .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
       .collect();
+
+    // If no PII key exists, return attachments with placeholder filename
+    if (!pii) {
+      return attachments.map((attachment) => ({
+        _id: attachment._id,
+        filename: "[encrypted]",
+        mimeType: attachment.mimeType,
+        size: attachment.size,
+        attachmentId: attachment.attachmentId,
+        isInline: attachment.isInline,
+      }));
+    }
 
     // Decrypt filenames
     return Promise.all(
