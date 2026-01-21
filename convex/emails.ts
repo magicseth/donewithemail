@@ -64,6 +64,7 @@ async function decryptSummaryForQuery(
   suggestedReply: string | null;
   actionDescription: string | null;
   quickReplies: QuickReply[] | null;
+  actionableItems: ActionableItem[] | null;
   calendarEvent: CalendarEvent | null;
   deadlineDescription: string | null;
 } | null> {
@@ -402,6 +403,7 @@ export const getMyUntriagedEmails = authedQuery({
           suggestedReply: string | null;
           actionDescription: string | null;
           quickReplies: QuickReply[] | null;
+          actionableItems: ActionableItem[] | null;
           calendarEvent: CalendarEvent | null;
         } | null = null;
 
@@ -437,6 +439,7 @@ export const getMyUntriagedEmails = authedQuery({
             suggestedReply: decrypted.suggestedReply,
             actionDescription: decrypted.actionDescription,
             quickReplies,
+            actionableItems,
             calendarEvent,
           };
         }
@@ -565,6 +568,7 @@ export const getMyTodoEmails = authedQuery({
           suggestedReply: string | null;
           actionDescription: string | null;
           quickReplies: QuickReply[] | null;
+          actionableItems: ActionableItem[] | null;
           calendarEvent: CalendarEvent | null;
         } | null = null;
 
@@ -600,6 +604,7 @@ export const getMyTodoEmails = authedQuery({
             suggestedReply: decrypted.suggestedReply,
             actionDescription: decrypted.actionDescription,
             quickReplies,
+            actionableItems,
             calendarEvent,
           };
         }
@@ -1247,6 +1252,7 @@ interface BatchEmailPreview {
   urgencyScore?: number;
   actionRequired?: "reply" | "action" | "fyi" | "none";
   quickReplies?: Array<{ label: string; body: string }>;
+  actionableItems?: ActionableItem[];
   calendarEvent?: {
     title: string;
     startTime?: string;
