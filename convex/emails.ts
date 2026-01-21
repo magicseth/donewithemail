@@ -1,7 +1,9 @@
 import { v } from "convex/values";
-import { mutation, internalQuery, DatabaseReader } from "./_generated/server";
+import { mutation, internalQuery, DatabaseReader, QueryCtx } from "./_generated/server";
 import { authedQuery, authedMutation } from "./functions";
-import { Id } from "./_generated/dataModel";
+import { Id, Doc } from "./_generated/dataModel";
+import { encryptedPii, EncryptedField } from "./pii";
+import { QuickReply, CalendarEvent } from "./schema";
 
 // Helper to fetch summary for an email
 async function getSummaryForEmail(db: DatabaseReader, emailId: Id<"emails">) {
@@ -12,12 +14,101 @@ async function getSummaryForEmail(db: DatabaseReader, emailId: Id<"emails">) {
   return summary;
 }
 
+// Helper to decrypt email fields in query context
+async function decryptEmailForQuery(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  email: Doc<"emails">
+): Promise<{
+  subject: string | null;
+  bodyPreview: string | null;
+  fromName: string | null;
+}> {
+  const pii = await encryptedPii.forUserQuery(ctx, userId);
+  if (!pii) {
+    return { subject: null, bodyPreview: null, fromName: null };
+  }
+  const decrypted = await pii.decryptMany({
+    subject: email.subject,
+    bodyPreview: email.bodyPreview,
+    fromName: email.fromName ?? undefined,
+  });
+  return {
+    subject: decrypted.subject,
+    bodyPreview: decrypted.bodyPreview,
+    fromName: decrypted.fromName,
+  };
+}
+
+// Helper to decrypt contact name in query context
+async function decryptContactNameForQuery(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  name: EncryptedField | undefined
+): Promise<string | undefined> {
+  if (!name) return undefined;
+  const pii = await encryptedPii.forUserQuery(ctx, userId);
+  if (!pii) return undefined;
+  const decrypted = await pii.decrypt(name);
+  return decrypted ?? undefined;
+}
+
+// Helper to decrypt summary fields in query context
+async function decryptSummaryForQuery(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  summary: Doc<"emailSummaries"> | null
+): Promise<{
+  summary: string | null;
+  urgencyReason: string | null;
+  suggestedReply: string | null;
+  actionDescription: string | null;
+  quickReplies: QuickReply[] | null;
+  calendarEvent: CalendarEvent | null;
+  deadlineDescription: string | null;
+} | null> {
+  if (!summary) return null;
+  const pii = await encryptedPii.forUserQuery(ctx, userId);
+  if (!pii) return null;
+
+  const decrypted = await pii.decryptMany({
+    summary: summary.summary,
+    urgencyReason: summary.urgencyReason,
+    suggestedReply: summary.suggestedReply ?? undefined,
+    actionDescription: summary.actionDescription ?? undefined,
+    deadlineDescription: summary.deadlineDescription ?? undefined,
+  });
+
+  // Decrypt JSON fields
+  let quickReplies: QuickReply[] | null = null;
+  if (summary.quickReplies) {
+    const qrJson = await pii.decrypt(summary.quickReplies);
+    if (qrJson) quickReplies = JSON.parse(qrJson);
+  }
+
+  let calendarEvent: CalendarEvent | null = null;
+  if (summary.calendarEvent) {
+    const ceJson = await pii.decrypt(summary.calendarEvent);
+    if (ceJson) calendarEvent = JSON.parse(ceJson);
+  }
+
+  return {
+    summary: decrypted.summary,
+    urgencyReason: decrypted.urgencyReason,
+    suggestedReply: decrypted.suggestedReply,
+    actionDescription: decrypted.actionDescription,
+    quickReplies,
+    calendarEvent,
+    deadlineDescription: decrypted.deadlineDescription,
+  };
+}
+
 // =============================================================================
 // INTERNAL FUNCTIONS (used by workflows, sync, etc.)
 // =============================================================================
 
 /**
- * Get a single email by ID (internal, for actions)
+ * Get a single email by ID (internal, for actions) with decryption
  */
 export const getEmailById = internalQuery({
   args: {
@@ -27,23 +118,95 @@ export const getEmailById = internalQuery({
     try {
       const id = args.emailId as Id<"emails">;
       const email = await ctx.db.get(id);
-      return email;
+      if (!email) return null;
+
+      // Get PII helper for decryption
+      const pii = await encryptedPii.forUserQuery(ctx, email.userId);
+
+      // Decrypt PII fields
+      let subject: string | null = null;
+      let bodyPreview: string | null = null;
+      let fromName: string | null = null;
+
+      if (pii) {
+        subject = await pii.decrypt(email.subject);
+        bodyPreview = await pii.decrypt(email.bodyPreview);
+        if (email.fromName) {
+          fromName = await pii.decrypt(email.fromName);
+        }
+      }
+
+      return {
+        _id: email._id,
+        _creationTime: email._creationTime,
+        externalId: email.externalId,
+        provider: email.provider,
+        userId: email.userId,
+        from: email.from,
+        to: email.to,
+        cc: email.cc,
+        receivedAt: email.receivedAt,
+        isRead: email.isRead,
+        isTriaged: email.isTriaged,
+        triageAction: email.triageAction,
+        triagedAt: email.triagedAt,
+        threadId: email.threadId,
+        direction: email.direction,
+        listUnsubscribe: email.listUnsubscribe,
+        listUnsubscribePost: email.listUnsubscribePost,
+        isSubscription: email.isSubscription,
+        // Decrypted fields
+        subject,
+        bodyPreview,
+        fromName,
+      };
     } catch {
       return null;
     }
   },
 });
 
-// Get email body from the separate emailBodies table
+// Get email body from the separate emailBodies table (with decryption)
 export const getEmailBodyById = internalQuery({
   args: {
     emailId: v.id("emails"),
   },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const body = await ctx.db
       .query("emailBodies")
       .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
       .first();
+
+    if (!body) return null;
+
+    // Get the email to get userId for decryption
+    const email = await ctx.db.get(args.emailId);
+    if (!email) return null;
+
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, email.userId);
+
+    let bodyFull: string | null = null;
+    let bodyHtml: string | null = null;
+    let rawPayload: string | null = null;
+
+    if (pii) {
+      bodyFull = await pii.decrypt(body.bodyFull);
+      if (body.bodyHtml) {
+        bodyHtml = await pii.decrypt(body.bodyHtml);
+      }
+      if (body.rawPayload) {
+        rawPayload = await pii.decrypt(body.rawPayload);
+      }
+    }
+
+    return {
+      _id: body._id,
+      emailId: body.emailId,
+      bodyFull,
+      bodyHtml,
+      rawPayload,
+    };
   },
 });
 
@@ -65,7 +228,7 @@ export const storeEmail = mutation({
   },
   handler: async (ctx, args) => {
     // Extract bodyFull to store separately
-    const { bodyFull, ...emailFields } = args;
+    const { bodyFull, subject, bodyPreview, ...otherFields } = args;
 
     // Check if email already exists
     const existing = await ctx.db
@@ -79,17 +242,27 @@ export const storeEmail = mutation({
       return { emailId: existing._id, isNew: false };
     }
 
-    // Insert email without large body fields
+    // Get PII helper for encrypting email content
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+
+    // Encrypt PII fields
+    const encryptedSubject = await pii.encrypt(subject);
+    const encryptedBodyPreview = await pii.encrypt(bodyPreview);
+    const encryptedBodyFull = await pii.encrypt(bodyFull);
+
+    // Insert email with encrypted fields
     const emailId = await ctx.db.insert("emails", {
-      ...emailFields,
+      ...otherFields,
+      subject: encryptedSubject,
+      bodyPreview: encryptedBodyPreview,
       isRead: false,
       isTriaged: false,
     });
 
-    // Store body content in separate table
+    // Store body content in separate table (encrypted)
     await ctx.db.insert("emailBodies", {
       emailId,
-      bodyFull,
+      bodyFull: encryptedBodyFull,
     });
 
     // Queue for AI processing
@@ -185,27 +358,118 @@ export const getMyUntriagedEmails = authedQuery({
       emailIds.map((id, i) => [id, summariesArray[i]])
     );
 
-    // Map emails with pre-fetched data (no more queries)
-    const emailsWithData = emails.map((email) => {
-      const fromContact = contactsMap.get(email.from);
-      const summaryData = summariesMap.get(email._id);
-      return {
-        ...email,
-        fromContact,
-        summary: summaryData?.summary,
-        urgencyScore: summaryData?.urgencyScore,
-        urgencyReason: summaryData?.urgencyReason,
-        suggestedReply: summaryData?.suggestedReply,
-        actionRequired: summaryData?.actionRequired,
-        actionDescription: summaryData?.actionDescription,
-        quickReplies: summaryData?.quickReplies,
-        calendarEvent: summaryData?.calendarEvent,
-        shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
-        calendarEventId: summaryData?.calendarEventId,
-        calendarEventLink: summaryData?.calendarEventLink,
-        aiProcessedAt: summaryData?.createdAt,
-      };
-    });
+    // Get PII helper for decryption (returns null if user has no key yet)
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    // Map emails with pre-fetched data and decrypt PII fields
+    const emailsWithData = await Promise.all(
+      emails.map(async (email) => {
+        const fromContact = contactsMap.get(email.from);
+        const summaryData = summariesMap.get(email._id);
+
+        // Decrypt email fields
+        let decryptedEmail = { subject: null as string | null, bodyPreview: null as string | null, fromName: null as string | null };
+        if (pii) {
+          const decrypted = await pii.decryptMany({
+            subject: email.subject,
+            bodyPreview: email.bodyPreview,
+            fromName: email.fromName ?? undefined,
+          });
+          decryptedEmail = {
+            subject: decrypted.subject,
+            bodyPreview: decrypted.bodyPreview,
+            fromName: decrypted.fromName,
+          };
+        }
+
+        // Decrypt contact name
+        let decryptedContactName: string | undefined;
+        if (pii && fromContact?.name) {
+          decryptedContactName = await pii.decrypt(fromContact.name) ?? undefined;
+        }
+
+        // Decrypt summary fields
+        let decryptedSummary: {
+          summary: string | null;
+          urgencyReason: string | null;
+          suggestedReply: string | null;
+          actionDescription: string | null;
+          quickReplies: QuickReply[] | null;
+          calendarEvent: CalendarEvent | null;
+        } | null = null;
+
+        if (pii && summaryData) {
+          const decrypted = await pii.decryptMany({
+            summary: summaryData.summary,
+            urgencyReason: summaryData.urgencyReason,
+            suggestedReply: summaryData.suggestedReply ?? undefined,
+            actionDescription: summaryData.actionDescription ?? undefined,
+          });
+
+          let quickReplies: QuickReply[] | null = null;
+          if (summaryData.quickReplies) {
+            const qrJson = await pii.decrypt(summaryData.quickReplies);
+            if (qrJson) quickReplies = JSON.parse(qrJson);
+          }
+
+          let calendarEvent: CalendarEvent | null = null;
+          if (summaryData.calendarEvent) {
+            const ceJson = await pii.decrypt(summaryData.calendarEvent);
+            if (ceJson) calendarEvent = JSON.parse(ceJson);
+          }
+
+          decryptedSummary = {
+            summary: decrypted.summary,
+            urgencyReason: decrypted.urgencyReason,
+            suggestedReply: decrypted.suggestedReply,
+            actionDescription: decrypted.actionDescription,
+            quickReplies,
+            calendarEvent,
+          };
+        }
+
+        return {
+          _id: email._id,
+          externalId: email.externalId,
+          threadId: email.threadId,
+          provider: email.provider,
+          userId: email.userId,
+          from: email.from,
+          to: email.to,
+          cc: email.cc,
+          receivedAt: email.receivedAt,
+          isRead: email.isRead,
+          isTriaged: email.isTriaged,
+          triageAction: email.triageAction,
+          triagedAt: email.triagedAt,
+          direction: email.direction,
+          listUnsubscribe: email.listUnsubscribe,
+          isSubscription: email.isSubscription,
+          // Decrypted fields
+          subject: decryptedEmail.subject ?? "",
+          bodyPreview: decryptedEmail.bodyPreview ?? "",
+          fromName: decryptedEmail.fromName ?? undefined,
+          fromContact: fromContact ? {
+            _id: fromContact._id,
+            email: fromContact.email,
+            name: decryptedContactName,
+            avatarUrl: fromContact.avatarUrl,
+          } : undefined,
+          summary: decryptedSummary?.summary ?? undefined,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: decryptedSummary?.urgencyReason ?? undefined,
+          suggestedReply: decryptedSummary?.suggestedReply ?? undefined,
+          actionRequired: summaryData?.actionRequired,
+          actionDescription: decryptedSummary?.actionDescription ?? undefined,
+          quickReplies: decryptedSummary?.quickReplies ?? undefined,
+          calendarEvent: decryptedSummary?.calendarEvent ?? undefined,
+          shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
+          aiProcessedAt: summaryData?.createdAt,
+        };
+      })
+    );
 
     return emailsWithData;
   },
@@ -251,26 +515,117 @@ export const getMyTodoEmails = authedQuery({
       emailIds.map((id, i) => [id, summariesArray[i]])
     );
 
-    const emailsWithData = emails.map((email) => {
-      const fromContact = contactsMap.get(email.from);
-      const summaryData = summariesMap.get(email._id);
-      return {
-        ...email,
-        fromContact,
-        summary: summaryData?.summary,
-        urgencyScore: summaryData?.urgencyScore,
-        urgencyReason: summaryData?.urgencyReason,
-        suggestedReply: summaryData?.suggestedReply,
-        actionRequired: summaryData?.actionRequired,
-        actionDescription: summaryData?.actionDescription,
-        quickReplies: summaryData?.quickReplies,
-        calendarEvent: summaryData?.calendarEvent,
-        shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
-        calendarEventId: summaryData?.calendarEventId,
-        calendarEventLink: summaryData?.calendarEventLink,
-        aiProcessedAt: summaryData?.createdAt,
-      };
-    });
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    const emailsWithData = await Promise.all(
+      emails.map(async (email) => {
+        const fromContact = contactsMap.get(email.from);
+        const summaryData = summariesMap.get(email._id);
+
+        // Decrypt email fields
+        let decryptedEmail = { subject: null as string | null, bodyPreview: null as string | null, fromName: null as string | null };
+        if (pii) {
+          const decrypted = await pii.decryptMany({
+            subject: email.subject,
+            bodyPreview: email.bodyPreview,
+            fromName: email.fromName ?? undefined,
+          });
+          decryptedEmail = {
+            subject: decrypted.subject,
+            bodyPreview: decrypted.bodyPreview,
+            fromName: decrypted.fromName,
+          };
+        }
+
+        // Decrypt contact name
+        let decryptedContactName: string | undefined;
+        if (pii && fromContact?.name) {
+          decryptedContactName = await pii.decrypt(fromContact.name) ?? undefined;
+        }
+
+        // Decrypt summary fields
+        let decryptedSummary: {
+          summary: string | null;
+          urgencyReason: string | null;
+          suggestedReply: string | null;
+          actionDescription: string | null;
+          quickReplies: QuickReply[] | null;
+          calendarEvent: CalendarEvent | null;
+        } | null = null;
+
+        if (pii && summaryData) {
+          const decrypted = await pii.decryptMany({
+            summary: summaryData.summary,
+            urgencyReason: summaryData.urgencyReason,
+            suggestedReply: summaryData.suggestedReply ?? undefined,
+            actionDescription: summaryData.actionDescription ?? undefined,
+          });
+
+          let quickReplies: QuickReply[] | null = null;
+          if (summaryData.quickReplies) {
+            const qrJson = await pii.decrypt(summaryData.quickReplies);
+            if (qrJson) quickReplies = JSON.parse(qrJson);
+          }
+
+          let calendarEvent: CalendarEvent | null = null;
+          if (summaryData.calendarEvent) {
+            const ceJson = await pii.decrypt(summaryData.calendarEvent);
+            if (ceJson) calendarEvent = JSON.parse(ceJson);
+          }
+
+          decryptedSummary = {
+            summary: decrypted.summary,
+            urgencyReason: decrypted.urgencyReason,
+            suggestedReply: decrypted.suggestedReply,
+            actionDescription: decrypted.actionDescription,
+            quickReplies,
+            calendarEvent,
+          };
+        }
+
+        return {
+          _id: email._id,
+          externalId: email.externalId,
+          threadId: email.threadId,
+          provider: email.provider,
+          userId: email.userId,
+          from: email.from,
+          to: email.to,
+          cc: email.cc,
+          receivedAt: email.receivedAt,
+          isRead: email.isRead,
+          isTriaged: email.isTriaged,
+          triageAction: email.triageAction,
+          triagedAt: email.triagedAt,
+          direction: email.direction,
+          listUnsubscribe: email.listUnsubscribe,
+          isSubscription: email.isSubscription,
+          // Decrypted fields
+          subject: decryptedEmail.subject ?? "",
+          bodyPreview: decryptedEmail.bodyPreview ?? "",
+          fromName: decryptedEmail.fromName ?? undefined,
+          fromContact: fromContact ? {
+            _id: fromContact._id,
+            email: fromContact.email,
+            name: decryptedContactName,
+            avatarUrl: fromContact.avatarUrl,
+          } : undefined,
+          summary: decryptedSummary?.summary ?? undefined,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason: decryptedSummary?.urgencyReason ?? undefined,
+          suggestedReply: decryptedSummary?.suggestedReply ?? undefined,
+          actionRequired: summaryData?.actionRequired,
+          actionDescription: decryptedSummary?.actionDescription ?? undefined,
+          quickReplies: decryptedSummary?.quickReplies ?? undefined,
+          calendarEvent: decryptedSummary?.calendarEvent ?? undefined,
+          shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
+          aiProcessedAt: summaryData?.createdAt,
+        };
+      })
+    );
 
     return emailsWithData;
   },
@@ -298,15 +653,106 @@ export const getMyEmail = authedQuery({
     );
     const summaryData = await getSummaryForEmail(ctx.db, email._id);
 
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    // Decrypt email fields
+    let subject = "";
+    let bodyPreview = "";
+    let fromName: string | undefined;
+    if (pii) {
+      const decrypted = await pii.decryptMany({
+        subject: email.subject,
+        bodyPreview: email.bodyPreview,
+        fromName: email.fromName ?? undefined,
+      });
+      subject = decrypted.subject ?? "";
+      bodyPreview = decrypted.bodyPreview ?? "";
+      fromName = decrypted.fromName ?? undefined;
+    }
+
+    // Decrypt contact names
+    let decryptedFromContact: { _id: string; email: string; name?: string; avatarUrl?: string; relationship?: string } | undefined;
+    if (fromContact && pii) {
+      const decryptedName = fromContact.name ? await pii.decrypt(fromContact.name) : null;
+      decryptedFromContact = {
+        _id: fromContact._id,
+        email: fromContact.email,
+        name: decryptedName ?? undefined,
+        avatarUrl: fromContact.avatarUrl,
+        relationship: fromContact.relationship,
+      };
+    } else if (fromContact) {
+      decryptedFromContact = {
+        _id: fromContact._id,
+        email: fromContact.email,
+        avatarUrl: fromContact.avatarUrl,
+        relationship: fromContact.relationship,
+      };
+    }
+
+    const decryptedToContacts = await Promise.all(
+      toContacts.filter(Boolean).map(async (c) => {
+        if (!c) return null;
+        let name: string | undefined;
+        if (pii && c.name) {
+          name = await pii.decrypt(c.name) ?? undefined;
+        }
+        return {
+          _id: c._id,
+          email: c.email,
+          name,
+          avatarUrl: c.avatarUrl,
+        };
+      })
+    );
+
+    // Decrypt summary fields
+    let summary: string | undefined;
+    let urgencyReason: string | undefined;
+    let suggestedReply: string | undefined;
+    let calendarEvent: CalendarEvent | undefined;
+    if (pii && summaryData) {
+      const decrypted = await pii.decryptMany({
+        summary: summaryData.summary,
+        urgencyReason: summaryData.urgencyReason,
+        suggestedReply: summaryData.suggestedReply ?? undefined,
+      });
+      summary = decrypted.summary ?? undefined;
+      urgencyReason = decrypted.urgencyReason ?? undefined;
+      suggestedReply = decrypted.suggestedReply ?? undefined;
+
+      if (summaryData.calendarEvent) {
+        const ceJson = await pii.decrypt(summaryData.calendarEvent);
+        if (ceJson) calendarEvent = JSON.parse(ceJson);
+      }
+    }
+
     return {
-      ...email,
-      fromContact,
-      toContacts: toContacts.filter(Boolean),
-      summary: summaryData?.summary,
+      _id: email._id,
+      externalId: email.externalId,
+      threadId: email.threadId,
+      provider: email.provider,
+      userId: email.userId,
+      from: email.from,
+      to: email.to,
+      cc: email.cc,
+      receivedAt: email.receivedAt,
+      isRead: email.isRead,
+      isTriaged: email.isTriaged,
+      triageAction: email.triageAction,
+      triagedAt: email.triagedAt,
+      direction: email.direction,
+      subject,
+      bodyPreview,
+      fromName,
+      fromContact: decryptedFromContact,
+      toContacts: decryptedToContacts.filter(Boolean),
+      summary,
       urgencyScore: summaryData?.urgencyScore,
-      urgencyReason: summaryData?.urgencyReason,
-      suggestedReply: summaryData?.suggestedReply,
-      calendarEvent: summaryData?.calendarEvent,
+      urgencyReason,
+      suggestedReply,
+      calendarEvent,
       calendarEventId: summaryData?.calendarEventId,
       calendarEventLink: summaryData?.calendarEventLink,
       aiProcessedAt: summaryData?.createdAt,
@@ -336,9 +782,27 @@ export const getMyEmailBody = authedQuery({
       .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
       .first();
 
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    let bodyFull: string | null = null;
+    let bodyHtml: string | null = null;
+    let bodyPreview: string | null = null;
+
+    if (pii) {
+      if (body?.bodyFull) {
+        bodyFull = await pii.decrypt(body.bodyFull);
+      }
+      if (body?.bodyHtml) {
+        bodyHtml = await pii.decrypt(body.bodyHtml);
+      }
+      // Fallback to bodyPreview from email
+      bodyPreview = await pii.decrypt(email.bodyPreview);
+    }
+
     return {
-      bodyFull: body?.bodyFull || email.bodyPreview,
-      bodyHtml: body?.bodyHtml,
+      bodyFull: bodyFull || bodyPreview || "",
+      bodyHtml: bodyHtml ?? undefined,
     };
   },
 });
@@ -366,7 +830,7 @@ export const triageMyEmail = authedMutation({
       throw new Error("Unauthorized: Email does not belong to you");
     }
 
-    console.log(`[Triage] Action: ${args.action} | Subject: "${email.subject}" | ID: ${args.emailId}`);
+    console.log(`[Triage] Action: ${args.action} | Email ID: ${args.emailId}`);
 
     await ctx.db.patch(args.emailId, {
       isTriaged: true,
@@ -406,6 +870,9 @@ export const markMyEmailAsRead = authedMutation({
 
 /**
  * Search emails for current user
+ * NOTE: Search is disabled while PII encryption is active.
+ * Encrypted fields cannot be searched with standard search indexes.
+ * TODO: Implement client-side search or searchable encryption if needed.
  */
 export const searchMyEmails = authedQuery({
   args: {
@@ -419,11 +886,12 @@ export const searchMyEmails = authedQuery({
 
     const limit = args.limit ?? 20;
 
+    // Search is disabled with PII encryption - encrypted subjects can't be searched
+    // Return recent emails instead as a fallback
     const emails = await ctx.db
       .query("emails")
-      .withSearchIndex("search_content", (q) =>
-        q.search("subject", args.searchQuery).eq("userId", ctx.userId)
-      )
+      .withIndex("by_user_received", (q) => q.eq("userId", ctx.userId))
+      .order("desc")
       .take(limit);
 
     // Batch fetch contacts
@@ -449,26 +917,106 @@ export const searchMyEmails = authedQuery({
       emailIds.map((id, i) => [id, summariesArray[i]])
     );
 
-    const emailsWithData = emails.map((email) => {
-      const fromContact = contactsMap.get(email.from);
-      const summaryData = summariesMap.get(email._id);
-      return {
-        ...email,
-        fromContact,
-        summary: summaryData?.summary,
-        urgencyScore: summaryData?.urgencyScore,
-        urgencyReason: summaryData?.urgencyReason,
-        suggestedReply: summaryData?.suggestedReply,
-        actionRequired: summaryData?.actionRequired,
-        actionDescription: summaryData?.actionDescription,
-        quickReplies: summaryData?.quickReplies,
-        calendarEvent: summaryData?.calendarEvent,
-        shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
-        calendarEventId: summaryData?.calendarEventId,
-        calendarEventLink: summaryData?.calendarEventLink,
-        aiProcessedAt: summaryData?.createdAt,
-      };
-    });
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    const emailsWithData = await Promise.all(
+      emails.map(async (email) => {
+        const fromContact = contactsMap.get(email.from);
+        const summaryData = summariesMap.get(email._id);
+
+        // Decrypt email fields
+        let subject = "";
+        let bodyPreview = "";
+        let fromName: string | undefined;
+        if (pii) {
+          const decrypted = await pii.decryptMany({
+            subject: email.subject,
+            bodyPreview: email.bodyPreview,
+            fromName: email.fromName ?? undefined,
+          });
+          subject = decrypted.subject ?? "";
+          bodyPreview = decrypted.bodyPreview ?? "";
+          fromName = decrypted.fromName ?? undefined;
+        }
+
+        // Decrypt contact name
+        let decryptedContactName: string | undefined;
+        if (pii && fromContact?.name) {
+          decryptedContactName = await pii.decrypt(fromContact.name) ?? undefined;
+        }
+
+        // Decrypt summary fields
+        let summary: string | undefined;
+        let urgencyReason: string | undefined;
+        let suggestedReply: string | undefined;
+        let actionDescription: string | undefined;
+        let quickReplies: QuickReply[] | undefined;
+        let calendarEvent: CalendarEvent | undefined;
+
+        if (pii && summaryData) {
+          const decryptedSummary = await pii.decryptMany({
+            summary: summaryData.summary,
+            urgencyReason: summaryData.urgencyReason,
+            suggestedReply: summaryData.suggestedReply ?? undefined,
+            actionDescription: summaryData.actionDescription ?? undefined,
+          });
+          summary = decryptedSummary.summary ?? undefined;
+          urgencyReason = decryptedSummary.urgencyReason ?? undefined;
+          suggestedReply = decryptedSummary.suggestedReply ?? undefined;
+          actionDescription = decryptedSummary.actionDescription ?? undefined;
+
+          if (summaryData.quickReplies) {
+            const qrJson = await pii.decrypt(summaryData.quickReplies);
+            if (qrJson) quickReplies = JSON.parse(qrJson);
+          }
+
+          if (summaryData.calendarEvent) {
+            const ceJson = await pii.decrypt(summaryData.calendarEvent);
+            if (ceJson) calendarEvent = JSON.parse(ceJson);
+          }
+        }
+
+        return {
+          _id: email._id,
+          externalId: email.externalId,
+          threadId: email.threadId,
+          provider: email.provider,
+          userId: email.userId,
+          from: email.from,
+          to: email.to,
+          cc: email.cc,
+          receivedAt: email.receivedAt,
+          isRead: email.isRead,
+          isTriaged: email.isTriaged,
+          triageAction: email.triageAction,
+          triagedAt: email.triagedAt,
+          direction: email.direction,
+          // Decrypted fields
+          subject,
+          bodyPreview,
+          fromName,
+          fromContact: fromContact ? {
+            _id: fromContact._id,
+            email: fromContact.email,
+            name: decryptedContactName,
+            avatarUrl: fromContact.avatarUrl,
+          } : undefined,
+          summary,
+          urgencyScore: summaryData?.urgencyScore,
+          urgencyReason,
+          suggestedReply,
+          actionRequired: summaryData?.actionRequired,
+          actionDescription,
+          quickReplies,
+          calendarEvent,
+          shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
+          calendarEventId: summaryData?.calendarEventId,
+          calendarEventLink: summaryData?.calendarEventLink,
+          aiProcessedAt: summaryData?.createdAt,
+        };
+      })
+    );
 
     return emailsWithData;
   },
@@ -490,37 +1038,133 @@ export const getMyThreadEmails = authedQuery({
       throw new Error("Unauthorized: Email does not belong to you");
     }
 
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    // Helper to decrypt an email with its related data
+    async function decryptEmailData(
+      e: Doc<"emails">,
+      fromContact: Doc<"contacts"> | null,
+      toContacts: (Doc<"contacts"> | null)[],
+      summaryData: Doc<"emailSummaries"> | null
+    ) {
+      // Decrypt email fields
+      let subject = "";
+      let bodyPreview = "";
+      let fromName: string | undefined;
+      if (pii) {
+        const decrypted = await pii.decryptMany({
+          subject: e.subject,
+          bodyPreview: e.bodyPreview,
+          fromName: e.fromName ?? undefined,
+        });
+        subject = decrypted.subject ?? "";
+        bodyPreview = decrypted.bodyPreview ?? "";
+        fromName = decrypted.fromName ?? undefined;
+      }
+
+      // Decrypt contact names
+      let decryptedFromContact: { _id: string; email: string; name?: string; avatarUrl?: string; relationship?: string } | undefined;
+      if (fromContact && pii) {
+        const decryptedName = fromContact.name ? await pii.decrypt(fromContact.name) : null;
+        decryptedFromContact = {
+          _id: fromContact._id,
+          email: fromContact.email,
+          name: decryptedName ?? undefined,
+          avatarUrl: fromContact.avatarUrl,
+          relationship: fromContact.relationship,
+        };
+      } else if (fromContact) {
+        decryptedFromContact = {
+          _id: fromContact._id,
+          email: fromContact.email,
+          avatarUrl: fromContact.avatarUrl,
+          relationship: fromContact.relationship,
+        };
+      }
+
+      const decryptedToContacts = await Promise.all(
+        toContacts.filter(Boolean).map(async (c) => {
+          if (!c) return null;
+          let name: string | undefined;
+          if (pii && c.name) {
+            name = await pii.decrypt(c.name) ?? undefined;
+          }
+          return { _id: c._id, email: c.email, name, avatarUrl: c.avatarUrl };
+        })
+      );
+
+      // Decrypt summary fields
+      let summary: string | undefined;
+      let urgencyReason: string | undefined;
+      let suggestedReply: string | undefined;
+      let calendarEvent: CalendarEvent | undefined;
+      if (pii && summaryData) {
+        const decrypted = await pii.decryptMany({
+          summary: summaryData.summary,
+          urgencyReason: summaryData.urgencyReason,
+          suggestedReply: summaryData.suggestedReply ?? undefined,
+        });
+        summary = decrypted.summary ?? undefined;
+        urgencyReason = decrypted.urgencyReason ?? undefined;
+        suggestedReply = decrypted.suggestedReply ?? undefined;
+
+        if (summaryData.calendarEvent) {
+          const ceJson = await pii.decrypt(summaryData.calendarEvent);
+          if (ceJson) calendarEvent = JSON.parse(ceJson);
+        }
+      }
+
+      return {
+        _id: e._id,
+        externalId: e.externalId,
+        threadId: e.threadId,
+        provider: e.provider,
+        userId: e.userId,
+        from: e.from,
+        to: e.to,
+        cc: e.cc,
+        receivedAt: e.receivedAt,
+        isRead: e.isRead,
+        isTriaged: e.isTriaged,
+        triageAction: e.triageAction,
+        triagedAt: e.triagedAt,
+        direction: e.direction,
+        subject,
+        bodyPreview,
+        fromName,
+        fromContact: decryptedFromContact,
+        toContacts: decryptedToContacts.filter(Boolean),
+        summary,
+        urgencyScore: summaryData?.urgencyScore,
+        urgencyReason,
+        suggestedReply,
+        calendarEvent,
+        shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
+        calendarEventId: summaryData?.calendarEventId,
+        calendarEventLink: summaryData?.calendarEventLink,
+        aiProcessedAt: summaryData?.createdAt,
+      };
+    }
+
     // If no threadId, just return this email
     if (!email.threadId) {
       const fromContact = await ctx.db.get(email.from);
       const summaryData = await getSummaryForEmail(ctx.db, email._id);
-      // Fetch recipients for outgoing emails
       const toContacts = email.direction === "outgoing" && email.to?.length
         ? await Promise.all(email.to.map(id => ctx.db.get(id)))
         : [];
-      return [{
-        ...email,
-        fromContact,
-        toContacts: toContacts.filter(Boolean),
-        summary: summaryData?.summary,
-        urgencyScore: summaryData?.urgencyScore,
-        urgencyReason: summaryData?.urgencyReason,
-        suggestedReply: summaryData?.suggestedReply,
-        calendarEvent: summaryData?.calendarEvent,
-        calendarEventId: summaryData?.calendarEventId,
-        calendarEventLink: summaryData?.calendarEventLink,
-        aiProcessedAt: summaryData?.createdAt,
-      }];
+      return [await decryptEmailData(email, fromContact, toContacts, summaryData)];
     }
 
-    // Get all emails in this thread (already scoped to user via index)
+    // Get all emails in this thread
     const threadEmails = await ctx.db
       .query("emails")
       .withIndex("by_thread", (q) => q.eq("userId", ctx.userId).eq("threadId", email.threadId))
       .order("asc")
       .collect();
 
-    // Batch fetch contacts (both from and to)
+    // Batch fetch contacts
     const fromContactIds = [...new Set(threadEmails.map((e) => e.from))];
     const toContactIds = [...new Set(threadEmails.flatMap((e) => e.to || []))];
     const allContactIds = [...new Set([...fromContactIds, ...toContactIds])];
@@ -545,25 +1189,15 @@ export const getMyThreadEmails = authedQuery({
       emailIds.map((id, i) => [id, summariesArray[i]])
     );
 
-    const emailsWithData = threadEmails.map((e) => {
-      const fromContact = contactsMap.get(e.from);
-      const toContacts = (e.to || []).map(id => contactsMap.get(id)).filter(Boolean);
-      const summaryData = summariesMap.get(e._id);
-      return {
-        ...e,
-        fromContact,
-        toContacts,
-        summary: summaryData?.summary,
-        urgencyScore: summaryData?.urgencyScore,
-        urgencyReason: summaryData?.urgencyReason,
-        suggestedReply: summaryData?.suggestedReply,
-        calendarEvent: summaryData?.calendarEvent,
-        shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
-        calendarEventId: summaryData?.calendarEventId,
-        calendarEventLink: summaryData?.calendarEventLink,
-        aiProcessedAt: summaryData?.createdAt,
-      };
-    });
+    // Decrypt all emails
+    const emailsWithData = await Promise.all(
+      threadEmails.map(async (e) => {
+        const fromContact = contactsMap.get(e.from) ?? null;
+        const toContacts = (e.to || []).map(id => contactsMap.get(id) ?? null);
+        const summaryData = summariesMap.get(e._id) ?? null;
+        return decryptEmailData(e, fromContact, toContacts, summaryData);
+      })
+    );
 
     return emailsWithData;
   },
@@ -675,36 +1309,80 @@ export const getMyBatchTriagePreview = authedQuery({
       emailIds.map((id, i) => [id, summariesArray[i]])
     );
 
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
     // Helper to convert email to BatchEmailPreview using pre-fetched data
-    const emailToPreview = (email: typeof untriagedEmails[0]): BatchEmailPreview => {
+    const emailToPreview = async (email: typeof untriagedEmails[0]): Promise<BatchEmailPreview> => {
       const fromContact = contactsMap.get(email.from);
       const summaryData = summariesMap.get(email._id);
+
+      // Decrypt email fields
+      let subject = "";
+      let bodyPreview = "";
+      let fromName: string | undefined;
+      if (pii) {
+        const decrypted = await pii.decryptMany({
+          subject: email.subject,
+          bodyPreview: email.bodyPreview,
+          fromName: email.fromName ?? undefined,
+        });
+        subject = decrypted.subject ?? "";
+        bodyPreview = decrypted.bodyPreview ?? "";
+        fromName = decrypted.fromName ?? undefined;
+      }
+
+      // Decrypt contact name
+      let decryptedContactName: string | undefined;
+      if (pii && fromContact?.name) {
+        decryptedContactName = await pii.decrypt(fromContact.name) ?? undefined;
+      }
+
+      // Decrypt summary fields
+      let summary: string | undefined;
+      let quickReplies: QuickReply[] | undefined;
+      let calendarEvent: CalendarEvent | undefined;
+
+      if (pii && summaryData) {
+        summary = await pii.decrypt(summaryData.summary) ?? undefined;
+
+        if (summaryData.quickReplies) {
+          const qrJson = await pii.decrypt(summaryData.quickReplies);
+          if (qrJson) quickReplies = JSON.parse(qrJson);
+        }
+
+        if (summaryData.calendarEvent) {
+          const ceJson = await pii.decrypt(summaryData.calendarEvent);
+          if (ceJson) calendarEvent = JSON.parse(ceJson);
+        }
+      }
+
       return {
         _id: email._id,
-        subject: email.subject,
-        bodyPreview: email.bodyPreview,
+        subject,
+        bodyPreview,
         receivedAt: email.receivedAt,
-        summary: summaryData?.summary,
+        summary,
         urgencyScore: summaryData?.urgencyScore,
         actionRequired: summaryData?.actionRequired,
-        quickReplies: summaryData?.quickReplies,
-        calendarEvent: summaryData?.calendarEvent,
+        quickReplies,
+        calendarEvent,
         shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
         isSubscription: email.isSubscription,
-        fromName: email.fromName,
+        fromName,
         fromContact: fromContact ? {
           _id: fromContact._id,
           email: fromContact.email,
-          name: fromContact.name,
+          name: decryptedContactName,
           avatarUrl: fromContact.avatarUrl,
         } : null,
         aiProcessedAt: summaryData?.createdAt,
-      } as BatchEmailPreview;
+      };
     };
 
-    // Map emails with pre-fetched data (no more queries)
-    const emailsWithData = untriagedEmails.map(emailToPreview);
-    const todoEmailsWithData = todoEmails.map(emailToPreview);
+    // Map emails with pre-fetched data and decrypt
+    const emailsWithData = await Promise.all(untriagedEmails.map(emailToPreview));
+    const todoEmailsWithData = await Promise.all(todoEmails.map(emailToPreview));
 
     // Group emails by AI recommendation
     const done: BatchEmailPreview[] = [];

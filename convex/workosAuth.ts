@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { action, mutation } from "./_generated/server";
 import { api } from "./_generated/api";
+import { encryptedPii } from "./pii";
 
 const WORKOS_API_KEY = process.env.WORKOS_API_KEY!;
 
@@ -145,21 +146,44 @@ export const storeTokens = mutation({
       .withIndex("by_email", (q) => q.eq("email", args.email))
       .first();
 
-    const updates = {
-      workosId: args.workosUserId,
-      gmailAccessToken: args.accessToken,
-      gmailRefreshToken: args.refreshToken,
-      gmailTokenExpiresAt: Date.now() + 3600 * 1000, // 1 hour
-    };
-
     if (existing) {
-      await ctx.db.patch(existing._id, updates);
+      // Get PII helper for encryption
+      const pii = await encryptedPii.forUser(ctx, existing._id);
+
+      // Encrypt tokens
+      const encryptedAccessToken = await pii.encrypt(args.accessToken);
+      const encryptedRefreshToken = args.refreshToken
+        ? await pii.encrypt(args.refreshToken)
+        : undefined;
+
+      await ctx.db.patch(existing._id, {
+        workosId: args.workosUserId,
+        gmailAccessToken: encryptedAccessToken,
+        gmailRefreshToken: encryptedRefreshToken,
+        gmailTokenExpiresAt: Date.now() + 3600 * 1000, // 1 hour
+      });
       return existing._id;
     } else {
-      return await ctx.db.insert("users", {
+      // Create user first, then encrypt tokens
+      const userId = await ctx.db.insert("users", {
         email: args.email,
-        ...updates,
+        workosId: args.workosUserId,
+        gmailTokenExpiresAt: Date.now() + 3600 * 1000, // 1 hour
       });
+
+      // Now encrypt tokens with the new userId
+      const pii = await encryptedPii.forUser(ctx, userId);
+      const encryptedAccessToken = await pii.encrypt(args.accessToken);
+      const encryptedRefreshToken = args.refreshToken
+        ? await pii.encrypt(args.refreshToken)
+        : undefined;
+
+      await ctx.db.patch(userId, {
+        gmailAccessToken: encryptedAccessToken,
+        gmailRefreshToken: encryptedRefreshToken,
+      });
+
+      return userId;
     }
   },
 });

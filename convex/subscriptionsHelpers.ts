@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, query } from "./_generated/server";
 import { Doc } from "./_generated/dataModel";
+import { encryptedPii } from "./pii";
 
 // Determine the best unsubscribe method based on available options
 export function determineUnsubscribeMethod(
@@ -55,6 +56,9 @@ export const upsertSubscription = internalMutation({
     // Extract domain from sender email
     const domain = args.senderEmail.split("@")[1] || "";
 
+    // Get PII helper for encrypting sender name and subject
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+
     // Check if subscription already exists
     const existing = await ctx.db
       .query("subscriptions")
@@ -70,7 +74,7 @@ export const upsertSubscription = internalMutation({
 
     if (existing) {
       // Update existing subscription
-      const updates: Partial<Doc<"subscriptions">> = {
+      const updates: Record<string, unknown> = {
         emailCount: existing.emailCount + 1,
         lastEmailAt: Math.max(existing.lastEmailAt, args.receivedAt),
       };
@@ -79,7 +83,7 @@ export const upsertSubscription = internalMutation({
       if (args.receivedAt > existing.lastEmailAt) {
         updates.mostRecentEmailId = args.emailId;
         if (args.subject) {
-          updates.mostRecentSubject = args.subject;
+          updates.mostRecentSubject = await pii.encrypt(args.subject);
         }
       }
 
@@ -90,21 +94,29 @@ export const upsertSubscription = internalMutation({
         updates.unsubscribeMethod = unsubscribeMethod;
       }
 
-      // Update sender name if provided and we don't have one
+      // Update sender name if provided and we don't have one (encrypt it)
       if (args.senderName && !existing.senderName) {
-        updates.senderName = args.senderName;
+        updates.senderName = await pii.encrypt(args.senderName);
       }
 
       await ctx.db.patch(existing._id, updates);
       return existing._id;
     }
 
+    // Encrypt PII fields for new subscription
+    const encryptedSenderName = args.senderName
+      ? await pii.encrypt(args.senderName)
+      : undefined;
+    const encryptedSubject = args.subject
+      ? await pii.encrypt(args.subject)
+      : undefined;
+
     // Create new subscription
     const subscriptionId = await ctx.db.insert("subscriptions", {
       userId: args.userId,
       senderEmail: args.senderEmail,
       senderDomain: domain,
-      senderName: args.senderName,
+      senderName: encryptedSenderName,
       listUnsubscribe: args.listUnsubscribe,
       listUnsubscribePost: args.listUnsubscribePost,
       unsubscribeMethod,
@@ -113,7 +125,7 @@ export const upsertSubscription = internalMutation({
       lastEmailAt: args.receivedAt,
       unsubscribeStatus: "subscribed",
       mostRecentEmailId: args.emailId,
-      mostRecentSubject: args.subject,
+      mostRecentSubject: encryptedSubject,
     });
 
     return subscriptionId;
@@ -139,7 +151,46 @@ export const getSubscriptions = query({
       .order("desc")
       .collect();
 
-    return subscriptions;
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, user._id);
+
+    // Decrypt PII fields for each subscription
+    const decryptedSubscriptions = await Promise.all(
+      subscriptions.map(async (sub) => {
+        let senderName: string | undefined;
+        let mostRecentSubject: string | undefined;
+
+        if (pii) {
+          if (sub.senderName) {
+            senderName = await pii.decrypt(sub.senderName) ?? undefined;
+          }
+          if (sub.mostRecentSubject) {
+            mostRecentSubject = await pii.decrypt(sub.mostRecentSubject) ?? undefined;
+          }
+        }
+
+        return {
+          _id: sub._id,
+          _creationTime: sub._creationTime,
+          userId: sub.userId,
+          senderEmail: sub.senderEmail,
+          senderDomain: sub.senderDomain,
+          senderName,
+          listUnsubscribe: sub.listUnsubscribe,
+          listUnsubscribePost: sub.listUnsubscribePost,
+          unsubscribeMethod: sub.unsubscribeMethod,
+          emailCount: sub.emailCount,
+          firstEmailAt: sub.firstEmailAt,
+          lastEmailAt: sub.lastEmailAt,
+          unsubscribeStatus: sub.unsubscribeStatus,
+          unsubscribedAt: sub.unsubscribedAt,
+          mostRecentEmailId: sub.mostRecentEmailId,
+          mostRecentSubject,
+        };
+      })
+    );
+
+    return decryptedSubscriptions;
   },
 });
 
@@ -168,33 +219,104 @@ export const updateStatus = internalMutation({
   },
 });
 
-// Internal query to get user by email
+// Internal query to get user by email (with decrypted tokens)
 export const getUserByEmailInternal = internalQuery({
   args: { email: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const user = await ctx.db
       .query("users")
       .withIndex("by_email", (q) => q.eq("email", args.email))
       .first();
+
+    if (!user) return null;
+
+    // Decrypt tokens
+    const pii = await encryptedPii.forUserQuery(ctx, user._id);
+    let gmailAccessToken: string | undefined;
+    let gmailRefreshToken: string | undefined;
+
+    if (pii) {
+      if (user.gmailAccessToken) {
+        gmailAccessToken = (await pii.decrypt(user.gmailAccessToken)) ?? undefined;
+      }
+      if (user.gmailRefreshToken) {
+        gmailRefreshToken = (await pii.decrypt(user.gmailRefreshToken)) ?? undefined;
+      }
+    }
+
+    return {
+      _id: user._id,
+      email: user.email,
+      gmailAccessToken,
+      gmailRefreshToken,
+      gmailTokenExpiresAt: user.gmailTokenExpiresAt,
+    };
   },
 });
 
-// Internal query to get user by WorkOS ID
+// Internal query to get user by WorkOS ID (with decrypted tokens)
 export const getUserByWorkosId = internalQuery({
   args: { workosId: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const user = await ctx.db
       .query("users")
       .withIndex("by_workos_id", (q) => q.eq("workosId", args.workosId))
       .first();
+
+    if (!user) return null;
+
+    // Decrypt tokens
+    const pii = await encryptedPii.forUserQuery(ctx, user._id);
+    let gmailAccessToken: string | undefined;
+    let gmailRefreshToken: string | undefined;
+
+    if (pii) {
+      if (user.gmailAccessToken) {
+        gmailAccessToken = (await pii.decrypt(user.gmailAccessToken)) ?? undefined;
+      }
+      if (user.gmailRefreshToken) {
+        gmailRefreshToken = (await pii.decrypt(user.gmailRefreshToken)) ?? undefined;
+      }
+    }
+
+    return {
+      _id: user._id,
+      email: user.email,
+      gmailAccessToken,
+      gmailRefreshToken,
+      gmailTokenExpiresAt: user.gmailTokenExpiresAt,
+    };
   },
 });
 
-// Internal query to get user by ID
+// Internal query to get user by ID (with decrypted tokens)
 export const getUserByIdInternal = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.userId);
+    const user = await ctx.db.get(args.userId);
+    if (!user) return null;
+
+    // Decrypt tokens
+    const pii = await encryptedPii.forUserQuery(ctx, user._id);
+    let gmailAccessToken: string | undefined;
+    let gmailRefreshToken: string | undefined;
+
+    if (pii) {
+      if (user.gmailAccessToken) {
+        gmailAccessToken = (await pii.decrypt(user.gmailAccessToken)) ?? undefined;
+      }
+      if (user.gmailRefreshToken) {
+        gmailRefreshToken = (await pii.decrypt(user.gmailRefreshToken)) ?? undefined;
+      }
+    }
+
+    return {
+      _id: user._id,
+      email: user.email,
+      gmailAccessToken,
+      gmailRefreshToken,
+      gmailTokenExpiresAt: user.gmailTokenExpiresAt,
+    };
   },
 });
 
@@ -217,7 +339,28 @@ export const getEmailsWithoutSubscriptionCheck = internalQuery({
       .collect();
 
     // Filter to those without subscription check
-    return emails.filter((e) => e.isSubscription === undefined);
+    const filtered = emails.filter((e) => e.isSubscription === undefined);
+
+    // Decrypt subject for each email
+    const pii = await encryptedPii.forUserQuery(ctx, args.userId);
+
+    return Promise.all(
+      filtered.map(async (e) => {
+        let subject = "";
+        if (pii && e.subject) {
+          subject = (await pii.decrypt(e.subject)) ?? "";
+        }
+        return {
+          _id: e._id,
+          externalId: e.externalId,
+          from: e.from,
+          receivedAt: e.receivedAt,
+          listUnsubscribe: e.listUnsubscribe,
+          isSubscription: e.isSubscription,
+          subject,
+        };
+      })
+    );
   },
 });
 
@@ -238,11 +381,24 @@ export const updateEmailSubscriptionHeaders = internalMutation({
   },
 });
 
-// Internal query to get contact by ID
+// Internal query to get contact by ID (with decrypted name)
 export const getContactById = internalQuery({
   args: { contactId: v.id("contacts") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.contactId);
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) return null;
+
+    // Decrypt name
+    const pii = await encryptedPii.forUserQuery(ctx, contact.userId);
+    let name: string | undefined;
+    if (pii && contact.name) {
+      name = (await pii.decrypt(contact.name)) ?? undefined;
+    }
+
+    return {
+      email: contact.email,
+      name,
+    };
   },
 });
 

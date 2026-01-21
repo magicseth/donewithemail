@@ -28,7 +28,7 @@ export default function PersonScreen() {
   const { updateRelationship } = useContactActions();
 
   // Get the actual Convex contact ID (from contactStats, not URL param)
-  const contactId = contactStats?.contact?._id;
+  const contactId = contactStats?.contact?._id as Id<"contacts"> | undefined;
   const { addFact, updateFact, deleteFact } = useContactFacts(contactId);
 
   // Fact editing modal state

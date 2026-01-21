@@ -10,6 +10,7 @@ import { v } from "convex/values";
 import { action, internalAction, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { encryptedPii } from "./pii";
 
 // Import from extracted modules
 import { extractBody } from "./gmailHelpers";
@@ -46,14 +47,18 @@ export const upsertContact = internalMutation({
       avatarUrl = await ctx.storage.getUrl(args.avatarStorageId) ?? undefined;
     }
 
+    // Get PII helper for encrypting contact name
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+
     if (existing) {
-      // Update name if provided and different
+      // Update name if provided (encrypt it)
       const updates: Record<string, unknown> = {
         emailCount: existing.emailCount + 1,
         lastEmailAt: Date.now(),
       };
-      if (args.name && args.name !== existing.name) {
-        updates.name = args.name;
+      if (args.name) {
+        // Always update name when provided (encrypted)
+        updates.name = await pii.encrypt(args.name);
       }
       // Only update avatar if we have a new one and don't have a cached one
       if (args.avatarStorageId && !existing.avatarStorageId) {
@@ -64,10 +69,13 @@ export const upsertContact = internalMutation({
       return { contactId: existing._id, hasAvatar: !!existing.avatarStorageId };
     }
 
+    // Encrypt name for new contact
+    const encryptedName = args.name ? await pii.encrypt(args.name) : undefined;
+
     const contactId = await ctx.db.insert("contacts", {
       userId: args.userId,
       email: args.email,
-      name: args.name,
+      name: encryptedName,
       avatarStorageId: args.avatarStorageId,
       avatarUrl,
       emailCount: 1,
@@ -124,20 +132,30 @@ export const storeEmailInternal = internalMutation({
       return { emailId: existing._id, isNew: false };
     }
 
+    // Get PII helper for encrypting email content
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+
     // Extract bodyFull from args - it goes into emailBodies table, not emails
-    const { bodyFull, ...emailArgs } = args;
+    const { bodyFull, subject, bodyPreview, ...restArgs } = args;
+
+    // Encrypt PII fields
+    const encryptedSubject = await pii.encrypt(subject);
+    const encryptedBodyPreview = await pii.encrypt(bodyPreview);
 
     const emailId = await ctx.db.insert("emails", {
-      ...emailArgs,
+      ...restArgs,
+      subject: encryptedSubject,
+      bodyPreview: encryptedBodyPreview,
       isTriaged: false,
       direction: args.direction || "incoming",
     });
 
-    // Store body in separate emailBodies table
+    // Store body in separate emailBodies table (encrypted)
     if (bodyFull) {
+      const encryptedBodyFull = await pii.encrypt(bodyFull);
       await ctx.db.insert("emailBodies", {
         emailId,
-        bodyFull,
+        bodyFull: encryptedBodyFull,
       });
     }
 
@@ -156,7 +174,7 @@ export const fetchEmailBody = action({
     // Get the email to find its externalId
     type EmailData = {
       externalId: string;
-      bodyPreview: string;
+      bodyPreview: string | null;
     };
     const email: EmailData | null = await ctx.runQuery(internal.emails.getEmailById, {
       emailId: args.emailId,
@@ -216,7 +234,7 @@ export const fetchEmailBody = action({
 
     const data = await response.json();
     const { html, plain } = extractBody(data.payload);
-    const bodyFull = html || plain || email.bodyPreview;
+    const bodyFull = html || plain || email.bodyPreview || "";
     const isHtml = !!html;
 
     // Update the email with full body
@@ -236,6 +254,16 @@ export const updateEmailBody = internalMutation({
     bodyFull: v.string(),
   },
   handler: async (ctx, args) => {
+    // Get the email to find the user for encryption
+    const email = await ctx.db.get(args.emailId);
+    if (!email) {
+      throw new Error("Email not found");
+    }
+
+    // Get PII helper for encrypting body
+    const pii = await encryptedPii.forUser(ctx, email.userId);
+    const encryptedBodyFull = await pii.encrypt(args.bodyFull);
+
     // Check if body already exists for this email
     const existingBody = await ctx.db
       .query("emailBodies")
@@ -243,11 +271,11 @@ export const updateEmailBody = internalMutation({
       .first();
 
     if (existingBody) {
-      await ctx.db.patch(existingBody._id, { bodyFull: args.bodyFull });
+      await ctx.db.patch(existingBody._id, { bodyFull: encryptedBodyFull });
     } else {
       await ctx.db.insert("emailBodies", {
         emailId: args.emailId,
-        bodyFull: args.bodyFull,
+        bodyFull: encryptedBodyFull,
       });
     }
   },

@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { piiField } from "@convex-dev/encrypted-pii";
 
 export default defineSchema({
   emails: defineTable({
@@ -9,13 +10,13 @@ export default defineSchema({
     provider: v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap")),
     userId: v.id("users"),
 
-    // Email metadata
+    // Email metadata (ENCRYPTED)
     from: v.id("contacts"),
-    fromName: v.optional(v.string()), // Sender name as it appeared in this email's From header
+    fromName: v.optional(piiField()), // Sender name as it appeared in this email's From header
     to: v.array(v.id("contacts")),
     cc: v.optional(v.array(v.id("contacts"))),
-    subject: v.string(),
-    bodyPreview: v.string(),
+    subject: piiField(),
+    bodyPreview: piiField(),
     // Large body content stored in emailBodies table (migrated)
     receivedAt: v.number(),
 
@@ -47,29 +48,26 @@ export default defineSchema({
     .index("by_external_id", ["externalId", "provider"])
     .index("by_from", ["from"])
     .index("by_thread", ["userId", "threadId"])
-    .index("by_user_reply_needed", ["userId", "triageAction", "triagedAt"])
-    .searchIndex("search_content", {
-      searchField: "subject",
-      filterFields: ["userId"],
-    }),
+    .index("by_user_reply_needed", ["userId", "triageAction", "triagedAt"]),
+    // Note: search index on subject removed since it's now encrypted
 
   // Email bodies stored separately to keep emails table lightweight
   // This allows querying many emails without hitting memory limits
   emailBodies: defineTable({
     emailId: v.id("emails"),
-    bodyFull: v.string(),
-    bodyHtml: v.optional(v.string()),
-    rawPayload: v.optional(v.string()),
+    bodyFull: piiField(),
+    bodyHtml: v.optional(piiField()),
+    rawPayload: v.optional(piiField()),
   })
     .index("by_email", ["emailId"]),
 
   // AI-generated email summaries (separate table for cleaner data model)
   emailSummaries: defineTable({
     emailId: v.id("emails"),
-    summary: v.string(),
+    summary: piiField(),
     urgencyScore: v.number(),
-    urgencyReason: v.string(),
-    suggestedReply: v.optional(v.string()),
+    urgencyReason: piiField(),
+    suggestedReply: v.optional(piiField()),
 
     // Action required type
     actionRequired: v.optional(v.union(
@@ -78,26 +76,13 @@ export default defineSchema({
       v.literal("fyi"),        // Just informational
       v.literal("none")        // No action needed
     )),
-    actionDescription: v.optional(v.string()), // e.g., "Schedule meeting", "Review document"
+    actionDescription: v.optional(piiField()), // e.g., "Schedule meeting", "Review document"
 
-    // Quick reply options (up to 3)
-    quickReplies: v.optional(v.array(v.object({
-      label: v.string(),       // Button text: "Sounds good!", "Let me check"
-      body: v.string(),        // Full reply text to send
-    }))),
+    // Quick reply options - encrypted as JSON string
+    quickReplies: v.optional(piiField()), // JSON: Array<{label: string, body: string}>
 
-    // Calendar event suggestion
-    calendarEvent: v.optional(v.object({
-      title: v.string(),
-      startTime: v.optional(v.string()),  // ISO string or relative like "next Tuesday 2pm"
-      endTime: v.optional(v.string()),
-      location: v.optional(v.string()),
-      description: v.optional(v.string()),
-      // Recurrence rule for repeating events (RRULE format for Google Calendar API)
-      recurrence: v.optional(v.string()),
-      // Human-readable description of recurrence (e.g., "Every other Tuesday")
-      recurrenceDescription: v.optional(v.string()),
-    })),
+    // Calendar event suggestion - encrypted as JSON string
+    calendarEvent: v.optional(piiField()), // JSON: {title, startTime, endTime, location, description, recurrence, recurrenceDescription}
 
     // AI prediction: should user accept this calendar invite?
     // true = likely want to attend, false = likely decline/ignore
@@ -109,7 +94,7 @@ export default defineSchema({
 
     // Deadline extracted from email (ISO string)
     deadline: v.optional(v.string()),
-    deadlineDescription: v.optional(v.string()),  // e.g., "respond by", "submit by"
+    deadlineDescription: v.optional(piiField()),  // e.g., "respond by", "submit by"
     deadlineReminderSent: v.optional(v.boolean()),
 
     createdAt: v.number(),
@@ -127,8 +112,8 @@ export default defineSchema({
 
   contacts: defineTable({
     userId: v.id("users"),
-    email: v.string(),
-    name: v.optional(v.string()),
+    email: v.string(), // Keep unencrypted for index lookups
+    name: v.optional(piiField()),
     avatarUrl: v.optional(v.string()),
     avatarStorageId: v.optional(v.id("_storage")), // Cached avatar in Convex storage
     emailCount: v.number(),
@@ -138,26 +123,12 @@ export default defineSchema({
       v.literal("regular"),
       v.literal("unknown")
     )),
-    // AI-generated relationship summary
-    relationshipSummary: v.optional(v.string()),
-    // Dossier facts about this contact
-    facts: v.optional(v.array(v.object({
-      id: v.string(),           // UUID for editing/deleting
-      text: v.string(),         // "Seth is Leaf's father"
-      source: v.union(v.literal("manual"), v.literal("ai")),
-      createdAt: v.number(),
-      sourceEmailId: v.optional(v.id("emails")),
-    }))),
-    // Writing style analysis (how the user writes to this contact)
-    writingStyle: v.optional(v.object({
-      tone: v.string(),                          // "casual", "formal", "friendly professional"
-      greeting: v.optional(v.string()),          // "Hey!", "Hi John,", "Dear Mr. Smith,"
-      signoff: v.optional(v.string()),           // "Cheers", "Best,", "Thanks!"
-      characteristics: v.optional(v.array(v.string())), // ["uses emojis", "short sentences"]
-      samplePhrases: v.optional(v.array(v.string())),   // Actual phrases from emails
-      emailsAnalyzed: v.number(),
-      analyzedAt: v.number(),
-    })),
+    // AI-generated relationship summary (ENCRYPTED)
+    relationshipSummary: v.optional(piiField()),
+    // Dossier facts about this contact - encrypted as JSON string
+    facts: v.optional(piiField()), // JSON: Array<{id, text, source, createdAt, sourceEmailId?}>
+    // Writing style analysis - encrypted as JSON string
+    writingStyle: v.optional(piiField()), // JSON: {tone, greeting, signoff, characteristics, samplePhrases, emailsAnalyzed, analyzedAt}
   })
     .index("by_user", ["userId"])
     .index("by_email", ["email"])
@@ -167,26 +138,21 @@ export default defineSchema({
   users: defineTable({
     // WorkOS user ID (optional for Gmail-only auth)
     workosId: v.optional(v.string()),
-    email: v.string(),
-    name: v.optional(v.string()),
+    email: v.string(), // Keep unencrypted for index lookups
+    name: v.optional(piiField()),
     avatarUrl: v.optional(v.string()),
 
     // WorkOS session tokens (used to refresh Google OAuth tokens)
-    workosRefreshToken: v.optional(v.string()),
+    // These are sensitive but needed for auth operations - encrypt them
+    workosRefreshToken: v.optional(piiField()),
 
     // Direct Gmail OAuth tokens (obtained from WorkOS oauth_tokens)
-    gmailAccessToken: v.optional(v.string()),
-    gmailRefreshToken: v.optional(v.string()), // Legacy - now using WorkOS refresh
+    gmailAccessToken: v.optional(piiField()),
+    gmailRefreshToken: v.optional(piiField()), // Legacy - now using WorkOS refresh
     gmailTokenExpiresAt: v.optional(v.number()),
 
-    // Connected email providers (legacy/multi-provider)
-    connectedProviders: v.optional(v.array(v.object({
-      provider: v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap")),
-      email: v.string(),
-      accessToken: v.string(),
-      refreshToken: v.string(),
-      expiresAt: v.number(),
-    }))),
+    // Connected email providers - encrypted as JSON string
+    connectedProviders: v.optional(piiField()), // JSON: Array<{provider, email, accessToken, refreshToken, expiresAt}>
 
     // User preferences
     preferences: v.optional(v.object({
@@ -222,9 +188,9 @@ export default defineSchema({
   // Subscriptions/newsletters grouped by sender
   subscriptions: defineTable({
     userId: v.id("users"),
-    senderEmail: v.string(),
+    senderEmail: v.string(), // Keep unencrypted for index lookups
     senderDomain: v.string(),
-    senderName: v.optional(v.string()),
+    senderName: v.optional(piiField()),
     listUnsubscribe: v.optional(v.string()),
     listUnsubscribePost: v.optional(v.boolean()),
     unsubscribeMethod: v.optional(v.union(
@@ -246,7 +212,7 @@ export default defineSchema({
     ),
     unsubscribedAt: v.optional(v.number()),
     mostRecentEmailId: v.optional(v.id("emails")),
-    mostRecentSubject: v.optional(v.string()),
+    mostRecentSubject: v.optional(piiField()),
   })
     .index("by_user", ["userId"])
     .index("by_user_sender", ["userId", "senderEmail"])
@@ -255,7 +221,7 @@ export default defineSchema({
   // Feature requests from voice recording (processed by local Claude Code)
   featureRequests: defineTable({
     userId: v.id("users"),
-    transcript: v.string(),           // Voice transcript
+    transcript: piiField(),           // Voice transcript (ENCRYPTED)
     status: v.union(
       v.literal("pending"),           // Waiting for local processor
       v.literal("processing"),        // Claude Code is working on it
@@ -273,24 +239,66 @@ export default defineSchema({
       v.literal("uploading"),         // Running EAS update
       v.literal("ready")              // Ready for testing
     )),
-    progressMessage: v.optional(v.string()),  // Human-readable status
+    progressMessage: v.optional(piiField()),  // Human-readable status (ENCRYPTED)
     createdAt: v.number(),
     startedAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
-    error: v.optional(v.string()),
-    // Output from Claude Code
-    claudeOutput: v.optional(v.string()),      // Claude's final output/summary
+    error: v.optional(piiField()),
+    // Output from Claude Code (ENCRYPTED)
+    claudeOutput: v.optional(piiField()),      // Claude's final output/summary
     claudeSuccess: v.optional(v.boolean()),    // Did Claude think it succeeded?
     commitHash: v.optional(v.string()),
     branchName: v.optional(v.string()),
     easUpdateId: v.optional(v.string()),
     easUpdateMessage: v.optional(v.string()),
     easDashboardUrl: v.optional(v.string()),
-    // Debug logs from the app when the request was submitted
-    debugLogs: v.optional(v.string()),
+    // Debug logs from the app when the request was submitted (ENCRYPTED)
+    debugLogs: v.optional(piiField()),
     // If this request was combined into another, reference to the combined request
     combinedIntoId: v.optional(v.id("featureRequests")),
   })
     .index("by_status", ["status", "createdAt"])
     .index("by_user", ["userId", "createdAt"]),
 });
+
+// Type helpers for encrypted JSON fields
+export type QuickReply = {
+  label: string;
+  body: string;
+};
+
+export type CalendarEvent = {
+  title: string;
+  startTime?: string;
+  endTime?: string;
+  location?: string;
+  description?: string;
+  recurrence?: string;
+  recurrenceDescription?: string;
+};
+
+export type ContactFact = {
+  id: string;
+  text: string;
+  source: "manual" | "ai";
+  createdAt: number;
+  sourceEmailId?: string;
+};
+
+export type WritingStyle = {
+  tone: string;
+  greeting?: string;
+  signoff?: string;
+  characteristics?: string[];
+  samplePhrases?: string[];
+  emailsAnalyzed: number;
+  analyzedAt: number;
+};
+
+export type ConnectedProvider = {
+  provider: "gmail" | "outlook" | "imap";
+  email: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+};

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { action, internalMutation, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { encryptedPii } from "./pii";
 
 // Generate avatar URL from name/email
 // Uses UI Avatars service which generates nice initials-based profile photos
@@ -136,24 +137,34 @@ export const upsertContactInternal = internalMutation({
 
     const now = Date.now();
 
+    // Get PII helper for encryption
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+
     if (existing) {
       // Update name and avatar if we have a better name now
       const updates: Record<string, unknown> = {
         emailCount: existing.emailCount + 1,
         lastEmailAt: now,
       };
-      
-      if (args.name && args.name !== existing.name) {
-        updates.name = args.name;
+
+      // Decrypt existing name for comparison
+      let existingName: string | undefined;
+      if (existing.name) {
+        existingName = (await pii.decrypt(existing.name)) ?? undefined;
+      }
+
+      if (args.name && args.name !== existingName) {
+        // Encrypt the new name
+        updates.name = await pii.encrypt(args.name);
         // Regenerate avatar with new name
         updates.avatarUrl = getAvatarUrl(args.name, args.email);
       }
-      
+
       // If no avatar exists, generate one
       if (!existing.avatarUrl) {
-        updates.avatarUrl = getAvatarUrl(args.name || existing.name, args.email);
+        updates.avatarUrl = getAvatarUrl(args.name || existingName, args.email);
       }
-      
+
       await ctx.db.patch(existing._id, updates);
 
       return { contactId: existing._id, isNew: false };
@@ -162,10 +173,13 @@ export const upsertContactInternal = internalMutation({
     // Generate avatar URL for new contact
     const avatarUrl = getAvatarUrl(args.name, args.email);
 
+    // Encrypt name for storage
+    const encryptedName = args.name ? await pii.encrypt(args.name) : undefined;
+
     const contactId = await ctx.db.insert("contacts", {
       userId: args.userId,
       email: args.email,
-      name: args.name,
+      name: encryptedName,
       avatarUrl,
       emailCount: 1,
       lastEmailAt: now,
@@ -193,9 +207,6 @@ export const storeEmailInternal = internalMutation({
     receivedAt: v.number(),
   },
   handler: async (ctx, args): Promise<{ emailId: Id<"emails">; isNew: boolean }> => {
-    // Extract bodyFull to store separately
-    const { bodyFull, ...emailFields } = args;
-
     const existing = await ctx.db
       .query("emails")
       .withIndex("by_external_id", (q) =>
@@ -207,9 +218,25 @@ export const storeEmailInternal = internalMutation({
       return { emailId: existing._id, isNew: false };
     }
 
+    // Get PII helper for encryption
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+
+    // Encrypt PII fields
+    const encryptedSubject = await pii.encrypt(args.subject);
+    const encryptedBodyPreview = await pii.encrypt(args.bodyPreview);
+    const encryptedBodyFull = await pii.encrypt(args.bodyFull);
+
     // Insert email without large body field
     const emailId = await ctx.db.insert("emails", {
-      ...emailFields,
+      externalId: args.externalId,
+      provider: args.provider,
+      userId: args.userId,
+      from: args.from,
+      to: args.to,
+      cc: args.cc,
+      subject: encryptedSubject,
+      bodyPreview: encryptedBodyPreview,
+      receivedAt: args.receivedAt,
       isRead: false,
       isTriaged: false,
     });
@@ -217,7 +244,7 @@ export const storeEmailInternal = internalMutation({
     // Store body in separate table
     await ctx.db.insert("emailBodies", {
       emailId,
-      bodyFull,
+      bodyFull: encryptedBodyFull,
     });
 
     // Queue for AI processing
@@ -303,16 +330,23 @@ export const backfillAvatarUrls = mutation({
   handler: async (ctx) => {
     // Get all contacts without avatarUrl
     const contacts = await ctx.db.query("contacts").collect();
-    
+
     let updated = 0;
     for (const contact of contacts) {
       if (!contact.avatarUrl) {
-        const avatarUrl = getAvatarUrl(contact.name, contact.email);
+        // Decrypt contact name for avatar generation
+        const pii = await encryptedPii.forUser(ctx, contact.userId);
+        let name: string | undefined;
+        if (contact.name) {
+          name = (await pii.decrypt(contact.name)) ?? undefined;
+        }
+
+        const avatarUrl = getAvatarUrl(name, contact.email);
         await ctx.db.patch(contact._id, { avatarUrl });
         updated++;
       }
     }
-    
+
     return { updated, total: contacts.length };
   },
 });

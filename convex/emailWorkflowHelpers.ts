@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalQuery } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { encryptedPii } from "./pii";
 
 // Generate fallback avatar URL from name/email using UI Avatars service
 function getFallbackAvatarUrl(name: string | undefined, email: string): string {
@@ -54,6 +55,19 @@ export const getMostUrgentEmailDetails = internalQuery({
       // Get sender info
       const contact = await ctx.db.get(email.from);
 
+      // Get PII helper for decryption
+      const pii = await encryptedPii.forUserQuery(ctx, email.userId);
+
+      // Decrypt subject and contact name
+      let subject = "";
+      let contactName: string | undefined;
+      if (pii) {
+        subject = await pii.decrypt(email.subject) ?? "";
+        if (contact?.name) {
+          contactName = await pii.decrypt(contact.name) ?? undefined;
+        }
+      }
+
       // Get fresh avatar URL - Convex storage URLs expire, so regenerate from storageId
       let avatarUrl: string | undefined;
       if (contact?.avatarStorageId) {
@@ -68,18 +82,18 @@ export const getMostUrgentEmailDetails = internalQuery({
       }
       // Final fallback to generated avatar
       if (!avatarUrl && contact?.email) {
-        avatarUrl = getFallbackAvatarUrl(contact.name, contact.email);
+        avatarUrl = getFallbackAvatarUrl(contactName, contact.email);
         console.log(`[EmailWorkflowHelpers] Generated fallback avatar for ${contact.email}: ${avatarUrl}`);
       }
 
-      console.log(`[EmailWorkflowHelpers] Contact for email "${email.subject}": name=${contact?.name}, email=${contact?.email}, storageId=${contact?.avatarStorageId || "none"}, finalAvatarUrl=${avatarUrl || "none"}`);
+      console.log(`[EmailWorkflowHelpers] Contact for email "${subject}": name=${contactName}, email=${contact?.email}, storageId=${contact?.avatarStorageId || "none"}, finalAvatarUrl=${avatarUrl || "none"}`);
 
       // Track the most urgent
       if (!mostUrgent || summary.urgencyScore > mostUrgent.urgencyScore) {
         mostUrgent = {
           emailId: email._id,
-          subject: email.subject,
-          senderName: contact?.name || contact?.email,
+          subject,
+          senderName: contactName || contact?.email,
           senderAvatarUrl: avatarUrl,
           urgencyScore: summary.urgencyScore,
         };

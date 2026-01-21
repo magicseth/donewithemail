@@ -34,10 +34,12 @@ import type * as gmailSend from "../gmailSend.js";
 import type * as gmailSync from "../gmailSync.js";
 import type * as http from "../http.js";
 import type * as migrations from "../migrations.js";
+import type * as migrations_encryptExistingPii from "../migrations/encryptExistingPii.js";
 import type * as missedTodos from "../missedTodos.js";
 import type * as missedTodosHelpers from "../missedTodosHelpers.js";
 import type * as missedTodosWorkflow from "../missedTodosWorkflow.js";
 import type * as notifications from "../notifications.js";
+import type * as pii from "../pii.js";
 import type * as reminders from "../reminders.js";
 import type * as staticHosting from "../staticHosting.js";
 import type * as subscriptions from "../subscriptions.js";
@@ -83,10 +85,12 @@ declare const fullApi: ApiFromModules<{
   gmailSync: typeof gmailSync;
   http: typeof http;
   migrations: typeof migrations;
+  "migrations/encryptExistingPii": typeof migrations_encryptExistingPii;
   missedTodos: typeof missedTodos;
   missedTodosHelpers: typeof missedTodosHelpers;
   missedTodosWorkflow: typeof missedTodosWorkflow;
   notifications: typeof notifications;
+  pii: typeof pii;
   reminders: typeof reminders;
   staticHosting: typeof staticHosting;
   subscriptions: typeof subscriptions;
@@ -2976,6 +2980,79 @@ export declare const components: {
           null
         >;
       };
+    };
+  };
+  encryptedPii: {
+    public: {
+      deleteAllUserData: FunctionReference<
+        "mutation",
+        "internal",
+        { ownerId: string },
+        number
+      >;
+      deleteField: FunctionReference<
+        "mutation",
+        "internal",
+        { ownerId: string; ref: string },
+        boolean
+      >;
+      exists: FunctionReference<
+        "query",
+        "internal",
+        { ownerId: string; ref: string },
+        boolean
+      >;
+      get: FunctionReference<
+        "mutation",
+        "internal",
+        { ownerId: string; ref: string },
+        string | null
+      >;
+      getBatch: FunctionReference<
+        "mutation",
+        "internal",
+        { items: Array<{ ownerId: string; ref: string }> },
+        Array<{ ref: string; value: string | null }>
+      >;
+      getRawEncryptedData: FunctionReference<
+        "query",
+        "internal",
+        { ownerId: string; ref: string },
+        {
+          algorithm: string;
+          ciphertext: string;
+          createdAt: number;
+          encryptedDek: string;
+          iv: string;
+          ownerId: string;
+          ref: string;
+          version: number;
+        } | null
+      >;
+      getUserKey: FunctionReference<
+        "mutation",
+        "internal",
+        { ownerId: string },
+        string
+      >;
+      getUserKeyQuery: FunctionReference<
+        "query",
+        "internal",
+        { ownerId: string },
+        string | null
+      >;
+      listRefs: FunctionReference<
+        "query",
+        "internal",
+        { ownerId: string },
+        Array<{ createdAt: number; ref: string }>
+      >;
+      store: FunctionReference<
+        "mutation",
+        "internal",
+        { ownerId: string; value: string },
+        string
+      >;
     };
   };
   migrations: {

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
 import { components, internal } from "./_generated/api";
 import { PushNotifications } from "@convex-dev/expo-push-notifications";
+import { encryptedPii } from "./pii";
 
 // Initialize push notifications client
 const pushNotifications = new PushNotifications(components.pushNotifications);
@@ -38,12 +39,19 @@ export const submit = mutation({
       throw new Error("User not found");
     }
 
+    // Get PII helper for encrypting transcript and debug logs
+    const pii = await encryptedPii.forUser(ctx, user._id);
+    const encryptedTranscript = await pii.encrypt(args.transcript);
+    const encryptedDebugLogs = args.debugLogs
+      ? await pii.encrypt(args.debugLogs)
+      : undefined;
+
     const id = await ctx.db.insert("featureRequests", {
       userId: user._id,
-      transcript: args.transcript,
+      transcript: encryptedTranscript,
       status: "pending",
       createdAt: Date.now(),
-      debugLogs: args.debugLogs,
+      debugLogs: encryptedDebugLogs,
     });
 
     return { id };
@@ -56,11 +64,29 @@ export const submit = mutation({
 export const getPending = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db
+    const requests = await ctx.db
       .query("featureRequests")
       .withIndex("by_status", (q) => q.eq("status", "pending"))
       .order("asc")
       .take(10);
+
+    // Decrypt transcripts for each request
+    return Promise.all(
+      requests.map(async (req) => {
+        const pii = await encryptedPii.forUserQuery(ctx, req.userId);
+        let transcript = "";
+        if (pii) {
+          transcript = (await pii.decrypt(req.transcript)) ?? "";
+        }
+        return {
+          _id: req._id,
+          userId: req.userId,
+          transcript,
+          status: req.status,
+          createdAt: req.createdAt,
+        };
+      })
+    );
   },
 });
 
@@ -89,8 +115,17 @@ export const updateClaudeOutput = mutation({
     claudeSuccess: v.boolean(),
   },
   handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.id);
+    if (!request) {
+      throw new Error("Feature request not found");
+    }
+
+    // Get PII helper for encrypting Claude output
+    const pii = await encryptedPii.forUser(ctx, request.userId);
+    const encryptedOutput = await pii.encrypt(args.claudeOutput);
+
     await ctx.db.patch(args.id, {
-      claudeOutput: args.claudeOutput,
+      claudeOutput: encryptedOutput,
       claudeSuccess: args.claudeSuccess,
     });
   },
@@ -116,9 +151,18 @@ export const updateProgress = mutation({
     commitHash: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.id);
+    if (!request) {
+      throw new Error("Feature request not found");
+    }
+
+    // Get PII helper for encrypting progress message
+    const pii = await encryptedPii.forUser(ctx, request.userId);
+    const encryptedProgressMessage = await pii.encrypt(args.progressMessage);
+
     const updates: Record<string, unknown> = {
       progressStep: args.progressStep,
-      progressMessage: args.progressMessage,
+      progressMessage: encryptedProgressMessage,
     };
     if (args.branchName) updates.branchName = args.branchName;
     if (args.commitHash) updates.commitHash = args.commitHash;
@@ -144,10 +188,17 @@ export const markCompleted = mutation({
       throw new Error("Feature request not found");
     }
 
+    // Get PII helper for encrypting progress message and decrypting transcript
+    const pii = await encryptedPii.forUser(ctx, request.userId);
+    const encryptedProgressMessage = await pii.encrypt("Ready for testing!");
+
+    // Decrypt transcript for notification
+    const decryptedTranscript = await pii.decrypt(request.transcript);
+
     await ctx.db.patch(args.id, {
       status: "completed",
       progressStep: "ready",
-      progressMessage: "Ready for testing!",
+      progressMessage: encryptedProgressMessage,
       completedAt: Date.now(),
       commitHash: args.commitHash,
       branchName: args.branchName,
@@ -159,7 +210,7 @@ export const markCompleted = mutation({
     // Send notification to user
     await ctx.scheduler.runAfter(0, internal.featureRequests.sendFeatureCompletedNotification, {
       userId: request.userId,
-      transcript: request.transcript,
+      transcript: decryptedTranscript || "Feature request",
     });
   },
 });
@@ -178,16 +229,23 @@ export const markFailed = mutation({
       throw new Error("Feature request not found");
     }
 
+    // Get PII helper for encrypting error and decrypting transcript
+    const pii = await encryptedPii.forUser(ctx, request.userId);
+    const encryptedError = await pii.encrypt(args.error);
+
+    // Decrypt transcript for notification
+    const decryptedTranscript = await pii.decrypt(request.transcript);
+
     await ctx.db.patch(args.id, {
       status: "failed",
       completedAt: Date.now(),
-      error: args.error,
+      error: encryptedError,
     });
 
     // Send notification to user
     await ctx.scheduler.runAfter(0, internal.featureRequests.sendFeatureFailedNotification, {
       userId: request.userId,
-      transcript: request.transcript,
+      transcript: decryptedTranscript || "Feature request",
       error: args.error,
     });
   },
@@ -222,11 +280,64 @@ export const getMine = query({
       return [];
     }
 
-    return await ctx.db
+    const requests = await ctx.db
       .query("featureRequests")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .order("desc")
       .take(20);
+
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, user._id);
+
+    // Decrypt PII fields for each request
+    return Promise.all(
+      requests.map(async (req) => {
+        let transcript = "";
+        let error: string | undefined;
+        let progressMessage: string | undefined;
+        let claudeOutput: string | undefined;
+        let debugLogs: string | undefined;
+
+        if (pii) {
+          transcript = (await pii.decrypt(req.transcript)) ?? "";
+          if (req.error) {
+            error = (await pii.decrypt(req.error)) ?? undefined;
+          }
+          if (req.progressMessage) {
+            progressMessage = (await pii.decrypt(req.progressMessage)) ?? undefined;
+          }
+          if (req.claudeOutput) {
+            claudeOutput = (await pii.decrypt(req.claudeOutput)) ?? undefined;
+          }
+          if (req.debugLogs) {
+            debugLogs = (await pii.decrypt(req.debugLogs)) ?? undefined;
+          }
+        }
+
+        return {
+          _id: req._id,
+          _creationTime: req._creationTime,
+          userId: req.userId,
+          transcript,
+          status: req.status,
+          createdAt: req.createdAt,
+          startedAt: req.startedAt,
+          completedAt: req.completedAt,
+          progressStep: req.progressStep,
+          progressMessage,
+          branchName: req.branchName,
+          commitHash: req.commitHash,
+          error,
+          claudeOutput,
+          claudeSuccess: req.claudeSuccess,
+          easUpdateId: req.easUpdateId,
+          easUpdateMessage: req.easUpdateMessage,
+          easDashboardUrl: req.easDashboardUrl,
+          combinedIntoId: req.combinedIntoId,
+          debugLogs,
+        };
+      })
+    );
   },
 });
 
@@ -256,8 +367,17 @@ export const updateTranscript = mutation({
     transcript: v.string(),
   },
   handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.id);
+    if (!request) {
+      throw new Error("Feature request not found");
+    }
+
+    // Get PII helper for encrypting transcript
+    const pii = await encryptedPii.forUser(ctx, request.userId);
+    const encryptedTranscript = await pii.encrypt(args.transcript);
+
     await ctx.db.patch(args.id, {
-      transcript: args.transcript,
+      transcript: encryptedTranscript,
     });
   },
 });
@@ -303,11 +423,15 @@ export const cancel = mutation({
       throw new Error("Can only cancel pending or processing requests");
     }
 
+    // Get PII helper for encrypting error message
+    const pii = await encryptedPii.forUser(ctx, request.userId);
+    const encryptedError = await pii.encrypt("Cancelled by user");
+
     // Mark as cancelled (use "failed" status with specific error message)
     await ctx.db.patch(args.id, {
       status: "failed",
       completedAt: Date.now(),
-      error: "Cancelled by user",
+      error: encryptedError,
     });
 
     return { success: true };
@@ -327,9 +451,13 @@ export const retryFailed = mutation({
 
     let count = 0;
     for (const request of failed) {
-      // Skip user-cancelled requests
-      if (request.error === "Cancelled by user") {
-        continue;
+      // Skip user-cancelled requests - need to decrypt error to check
+      if (request.error) {
+        const pii = await encryptedPii.forUser(ctx, request.userId);
+        const decryptedError = await pii.decrypt(request.error);
+        if (decryptedError === "Cancelled by user") {
+          continue;
+        }
       }
       await ctx.db.patch(request._id, {
         status: "pending",

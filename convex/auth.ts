@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { action, mutation, query, internalQuery, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import { encryptedPii } from "./pii";
 
 const WORKOS_CLIENT_ID = process.env.WORKOS_CLIENT_ID!;
 const WORKOS_API_KEY = process.env.WORKOS_API_KEY!;
@@ -128,14 +129,40 @@ export const upsertUser = mutation({
       .withIndex("by_email", (q) => q.eq("email", args.email))
       .first();
 
+    // Get or create user first to get userId for encryption
+    let userId = existing?._id;
+    if (!userId) {
+      // Insert minimal user first to get ID for encryption
+      userId = await ctx.db.insert("users", {
+        email: args.email,
+        workosId: args.workosUserId,
+        avatarUrl: args.avatarUrl,
+      });
+    }
+
+    // Get PII helper for encrypting sensitive data
+    const pii = await encryptedPii.forUser(ctx, userId);
+
+    // Encrypt sensitive fields
+    const encryptedName = args.name ? await pii.encrypt(args.name) : undefined;
+    const encryptedWorkosRefreshToken = args.workosRefreshToken
+      ? await pii.encrypt(args.workosRefreshToken)
+      : undefined;
+    const encryptedGmailAccessToken = args.googleAccessToken
+      ? await pii.encrypt(args.googleAccessToken)
+      : undefined;
+    const encryptedGmailRefreshToken = args.googleRefreshToken
+      ? await pii.encrypt(args.googleRefreshToken)
+      : undefined;
+
     const userData = {
       email: args.email,
       workosId: args.workosUserId,
-      name: args.name,
+      name: encryptedName,
       avatarUrl: args.avatarUrl,
-      workosRefreshToken: args.workosRefreshToken,
-      gmailAccessToken: args.googleAccessToken,
-      gmailRefreshToken: args.googleRefreshToken,
+      workosRefreshToken: encryptedWorkosRefreshToken,
+      gmailAccessToken: encryptedGmailAccessToken,
+      gmailRefreshToken: encryptedGmailRefreshToken,
       gmailTokenExpiresAt: args.googleAccessToken
         ? Date.now() + 3600 * 1000
         : undefined,
@@ -145,7 +172,9 @@ export const upsertUser = mutation({
       await ctx.db.patch(existing._id, userData);
       return existing._id;
     } else {
-      return await ctx.db.insert("users", userData);
+      // Already inserted above, just patch with encrypted data
+      await ctx.db.patch(userId, userData);
+      return userId;
     }
   },
 });
@@ -248,9 +277,13 @@ export const updateWorkosRefreshToken = internalMutation({
     workosRefreshToken: v.string(),
   },
   handler: async (ctx, args) => {
+    // Get PII helper for encrypting token
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+    const encryptedToken = await pii.encrypt(args.workosRefreshToken);
+
     // Direct patch without query - avoids OCC conflicts with other user updates
     await ctx.db.patch(args.userId, {
-      workosRefreshToken: args.workosRefreshToken,
+      workosRefreshToken: encryptedToken,
     });
   },
 });

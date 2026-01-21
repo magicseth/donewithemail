@@ -315,7 +315,7 @@ export default function EmailDetailScreen() {
               email: email.fromContact.email,
               name: email.fromContact.name,
               avatarUrl: email.fromContact.avatarUrl,
-              relationship: email.fromContact.relationship,
+              relationship: email.fromContact.relationship as "vip" | "regular" | "unknown" | undefined,
             }
           : undefined,
         direction: email.direction,
@@ -401,7 +401,7 @@ export default function EmailDetailScreen() {
                     email: threadEmail.fromContact.email,
                     name: threadEmail.fromContact.name,
                     avatarUrl: threadEmail.fromContact.avatarUrl,
-                    relationship: threadEmail.fromContact.relationship,
+                    relationship: threadEmail.fromContact.relationship as "vip" | "regular" | "unknown" | undefined,
                   }
                 : undefined,
               direction: threadEmail.direction,

@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 import { authedQuery, authedMutation } from "./functions";
+import { encryptedPii, EncryptedField } from "./pii";
+import { ContactFact, WritingStyle } from "./schema";
 
 // =============================================================================
 // Internal Functions (used by email sync)
@@ -26,10 +28,18 @@ export const upsertContact = mutation({
 
     const now = Date.now();
 
+    // Get PII helper for encrypting name
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+
     if (existing) {
-      // Update existing contact
+      // Only update name if provided and encrypt it
+      let encryptedName: EncryptedField | undefined;
+      if (args.name) {
+        encryptedName = await pii.encrypt(args.name);
+      }
+
       await ctx.db.patch(existing._id, {
-        name: args.name ?? existing.name,
+        name: encryptedName ?? existing.name,
         avatarUrl: args.avatarUrl ?? existing.avatarUrl,
         emailCount: existing.emailCount + 1,
         lastEmailAt: now,
@@ -38,11 +48,14 @@ export const upsertContact = mutation({
       return { contactId: existing._id, isNew: false };
     }
 
+    // Encrypt name for new contact
+    const encryptedName = args.name ? await pii.encrypt(args.name) : undefined;
+
     // Create new contact
     const contactId = await ctx.db.insert("contacts", {
       userId: args.userId,
       email: args.email,
-      name: args.name,
+      name: encryptedName,
       avatarUrl: args.avatarUrl,
       emailCount: 1,
       lastEmailAt: now,
@@ -57,6 +70,21 @@ export const upsertContact = mutation({
 // Authenticated endpoints (require valid JWT)
 // =============================================================================
 
+// Helper type for decrypted contact
+interface DecryptedContact {
+  _id: string;
+  userId: string;
+  email: string;
+  name?: string;
+  avatarUrl?: string;
+  emailCount: number;
+  lastEmailAt: number;
+  relationship?: "vip" | "regular" | "unknown";
+  relationshipSummary?: string;
+  facts?: ContactFact[];
+  writingStyle?: WritingStyle;
+}
+
 /**
  * Get a contact by ID for the current user (with ownership check)
  */
@@ -64,7 +92,7 @@ export const getMyContact = authedQuery({
   args: {
     contactId: v.id("contacts"),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<DecryptedContact | null> => {
     const contact = await ctx.db.get(args.contactId);
     if (!contact) return null;
 
@@ -73,7 +101,45 @@ export const getMyContact = authedQuery({
       throw new Error("Unauthorized: Contact does not belong to you");
     }
 
-    return contact;
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    // Decrypt PII fields
+    let name: string | undefined;
+    let relationshipSummary: string | undefined;
+    let facts: ContactFact[] | undefined;
+    let writingStyle: WritingStyle | undefined;
+
+    if (pii) {
+      if (contact.name) {
+        name = await pii.decrypt(contact.name) ?? undefined;
+      }
+      if (contact.relationshipSummary) {
+        relationshipSummary = await pii.decrypt(contact.relationshipSummary) ?? undefined;
+      }
+      if (contact.facts) {
+        const factsJson = await pii.decrypt(contact.facts);
+        if (factsJson) facts = JSON.parse(factsJson);
+      }
+      if (contact.writingStyle) {
+        const wsJson = await pii.decrypt(contact.writingStyle);
+        if (wsJson) writingStyle = JSON.parse(wsJson);
+      }
+    }
+
+    return {
+      _id: contact._id,
+      userId: contact.userId,
+      email: contact.email,
+      name,
+      avatarUrl: contact.avatarUrl,
+      emailCount: contact.emailCount,
+      lastEmailAt: contact.lastEmailAt,
+      relationship: contact.relationship,
+      relationshipSummary,
+      facts,
+      writingStyle,
+    };
   },
 });
 
@@ -84,13 +150,55 @@ export const getMyContactByEmail = authedQuery({
   args: {
     email: v.string(),
   },
-  handler: async (ctx, args) => {
-    return await ctx.db
+  handler: async (ctx, args): Promise<DecryptedContact | null> => {
+    const contact = await ctx.db
       .query("contacts")
       .withIndex("by_user_email", (q) =>
         q.eq("userId", ctx.userId).eq("email", args.email)
       )
       .first();
+
+    if (!contact) return null;
+
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    // Decrypt PII fields
+    let name: string | undefined;
+    let relationshipSummary: string | undefined;
+    let facts: ContactFact[] | undefined;
+    let writingStyle: WritingStyle | undefined;
+
+    if (pii) {
+      if (contact.name) {
+        name = await pii.decrypt(contact.name) ?? undefined;
+      }
+      if (contact.relationshipSummary) {
+        relationshipSummary = await pii.decrypt(contact.relationshipSummary) ?? undefined;
+      }
+      if (contact.facts) {
+        const factsJson = await pii.decrypt(contact.facts);
+        if (factsJson) facts = JSON.parse(factsJson);
+      }
+      if (contact.writingStyle) {
+        const wsJson = await pii.decrypt(contact.writingStyle);
+        if (wsJson) writingStyle = JSON.parse(wsJson);
+      }
+    }
+
+    return {
+      _id: contact._id,
+      userId: contact.userId,
+      email: contact.email,
+      name,
+      avatarUrl: contact.avatarUrl,
+      emailCount: contact.emailCount,
+      lastEmailAt: contact.lastEmailAt,
+      relationship: contact.relationship,
+      relationshipSummary,
+      facts,
+      writingStyle,
+    };
   },
 });
 
@@ -101,14 +209,58 @@ export const getMyContacts = authedQuery({
   args: {
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<DecryptedContact[]> => {
     const limit = args.limit ?? 100;
 
-    return await ctx.db
+    const contacts = await ctx.db
       .query("contacts")
       .withIndex("by_user_last_email", (q) => q.eq("userId", ctx.userId))
       .order("desc")
       .take(limit);
+
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    // Decrypt all contacts
+    return Promise.all(
+      contacts.map(async (contact) => {
+        let name: string | undefined;
+        let relationshipSummary: string | undefined;
+        let facts: ContactFact[] | undefined;
+        let writingStyle: WritingStyle | undefined;
+
+        if (pii) {
+          if (contact.name) {
+            name = await pii.decrypt(contact.name) ?? undefined;
+          }
+          if (contact.relationshipSummary) {
+            relationshipSummary = await pii.decrypt(contact.relationshipSummary) ?? undefined;
+          }
+          if (contact.facts) {
+            const factsJson = await pii.decrypt(contact.facts);
+            if (factsJson) facts = JSON.parse(factsJson);
+          }
+          if (contact.writingStyle) {
+            const wsJson = await pii.decrypt(contact.writingStyle);
+            if (wsJson) writingStyle = JSON.parse(wsJson);
+          }
+        }
+
+        return {
+          _id: contact._id,
+          userId: contact.userId,
+          email: contact.email,
+          name,
+          avatarUrl: contact.avatarUrl,
+          emailCount: contact.emailCount,
+          lastEmailAt: contact.lastEmailAt,
+          relationship: contact.relationship,
+          relationshipSummary,
+          facts,
+          writingStyle,
+        };
+      })
+    );
   },
 });
 
@@ -117,13 +269,57 @@ export const getMyContacts = authedQuery({
  */
 export const getMyVIPContacts = authedQuery({
   args: {},
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<DecryptedContact[]> => {
     const contacts = await ctx.db
       .query("contacts")
       .withIndex("by_user", (q) => q.eq("userId", ctx.userId))
       .collect();
 
-    return contacts.filter((c) => c.relationship === "vip");
+    const vipContacts = contacts.filter((c) => c.relationship === "vip");
+
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    // Decrypt all contacts
+    return Promise.all(
+      vipContacts.map(async (contact) => {
+        let name: string | undefined;
+        let relationshipSummary: string | undefined;
+        let facts: ContactFact[] | undefined;
+        let writingStyle: WritingStyle | undefined;
+
+        if (pii) {
+          if (contact.name) {
+            name = await pii.decrypt(contact.name) ?? undefined;
+          }
+          if (contact.relationshipSummary) {
+            relationshipSummary = await pii.decrypt(contact.relationshipSummary) ?? undefined;
+          }
+          if (contact.facts) {
+            const factsJson = await pii.decrypt(contact.facts);
+            if (factsJson) facts = JSON.parse(factsJson);
+          }
+          if (contact.writingStyle) {
+            const wsJson = await pii.decrypt(contact.writingStyle);
+            if (wsJson) writingStyle = JSON.parse(wsJson);
+          }
+        }
+
+        return {
+          _id: contact._id,
+          userId: contact.userId,
+          email: contact.email,
+          name,
+          avatarUrl: contact.avatarUrl,
+          emailCount: contact.emailCount,
+          lastEmailAt: contact.lastEmailAt,
+          relationship: contact.relationship,
+          relationshipSummary,
+          facts,
+          writingStyle,
+        };
+      })
+    );
   },
 });
 
@@ -177,8 +373,12 @@ export const updateMyContactRelationshipSummary = authedMutation({
       throw new Error("Unauthorized: Contact does not belong to you");
     }
 
+    // Encrypt the relationship summary
+    const pii = await encryptedPii.forUser(ctx, ctx.userId);
+    const encryptedSummary = await pii.encrypt(args.relationshipSummary);
+
     await ctx.db.patch(args.contactId, {
-      relationshipSummary: args.relationshipSummary,
+      relationshipSummary: encryptedSummary,
     });
 
     return { success: true };
@@ -206,7 +406,17 @@ export const addFact = authedMutation({
       throw new Error("Unauthorized: Contact does not belong to you");
     }
 
-    const newFact = {
+    // Get PII helper for encryption/decryption
+    const pii = await encryptedPii.forUser(ctx, ctx.userId);
+
+    // Decrypt existing facts
+    let existingFacts: ContactFact[] = [];
+    if (contact.facts) {
+      const factsJson = await pii.decrypt(contact.facts);
+      if (factsJson) existingFacts = JSON.parse(factsJson);
+    }
+
+    const newFact: ContactFact = {
       id: crypto.randomUUID(),
       text: args.text,
       source: args.source,
@@ -214,9 +424,12 @@ export const addFact = authedMutation({
       sourceEmailId: args.sourceEmailId,
     };
 
-    const facts = contact.facts || [];
+    // Encrypt updated facts array
+    const updatedFacts = [...existingFacts, newFact];
+    const encryptedFacts = await pii.encrypt(JSON.stringify(updatedFacts));
+
     await ctx.db.patch(args.contactId, {
-      facts: [...facts, newFact],
+      facts: encryptedFacts,
     });
 
     return { success: true, factId: newFact.id };
@@ -243,7 +456,16 @@ export const updateFact = authedMutation({
       throw new Error("Unauthorized: Contact does not belong to you");
     }
 
-    const facts = contact.facts || [];
+    // Get PII helper for encryption/decryption
+    const pii = await encryptedPii.forUser(ctx, ctx.userId);
+
+    // Decrypt existing facts
+    let facts: ContactFact[] = [];
+    if (contact.facts) {
+      const factsJson = await pii.decrypt(contact.facts);
+      if (factsJson) facts = JSON.parse(factsJson);
+    }
+
     const factIndex = facts.findIndex((f) => f.id === args.factId);
     if (factIndex === -1) {
       throw new Error("Fact not found");
@@ -255,8 +477,11 @@ export const updateFact = authedMutation({
       text: args.text,
     };
 
+    // Encrypt updated facts array
+    const encryptedFacts = await pii.encrypt(JSON.stringify(updatedFacts));
+
     await ctx.db.patch(args.contactId, {
-      facts: updatedFacts,
+      facts: encryptedFacts,
     });
 
     return { success: true };
@@ -282,16 +507,38 @@ export const deleteFact = authedMutation({
       throw new Error("Unauthorized: Contact does not belong to you");
     }
 
-    const facts = contact.facts || [];
+    // Get PII helper for encryption/decryption
+    const pii = await encryptedPii.forUser(ctx, ctx.userId);
+
+    // Decrypt existing facts
+    let facts: ContactFact[] = [];
+    if (contact.facts) {
+      const factsJson = await pii.decrypt(contact.facts);
+      if (factsJson) facts = JSON.parse(factsJson);
+    }
+
     const updatedFacts = facts.filter((f) => f.id !== args.factId);
 
+    // Encrypt updated facts array
+    const encryptedFacts = await pii.encrypt(JSON.stringify(updatedFacts));
+
     await ctx.db.patch(args.contactId, {
-      facts: updatedFacts,
+      facts: encryptedFacts,
     });
 
     return { success: true };
   },
 });
+
+// Type for decrypted email preview in stats
+interface DecryptedEmailPreview {
+  _id: string;
+  subject: string;
+  bodyPreview: string;
+  receivedAt: number;
+  isRead: boolean;
+  urgencyScore?: number;
+}
 
 /**
  * Get contact statistics for the current user
@@ -309,6 +556,46 @@ export const getMyContactStats = authedQuery({
       throw new Error("Unauthorized: Contact does not belong to you");
     }
 
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    // Decrypt contact fields
+    let name: string | undefined;
+    let relationshipSummary: string | undefined;
+    let facts: ContactFact[] | undefined;
+    let writingStyle: WritingStyle | undefined;
+
+    if (pii) {
+      if (contact.name) {
+        name = await pii.decrypt(contact.name) ?? undefined;
+      }
+      if (contact.relationshipSummary) {
+        relationshipSummary = await pii.decrypt(contact.relationshipSummary) ?? undefined;
+      }
+      if (contact.facts) {
+        const factsJson = await pii.decrypt(contact.facts);
+        if (factsJson) facts = JSON.parse(factsJson);
+      }
+      if (contact.writingStyle) {
+        const wsJson = await pii.decrypt(contact.writingStyle);
+        if (wsJson) writingStyle = JSON.parse(wsJson);
+      }
+    }
+
+    const decryptedContact: DecryptedContact = {
+      _id: contact._id,
+      userId: contact.userId,
+      email: contact.email,
+      name,
+      avatarUrl: contact.avatarUrl,
+      emailCount: contact.emailCount,
+      lastEmailAt: contact.lastEmailAt,
+      relationship: contact.relationship,
+      relationshipSummary,
+      facts,
+      writingStyle,
+    };
+
     // Get email count and recent emails
     const emails = await ctx.db
       .query("emails")
@@ -317,14 +604,31 @@ export const getMyContactStats = authedQuery({
       .take(10);
 
     // Fetch summaries for all emails to calculate urgent count
-    const emailsWithSummaries = await Promise.all(
+    const emailsWithSummaries: DecryptedEmailPreview[] = await Promise.all(
       emails.map(async (email) => {
         const summaryData = await ctx.db
           .query("emailSummaries")
           .withIndex("by_email", (q) => q.eq("emailId", email._id))
           .first();
+
+        // Decrypt email fields
+        let subject = "";
+        let bodyPreview = "";
+        if (pii) {
+          const decrypted = await pii.decryptMany({
+            subject: email.subject,
+            bodyPreview: email.bodyPreview,
+          });
+          subject = decrypted.subject ?? "";
+          bodyPreview = decrypted.bodyPreview ?? "";
+        }
+
         return {
-          ...email,
+          _id: email._id,
+          subject,
+          bodyPreview,
+          receivedAt: email.receivedAt,
+          isRead: email.isRead,
           urgencyScore: summaryData?.urgencyScore,
         };
       })
@@ -334,7 +638,7 @@ export const getMyContactStats = authedQuery({
     const replyNeededCount = emails.filter((e) => e.triageAction === "reply_needed").length;
 
     return {
-      contact,
+      contact: decryptedContact,
       recentEmails: emailsWithSummaries,
       stats: {
         totalEmails: contact.emailCount,
@@ -363,6 +667,46 @@ export const getMyContactStatsByEmail = authedQuery({
 
     if (!contact) return null;
 
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    // Decrypt contact fields
+    let name: string | undefined;
+    let relationshipSummary: string | undefined;
+    let facts: ContactFact[] | undefined;
+    let writingStyle: WritingStyle | undefined;
+
+    if (pii) {
+      if (contact.name) {
+        name = await pii.decrypt(contact.name) ?? undefined;
+      }
+      if (contact.relationshipSummary) {
+        relationshipSummary = await pii.decrypt(contact.relationshipSummary) ?? undefined;
+      }
+      if (contact.facts) {
+        const factsJson = await pii.decrypt(contact.facts);
+        if (factsJson) facts = JSON.parse(factsJson);
+      }
+      if (contact.writingStyle) {
+        const wsJson = await pii.decrypt(contact.writingStyle);
+        if (wsJson) writingStyle = JSON.parse(wsJson);
+      }
+    }
+
+    const decryptedContact: DecryptedContact = {
+      _id: contact._id,
+      userId: contact.userId,
+      email: contact.email,
+      name,
+      avatarUrl: contact.avatarUrl,
+      emailCount: contact.emailCount,
+      lastEmailAt: contact.lastEmailAt,
+      relationship: contact.relationship,
+      relationshipSummary,
+      facts,
+      writingStyle,
+    };
+
     // Get email count and recent emails
     const emails = await ctx.db
       .query("emails")
@@ -371,14 +715,31 @@ export const getMyContactStatsByEmail = authedQuery({
       .take(10);
 
     // Fetch summaries for all emails to calculate urgent count
-    const emailsWithSummaries = await Promise.all(
+    const emailsWithSummaries: DecryptedEmailPreview[] = await Promise.all(
       emails.map(async (email) => {
         const summaryData = await ctx.db
           .query("emailSummaries")
           .withIndex("by_email", (q) => q.eq("emailId", email._id))
           .first();
+
+        // Decrypt email fields
+        let subject = "";
+        let bodyPreview = "";
+        if (pii) {
+          const decrypted = await pii.decryptMany({
+            subject: email.subject,
+            bodyPreview: email.bodyPreview,
+          });
+          subject = decrypted.subject ?? "";
+          bodyPreview = decrypted.bodyPreview ?? "";
+        }
+
         return {
-          ...email,
+          _id: email._id,
+          subject,
+          bodyPreview,
+          receivedAt: email.receivedAt,
+          isRead: email.isRead,
           urgencyScore: summaryData?.urgencyScore,
         };
       })
@@ -388,7 +749,7 @@ export const getMyContactStatsByEmail = authedQuery({
     const replyNeededCount = emails.filter((e) => e.triageAction === "reply_needed").length;
 
     return {
-      contact,
+      contact: decryptedContact,
       recentEmails: emailsWithSummaries,
       stats: {
         totalEmails: contact.emailCount,

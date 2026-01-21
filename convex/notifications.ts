@@ -3,6 +3,7 @@ import { internalMutation } from "./_generated/server";
 import { components } from "./_generated/api";
 import { PushNotifications } from "@convex-dev/expo-push-notifications";
 import { authedMutation } from "./functions";
+import { encryptedPii } from "./pii";
 
 // Initialize push notifications client
 const pushNotifications = new PushNotifications(components.pushNotifications);
@@ -168,7 +169,13 @@ export const sendMyTestNotificationWithAvatar = authedMutation({
         throw new Error(`Contact not found: ${args.testContactEmail}`);
       }
 
-      contactName = contact.name || contact.email;
+      // Decrypt contact name
+      const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+      if (pii && contact.name) {
+        contactName = (await pii.decrypt(contact.name)) ?? contact.email;
+      } else {
+        contactName = contact.email;
+      }
 
       // Get fresh URL from storage if available
       if (contact.avatarStorageId) {
@@ -236,7 +243,13 @@ export const sendMyTestCommunicationNotification = authedMutation({
         throw new Error(`Contact not found: ${args.testContactEmail}`);
       }
 
-      contactName = contact.name || contact.email;
+      // Decrypt contact name
+      const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+      if (pii && contact.name) {
+        contactName = (await pii.decrypt(contact.name)) ?? contact.email;
+      } else {
+        contactName = contact.email;
+      }
 
       // Get fresh URL from storage if available
       if (contact.avatarStorageId) {
@@ -296,14 +309,28 @@ export const sendTestNotificationForRecentEmail = authedMutation({
       throw new Error("No emails found");
     }
 
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    // Decrypt email subject
+    let subject = "No subject";
+    if (pii && recentEmail.subject) {
+      subject = (await pii.decrypt(recentEmail.subject)) ?? "No subject";
+    }
+
     // Get sender info from contact
     let avatarUrl = "https://ui-avatars.com/api/?name=Test&background=6366F1&color=fff&size=200";
-    let senderName = recentEmail.fromName || "Unknown";
+    let senderName = "Unknown";
 
-    // Get contact avatar
+    // Get contact avatar and name
     const contact = await ctx.db.get(recentEmail.from);
     if (contact) {
-      senderName = contact.name || contact.email;
+      // Decrypt contact name
+      if (pii && contact.name) {
+        senderName = (await pii.decrypt(contact.name)) ?? contact.email;
+      } else {
+        senderName = contact.email;
+      }
       if (contact.avatarStorageId) {
         const freshUrl = await ctx.storage.getUrl(contact.avatarStorageId);
         if (freshUrl) avatarUrl = freshUrl;
@@ -316,7 +343,7 @@ export const sendTestNotificationForRecentEmail = authedMutation({
       userId: ctx.userId,
       notification: {
         title: senderName,
-        body: recentEmail.subject || "No subject",
+        body: subject,
         mutableContent: true,
         data: {
           type: "email",
@@ -327,14 +354,14 @@ export const sendTestNotificationForRecentEmail = authedMutation({
       },
     };
 
-    console.log(`[Notification] Sending test for email ${recentEmail._id}:`, recentEmail.subject);
+    console.log(`[Notification] Sending test for email ${recentEmail._id}:`, subject);
 
     await pushNotifications.sendPushNotification(ctx, notificationPayload);
 
     return {
       success: true,
       emailId: recentEmail._id,
-      subject: recentEmail.subject,
+      subject,
       senderName,
     };
   },

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 import { internal, components } from "./_generated/api";
 import { PushNotifications } from "@convex-dev/expo-push-notifications";
+import { encryptedPii } from "./pii";
 
 // Hours after marking "reply_needed" before sending first reminder
 const STALE_REPLY_HOURS = 24;
@@ -29,6 +30,9 @@ export const getStaleReplyNeededEmails = internalQuery({
     }> = [];
 
     for (const user of users) {
+      // Get PII helper for decryption
+      const pii = await encryptedPii.forUserQuery(ctx, user._id);
+
       // Get reply_needed emails for this user that are old enough
       const emails = await ctx.db
         .query("emails")
@@ -51,12 +55,22 @@ export const getStaleReplyNeededEmails = internalQuery({
         // Get sender info
         const contact = await ctx.db.get(email.from);
 
+        // Decrypt PII fields
+        let subject = "";
+        let senderName = contact?.email || "Unknown";
+        if (pii) {
+          subject = (await pii.decrypt(email.subject)) ?? "";
+          if (contact?.name) {
+            senderName = (await pii.decrypt(contact.name)) ?? contact.email;
+          }
+        }
+
         staleEmails.push({
           userId: user._id,
           userEmail: user.email,
           emailId: email._id,
-          subject: email.subject,
-          senderName: contact?.name || contact?.email || "Unknown",
+          subject,
+          senderName,
           triagedAt: email.triagedAt,
         });
       }
@@ -121,13 +135,26 @@ export const getUpcomingDeadlines = internalQuery({
       const user = await ctx.db.get(email.userId);
       if (!user) continue;
 
+      // Get PII helper for decryption
+      const pii = await encryptedPii.forUserQuery(ctx, email.userId);
+
+      // Decrypt PII fields
+      let subject = "";
+      let deadlineDescription = "Deadline";
+      if (pii) {
+        subject = (await pii.decrypt(email.subject)) ?? "";
+        if (summary.deadlineDescription) {
+          deadlineDescription = (await pii.decrypt(summary.deadlineDescription)) ?? "Deadline";
+        }
+      }
+
       upcomingDeadlines.push({
         userId: user._id,
         userEmail: user.email,
         emailId: summary.emailId,
-        subject: email.subject,
+        subject,
         deadline: summary.deadline,
-        deadlineDescription: summary.deadlineDescription || "Deadline",
+        deadlineDescription,
         summaryId: summary._id,
       });
     }

@@ -4,6 +4,7 @@
 import { v } from "convex/values";
 import { mutation, query, action, internalMutation } from "./_generated/server";
 import { api } from "./_generated/api";
+import { encryptedPii } from "./pii";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
@@ -29,20 +30,35 @@ export const storeGmailTokens = mutation({
       .withIndex("by_email", (q) => q.eq("email", args.email))
       .first();
 
+    // Get or create user ID for encryption
+    let userId = existing?._id;
+    if (!userId) {
+      // Create minimal user first to get ID for encryption
+      userId = await ctx.db.insert("users", {
+        email: args.email,
+      });
+    }
+
+    // Get PII helper for encrypting tokens
+    const pii = await encryptedPii.forUser(ctx, userId);
+    const encryptedAccessToken = await pii.encrypt(args.accessToken);
+    const encryptedRefreshToken = await pii.encrypt(args.refreshToken);
+
     if (existing) {
       await ctx.db.patch(existing._id, {
-        gmailAccessToken: args.accessToken,
-        gmailRefreshToken: args.refreshToken,
+        gmailAccessToken: encryptedAccessToken,
+        gmailRefreshToken: encryptedRefreshToken,
         gmailTokenExpiresAt: args.expiresAt,
       });
       return existing._id;
     } else {
-      return await ctx.db.insert("users", {
-        email: args.email,
-        gmailAccessToken: args.accessToken,
-        gmailRefreshToken: args.refreshToken,
+      // User was already created above, just patch with tokens
+      await ctx.db.patch(userId, {
+        gmailAccessToken: encryptedAccessToken,
+        gmailRefreshToken: encryptedRefreshToken,
         gmailTokenExpiresAt: args.expiresAt,
       });
+      return userId;
     }
   },
 });
@@ -240,8 +256,12 @@ export const updateUserTokens = internalMutation({
     expiresAt: v.number(),
   },
   handler: async (ctx, args) => {
+    // Get PII helper for encrypting token
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+    const encryptedAccessToken = await pii.encrypt(args.accessToken);
+
     await ctx.db.patch(args.userId, {
-      gmailAccessToken: args.accessToken,
+      gmailAccessToken: encryptedAccessToken,
       gmailTokenExpiresAt: args.expiresAt,
     });
   },

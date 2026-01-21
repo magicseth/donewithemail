@@ -1,6 +1,16 @@
 import { v } from "convex/values";
 import { mutation, internalQuery, query } from "./_generated/server";
 import { authedQuery, authedMutation } from "./functions";
+import { encryptedPii } from "./pii";
+
+// Type for connected provider (decrypted)
+interface ConnectedProvider {
+  provider: string;
+  email: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+}
 
 // Debug: list all users (for CLI/dashboard use)
 export const listAll = internalQuery({
@@ -31,22 +41,36 @@ export const upsertFromWorkOS = mutation({
       .first();
 
     if (existing) {
+      // Get PII helper for encryption
+      const pii = await encryptedPii.forUser(ctx, existing._id);
+      const encryptedName = args.name ? await pii.encrypt(args.name) : undefined;
+
       await ctx.db.patch(existing._id, {
         email: args.email,
-        name: args.name,
+        name: encryptedName,
         avatarUrl: args.avatarUrl,
       });
 
       return { userId: existing._id, isNew: false };
     }
 
+    // For new users, we need to create the user first, then encrypt
+    // Create with empty connectedProviders (will encrypt after we have userId)
     const userId = await ctx.db.insert("users", {
       workosId: args.workosId,
       email: args.email,
-      name: args.name,
       avatarUrl: args.avatarUrl,
-      connectedProviders: [],
       createdAt: Date.now(),
+    });
+
+    // Now encrypt name and connectedProviders with the new userId
+    const pii = await encryptedPii.forUser(ctx, userId);
+    const encryptedName = args.name ? await pii.encrypt(args.name) : undefined;
+    const encryptedProviders = await pii.encrypt(JSON.stringify([]));
+
+    await ctx.db.patch(userId, {
+      name: encryptedName,
+      connectedProviders: encryptedProviders,
     });
 
     return { userId, isNew: true };
@@ -68,21 +92,37 @@ export const connectGmailAccount = mutation({
     const user = await ctx.db.get(args.userId);
     if (!user) throw new Error("User not found");
 
-    const otherProviders = (user.connectedProviders || []).filter(
+    // Get PII helper
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+
+    // Decrypt existing connectedProviders
+    let existingProviders: ConnectedProvider[] = [];
+    if (user.connectedProviders) {
+      const decrypted = await pii.decrypt(user.connectedProviders);
+      if (decrypted) {
+        existingProviders = JSON.parse(decrypted);
+      }
+    }
+
+    const otherProviders = existingProviders.filter(
       (p) => p.provider !== "gmail"
     );
 
+    const newProviders = [
+      ...otherProviders,
+      {
+        provider: "gmail",
+        email: args.email,
+        accessToken: args.accessToken,
+        refreshToken: args.refreshToken,
+        expiresAt: args.expiresAt,
+      },
+    ];
+
+    // Re-encrypt and save
+    const encryptedProviders = await pii.encrypt(JSON.stringify(newProviders));
     await ctx.db.patch(args.userId, {
-      connectedProviders: [
-        ...otherProviders,
-        {
-          provider: "gmail",
-          email: args.email,
-          accessToken: args.accessToken,
-          refreshToken: args.refreshToken,
-          expiresAt: args.expiresAt,
-        },
-      ],
+      connectedProviders: encryptedProviders,
     });
 
     return { success: true };
@@ -153,7 +193,17 @@ export const getMe = authedQuery({
 export const getMyConnectedProviders = authedQuery({
   args: {},
   handler: async (ctx) => {
-    return (ctx.user.connectedProviders || []).map((p) => ({
+    // Decrypt connectedProviders
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+    let providers: ConnectedProvider[] = [];
+    if (pii && ctx.user.connectedProviders) {
+      const decrypted = await pii.decrypt(ctx.user.connectedProviders);
+      if (decrypted) {
+        providers = JSON.parse(decrypted);
+      }
+    }
+
+    return providers.map((p) => ({
       provider: p.provider,
       email: p.email,
       isConnected: true,
@@ -192,10 +242,26 @@ export const disconnectMyProvider = authedMutation({
     provider: v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap")),
   },
   handler: async (ctx, args) => {
+    // Get PII helper
+    const pii = await encryptedPii.forUser(ctx, ctx.userId);
+
+    // Decrypt existing connectedProviders
+    let existingProviders: ConnectedProvider[] = [];
+    if (ctx.user.connectedProviders) {
+      const decrypted = await pii.decrypt(ctx.user.connectedProviders);
+      if (decrypted) {
+        existingProviders = JSON.parse(decrypted);
+      }
+    }
+
+    const filteredProviders = existingProviders.filter(
+      (p) => p.provider !== args.provider
+    );
+
+    // Re-encrypt and save
+    const encryptedProviders = await pii.encrypt(JSON.stringify(filteredProviders));
     await ctx.db.patch(ctx.userId, {
-      connectedProviders: (ctx.user.connectedProviders || []).filter(
-        (p) => p.provider !== args.provider
-      ),
+      connectedProviders: encryptedProviders,
     });
 
     return { success: true };

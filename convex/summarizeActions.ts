@@ -164,11 +164,11 @@ export const summarizeEmail = action({
         summary: email.summary || "",
         urgencyScore: email.urgencyScore || 0,
         urgencyReason: email.urgencyReason || "",
-        suggestedReply: email.suggestedReply,
+        suggestedReply: email.suggestedReply ?? undefined,
         actionRequired: email.actionRequired,
-        actionDescription: email.actionDescription,
-        quickReplies: email.quickReplies,
-        calendarEvent: email.calendarEvent,
+        actionDescription: email.actionDescription ?? undefined,
+        quickReplies: email.quickReplies ?? undefined,
+        calendarEvent: email.calendarEvent ?? undefined,
       };
     }
 

@@ -105,16 +105,33 @@ export const debugUserTokens = internalAction({
 export const checkNewEmailsForAllUsers = internalAction({
   args: {},
   handler: async (ctx) => {
-    // Get all users with Gmail tokens
-    const users = await ctx.runQuery(internal.emailSyncHelpers.getUsersWithGmail, {});
+    // Get all users with Gmail tokens (returns encrypted tokens - we just need IDs)
+    const usersWithGmail = await ctx.runQuery(internal.emailSyncHelpers.getUsersWithGmail, {});
 
-    console.log(`Checking new emails for ${users.length} users`);
+    console.log(`Checking new emails for ${usersWithGmail.length} users`);
 
-    for (const user of users) {
+    for (const rawUser of usersWithGmail) {
       try {
-        await checkNewEmailsForUser(ctx, user);
+        // Decrypt tokens for each user
+        const decryptedUser = await ctx.runMutation(internal.emailSyncHelpers.decryptUserTokens, {
+          userId: rawUser._id,
+        });
+
+        if (!decryptedUser) {
+          console.log(`Could not decrypt tokens for user ${rawUser.email}`);
+          continue;
+        }
+
+        await checkNewEmailsForUser(ctx, {
+          _id: decryptedUser._id,
+          email: decryptedUser.email,
+          gmailAccessToken: decryptedUser.gmailAccessToken ?? undefined,
+          gmailRefreshToken: decryptedUser.gmailRefreshToken ?? undefined,
+          gmailTokenExpiresAt: decryptedUser.gmailTokenExpiresAt,
+          lastEmailSyncAt: rawUser.lastEmailSyncAt,
+        });
       } catch (error) {
-        console.error(`Failed to check emails for user ${user.email}:`, error);
+        console.error(`Failed to check emails for user ${rawUser.email}:`, error);
       }
     }
   },

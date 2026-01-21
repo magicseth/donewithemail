@@ -123,7 +123,7 @@ export const searchSimilarEmails = internalAction({
       filteredResults.push({
         emailId: email._id,
         subject: email.subject,
-        summary: summary.summary,
+        summary: summary.summary ?? "",
         fromName: contact?.name ?? null,
         fromEmail: contact?.email ?? null,
         receivedAt: email.receivedAt,

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalQuery, internalMutation } from "./_generated/server";
+import { encryptedPii } from "./pii";
 
 /**
  * Get emails from last 2 weeks that haven't been triaged
@@ -19,18 +20,35 @@ export const getRecentUntriagedEmails = internalQuery({
       .filter((q) => q.gte(q.field("receivedAt"), args.sinceTimestamp))
       .collect();
 
+    // Get PII helper for decryption
+    const pii = await encryptedPii.forUserQuery(ctx, args.userId);
+
     // Fetch contact info for each email so we can get the sender's email
     const emailsWithSender = await Promise.all(
       emails.map(async (email) => {
         const fromContact = await ctx.db.get(email.from);
+
+        // Decrypt PII fields
+        let subject = "";
+        let bodyPreview = "";
+        let fromName: string | undefined;
+
+        if (pii) {
+          subject = (await pii.decrypt(email.subject)) ?? "";
+          bodyPreview = (await pii.decrypt(email.bodyPreview)) ?? "";
+          if (fromContact?.name) {
+            fromName = (await pii.decrypt(fromContact.name)) ?? undefined;
+          }
+        }
+
         return {
           _id: email._id,
-          subject: email.subject,
-          bodyPreview: email.bodyPreview,
+          subject,
+          bodyPreview,
           threadId: email.threadId,
           receivedAt: email.receivedAt,
           fromEmail: fromContact?.email || "",
-          fromName: fromContact?.name,
+          fromName,
         };
       })
     );
