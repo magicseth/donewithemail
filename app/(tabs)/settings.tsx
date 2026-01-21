@@ -854,7 +854,7 @@ export default function SettingsScreen() {
           <View style={styles.card}>
             <View style={styles.costRow}>
               <View style={styles.costItem}>
-                <Text style={styles.costLabel}>AI Summarization</Text>
+                <Text style={styles.costLabel}>AI Models</Text>
                 <Text style={styles.costValue}>
                   {myCosts.aiCosts?.totalAmount != null ? `$${myCosts.aiCosts.totalAmount.toFixed(4)}` : "$0.00"}
                 </Text>
@@ -864,7 +864,7 @@ export default function SettingsScreen() {
               </View>
               <View style={styles.costDivider} />
               <View style={styles.costItem}>
-                <Text style={styles.costLabel}>Embeddings</Text>
+                <Text style={styles.costLabel}>Tools</Text>
                 <Text style={styles.costValue}>
                   {myCosts.toolCosts?.totalAmount != null ? `$${myCosts.toolCosts.totalAmount.toFixed(4)}` : "$0.00"}
                 </Text>
