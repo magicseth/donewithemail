@@ -556,6 +556,12 @@ export declare const api: {
     >;
   };
   gmailSync: {
+    downloadAttachment: FunctionReference<
+      "action",
+      "public",
+      { attachmentId: string; emailExternalId: string; userEmail: string },
+      any
+    >;
     fetchEmailBody: FunctionReference<
       "action",
       "public",
@@ -566,6 +572,12 @@ export declare const api: {
       "action",
       "public",
       { maxResults?: number; pageToken?: string; userEmail: string },
+      any
+    >;
+    getEmailAttachments: FunctionReference<
+      "action",
+      "public",
+      { emailExternalId: string; userEmail: string },
       any
     >;
   };
