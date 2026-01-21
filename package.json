@@ -19,7 +19,6 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.15",
     "@convex-dev/agent": "^0.3.2",
-    "@convex-dev/encrypted-pii": "file:../encryptedComponent/convex-dev-encrypted-pii-0.1.0.tgz",
     "@convex-dev/expo-push-notifications": "^0.3.0",
     "@convex-dev/migrations": "^0.3.1",
     "@convex-dev/workflow": "^0.3.3",
