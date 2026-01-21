@@ -13,6 +13,7 @@ import {
   Modal,
   Animated,
   Dimensions,
+  Linking,
 } from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/authContext";
@@ -64,6 +65,16 @@ export default function SettingsScreen() {
     transcript: string;
     error: string;
     claudeOutput?: string;
+  } | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [selectedSuccessRequest, setSelectedSuccessRequest] = useState<{
+    transcript: string;
+    claudeOutput?: string;
+    commitHash?: string;
+    branchName?: string;
+    easUpdateId?: string;
+    easDashboardUrl?: string;
+    progressMessage?: string;
   } | null>(null);
   const submitFeatureRequest = useMutation(api.featureRequests.submit);
   const cancelFeatureRequest = useMutation(api.featureRequests.cancel);
@@ -494,6 +505,32 @@ export default function SettingsScreen() {
   const handleCloseErrorModal = useCallback(() => {
     setShowErrorModal(false);
     setSelectedErrorRequest(null);
+  }, []);
+
+  const handleShowSuccessDetails = useCallback((
+    transcript: string,
+    claudeOutput?: string,
+    commitHash?: string,
+    branchName?: string,
+    easUpdateId?: string,
+    easDashboardUrl?: string,
+    progressMessage?: string
+  ) => {
+    setSelectedSuccessRequest({
+      transcript,
+      claudeOutput,
+      commitHash,
+      branchName,
+      easUpdateId,
+      easDashboardUrl,
+      progressMessage
+    });
+    setShowSuccessModal(true);
+  }, []);
+
+  const handleCloseSuccessModal = useCallback(() => {
+    setShowSuccessModal(false);
+    setSelectedSuccessRequest(null);
   }, []);
 
   const handleSignOut = async () => {
@@ -1213,18 +1250,34 @@ export default function SettingsScreen() {
                 <Text style={styles.featureRequestsTitle}>Recent Requests</Text>
                 {myFeatureRequests.map((req: any) => {
                   const isFailed = req.status === "failed";
-                  const RowWrapper = isFailed ? TouchableOpacity : View;
+                  const isCompleted = req.status === "completed";
+                  const isClickable = isFailed || isCompleted;
+                  const RowWrapper = isClickable ? TouchableOpacity : View;
 
                   return (
                     <RowWrapper
                       key={req._id}
                       style={styles.featureRequestRow}
-                      {...(isFailed ? {
-                        onPress: () => handleShowErrorDetails(
-                          req.transcript,
-                          req.error || "Unknown error",
-                          req.claudeOutput
-                        ),
+                      {...(isClickable ? {
+                        onPress: () => {
+                          if (isFailed) {
+                            handleShowErrorDetails(
+                              req.transcript,
+                              req.error || "Unknown error",
+                              req.claudeOutput
+                            );
+                          } else if (isCompleted) {
+                            handleShowSuccessDetails(
+                              req.transcript,
+                              req.claudeOutput,
+                              req.commitHash,
+                              req.branchName,
+                              req.easUpdateId,
+                              req.easDashboardUrl,
+                              req.progressMessage
+                            );
+                          }
+                        },
                         activeOpacity: 0.7
                       } : {})}
                     >
@@ -1245,7 +1298,7 @@ export default function SettingsScreen() {
                         )}
                         {req.status === "completed" && req.easDashboardUrl && (
                           <Text style={styles.featureRequestReady}>
-                            Ready to test in voice-preview
+                            Ready to test in voice-preview • Tap for details
                           </Text>
                         )}
                         {req.status === "failed" && req.error && (
@@ -1371,6 +1424,76 @@ export default function SettingsScreen() {
               onPress={handleCloseErrorModal}
             >
               <Text style={styles.modalButtonSubmitText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Success Details Modal */}
+      <Modal
+        visible={showSuccessModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCloseSuccessModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, styles.errorModalContent]}>
+            <Text style={styles.modalTitle}>Feature Request Completed</Text>
+
+            <View style={styles.errorSection}>
+              <Text style={styles.errorSectionTitle}>Request</Text>
+              <Text style={styles.errorSectionText}>"{selectedSuccessRequest?.transcript}"</Text>
+            </View>
+
+            {selectedSuccessRequest?.progressMessage && (
+              <View style={styles.errorSection}>
+                <Text style={styles.errorSectionTitle}>Status</Text>
+                <Text style={styles.successText}>{selectedSuccessRequest.progressMessage}</Text>
+              </View>
+            )}
+
+            {selectedSuccessRequest?.claudeOutput && (
+              <View style={styles.errorSection}>
+                <Text style={styles.errorSectionTitle}>Claude Output</Text>
+                <ScrollView style={styles.errorScrollView} nestedScrollEnabled>
+                  <Text style={styles.claudeOutputText}>{selectedSuccessRequest.claudeOutput}</Text>
+                </ScrollView>
+              </View>
+            )}
+
+            {(selectedSuccessRequest?.commitHash || selectedSuccessRequest?.branchName) && (
+              <View style={styles.errorSection}>
+                <Text style={styles.errorSectionTitle}>Implementation Details</Text>
+                {selectedSuccessRequest.branchName && (
+                  <Text style={styles.metadataText}>Branch: {selectedSuccessRequest.branchName}</Text>
+                )}
+                {selectedSuccessRequest.commitHash && (
+                  <Text style={styles.metadataText}>Commit: {selectedSuccessRequest.commitHash.substring(0, 7)}</Text>
+                )}
+                {selectedSuccessRequest.easUpdateId && (
+                  <Text style={styles.metadataText}>EAS Update: {selectedSuccessRequest.easUpdateId}</Text>
+                )}
+              </View>
+            )}
+
+            {selectedSuccessRequest?.easDashboardUrl && (
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16, marginBottom: 8 }]}
+                onPress={() => {
+                  if (selectedSuccessRequest.easDashboardUrl) {
+                    Linking.openURL(selectedSuccessRequest.easDashboardUrl);
+                  }
+                }}
+              >
+                <Text style={styles.modalButtonSubmitText}>View on EAS Dashboard</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonCancel, { marginTop: selectedSuccessRequest?.easDashboardUrl ? 0 : 16 }]}
+              onPress={handleCloseSuccessModal}
+            >
+              <Text style={styles.modalButtonCancelText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2024,6 +2147,18 @@ const styles = StyleSheet.create({
     color: "#374151",
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     lineHeight: 16,
+  },
+  successText: {
+    fontSize: 13,
+    color: "#10B981",
+    lineHeight: 18,
+  },
+  metadataText: {
+    fontSize: 13,
+    color: "#374151",
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    lineHeight: 18,
+    marginBottom: 4,
   },
   costRow: {
     flexDirection: "row",
