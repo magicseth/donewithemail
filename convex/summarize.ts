@@ -80,6 +80,12 @@ export const getEmailForSummary = internalQuery({
       .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
       .first();
 
+    // Get attachments for this email
+    const attachments = await ctx.db
+      .query("emailAttachments")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .collect();
+
     // Get PII helper for decryption
     const pii = await encryptedPii.forUserQuery(ctx, email.userId);
 
@@ -134,6 +140,18 @@ export const getEmailForSummary = internalQuery({
       }
     }
 
+    // Decrypt attachment filenames
+    const decryptedAttachments = await Promise.all(
+      attachments.map(async (att) => ({
+        _id: att._id,
+        filename: pii ? await pii.decrypt(att.filename) : null,
+        mimeType: att.mimeType,
+        size: att.size,
+        attachmentId: att.attachmentId,
+        isInline: att.isInline,
+      }))
+    );
+
     return {
       _id: email._id,
       _creationTime: email._creationTime,
@@ -166,6 +184,7 @@ export const getEmailForSummary = internalQuery({
       quickReplies,
       calendarEvent,
       aiProcessedAt: summary?.createdAt,
+      attachments: decryptedAttachments,
     };
   },
 });
@@ -568,6 +587,7 @@ export const updateEmailSummary = internalMutation({
     shouldAcceptCalendar: v.optional(v.boolean()),
     deadline: v.optional(v.string()),
     deadlineDescription: v.optional(v.string()),
+    importantAttachmentIds: v.optional(v.array(v.id("emailAttachments"))),
   },
   handler: async (ctx, args) => {
     // Get the email to find the user for encryption
@@ -616,6 +636,7 @@ export const updateEmailSummary = internalMutation({
       shouldAcceptCalendar: args.shouldAcceptCalendar,
       deadline: args.deadline,
       deadlineDescription: encryptedDeadlineDescription,
+      importantAttachmentIds: args.importantAttachmentIds,
       createdAt: Date.now(),
     };
 

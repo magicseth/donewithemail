@@ -315,6 +315,32 @@ export const BatchEmailRow = memo(function BatchEmailRow({
         </Text>
       </View>
 
+      {/* Important attachments */}
+      {email.importantAttachments && email.importantAttachments.length > 0 && (
+        <View style={styles.attachmentsContainer}>
+          {email.importantAttachments.map((att) => (
+            <TouchableOpacity
+              key={att._id}
+              style={styles.attachmentChip}
+              onPress={() => {
+                // Navigate to attachment viewer - for now just open email detail
+                router.push(`/email/${email._id}`);
+              }}
+            >
+              <Text style={styles.attachmentIcon}>
+                {att.mimeType.includes('pdf') ? '📄' :
+                 att.mimeType.includes('image') ? '🖼️' :
+                 att.mimeType.includes('word') || att.mimeType.includes('document') ? '📝' :
+                 att.mimeType.includes('sheet') || att.mimeType.includes('excel') ? '📊' : '📎'}
+              </Text>
+              <Text style={styles.attachmentName} numberOfLines={1}>
+                {att.filename}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
       {/* Calendar event details with add button */}
       {hasCalendar && email.calendarEvent && (
         <View style={styles.calendarEventContainer}>
@@ -606,6 +632,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#666",
     lineHeight: 18,
+  },
+  attachmentsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingTop: 6,
+  },
+  attachmentChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F3F4F6",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    maxWidth: "48%",
+  },
+  attachmentIcon: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  attachmentName: {
+    fontSize: 12,
+    color: "#374151",
+    fontWeight: "500",
+    flex: 1,
   },
   calendarEventContainer: {
     flexDirection: "row",

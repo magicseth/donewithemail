@@ -1,8 +1,9 @@
-import React, { useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Platform, Alert } from "react-native";
+import React, { useCallback, useState } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, Platform, Alert, Modal, ActivityIndicator } from "react-native";
 import { useAction } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
+import { AttachmentViewer } from "./AttachmentViewer";
 
 export type AttachmentData = {
   _id: string;
@@ -46,6 +47,41 @@ function base64UrlToBase64(base64url: string): string {
 
 export function AttachmentList({ attachments, emailId, userEmail }: AttachmentListProps) {
   const downloadAttachment = useAction(api.gmailSync.downloadAttachment);
+  const [viewingAttachment, setViewingAttachment] = useState<AttachmentData | null>(null);
+  const [loadingAttachment, setLoadingAttachment] = useState<string | null>(null);
+  const [attachmentData, setAttachmentData] = useState<{ data: string; mimeType: string } | null>(null);
+
+  const handleView = useCallback(
+    async (attachment: AttachmentData) => {
+      setViewingAttachment(attachment);
+      setLoadingAttachment(attachment._id);
+      setAttachmentData(null);
+
+      try {
+        const result = await downloadAttachment({
+          userEmail,
+          emailId,
+          attachmentId: attachment.attachmentId,
+        });
+
+        setAttachmentData({
+          data: result.data,
+          mimeType: result.mimeType,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to load attachment";
+        if (Platform.OS === "web") {
+          window.alert(`Error: ${message}`);
+        } else {
+          Alert.alert("Error", message);
+        }
+        setViewingAttachment(null);
+      } finally {
+        setLoadingAttachment(null);
+      }
+    },
+    [downloadAttachment, emailId, userEmail]
+  );
 
   const handleDownload = useCallback(
     async (attachment: AttachmentData) => {
@@ -105,27 +141,54 @@ export function AttachmentList({ attachments, emailId, userEmail }: AttachmentLi
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>
-        {displayAttachments.length} Attachment{displayAttachments.length !== 1 ? "s" : ""}
-      </Text>
-      {displayAttachments.map((attachment) => (
-        <TouchableOpacity
-          key={attachment._id}
-          style={styles.attachmentItem}
-          onPress={() => handleDownload(attachment)}
-        >
-          <Text style={styles.icon}>{getFileIcon(attachment.mimeType)}</Text>
-          <View style={styles.attachmentInfo}>
-            <Text style={styles.filename} numberOfLines={1}>
-              {attachment.filename}
-            </Text>
-            <Text style={styles.fileSize}>{formatFileSize(attachment.size)}</Text>
-          </View>
-          <Text style={styles.downloadIcon}>⬇️</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
+    <>
+      <View style={styles.container}>
+        <Text style={styles.title}>
+          {displayAttachments.length} Attachment{displayAttachments.length !== 1 ? "s" : ""}
+        </Text>
+        {displayAttachments.map((attachment) => (
+          <TouchableOpacity
+            key={attachment._id}
+            style={styles.attachmentItem}
+            onPress={() => handleView(attachment)}
+            disabled={loadingAttachment === attachment._id}
+          >
+            <Text style={styles.icon}>{getFileIcon(attachment.mimeType)}</Text>
+            <View style={styles.attachmentInfo}>
+              <Text style={styles.filename} numberOfLines={1}>
+                {attachment.filename}
+              </Text>
+              <Text style={styles.fileSize}>{formatFileSize(attachment.size)}</Text>
+            </View>
+            {loadingAttachment === attachment._id ? (
+              <ActivityIndicator size="small" color="#6366F1" />
+            ) : (
+              <Text style={styles.viewIcon}>👁️</Text>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Attachment Viewer Modal */}
+      {viewingAttachment && (
+        <AttachmentViewer
+          visible={true}
+          attachment={viewingAttachment}
+          data={attachmentData?.data}
+          mimeType={attachmentData?.mimeType}
+          isLoading={loadingAttachment !== null}
+          onClose={() => {
+            setViewingAttachment(null);
+            setAttachmentData(null);
+          }}
+          onDownload={() => {
+            if (attachmentData) {
+              handleDownload(viewingAttachment);
+            }
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -174,6 +237,9 @@ const styles = StyleSheet.create({
     color: "#999",
   },
   downloadIcon: {
+    fontSize: 18,
+  },
+  viewIcon: {
     fontSize: 18,
   },
 });

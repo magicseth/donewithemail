@@ -1376,6 +1376,35 @@ export const getMyBatchTriagePreview = authedQuery({
         }
       }
 
+      // Fetch important attachments if specified in summary
+      let importantAttachments: Array<{
+        _id: string;
+        filename: string;
+        mimeType: string;
+        size: number;
+        attachmentId: string;
+      }> | undefined;
+
+      if ((summaryData as any)?.importantAttachmentIds && (summaryData as any).importantAttachmentIds.length > 0) {
+        const attachments = await Promise.all(
+          (summaryData as any).importantAttachmentIds.map((id: any) => ctx.db.get(id))
+        );
+
+        if (pii) {
+          importantAttachments = await Promise.all(
+            attachments
+              .filter((att): att is NonNullable<typeof att> => att !== null)
+              .map(async (att: any) => ({
+                _id: att._id,
+                filename: (await pii.decrypt(att.filename)) ?? "",
+                mimeType: att.mimeType,
+                size: att.size,
+                attachmentId: att.attachmentId,
+              }))
+          );
+        }
+      }
+
       return {
         _id: email._id,
         subject,
@@ -1396,7 +1425,8 @@ export const getMyBatchTriagePreview = authedQuery({
           avatarUrl: fromContact.avatarUrl,
         } : null,
         aiProcessedAt: summaryData?.createdAt,
-      };
+        importantAttachments,
+      } as any;
     };
 
     // Map emails with pre-fetched data and decrypt

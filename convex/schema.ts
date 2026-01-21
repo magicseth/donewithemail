@@ -113,6 +113,9 @@ export default defineSchema({
 
     // Vector embedding for semantic search (1536-dim for text-embedding-3-small)
     embedding: v.optional(v.array(v.float64())),
+
+    // Important attachments (AI-identified subset of attachments worth highlighting)
+    importantAttachmentIds: v.optional(v.array(v.id("emailAttachments"))),
   })
     .index("by_email", ["emailId"])
     .index("by_deadline", ["deadline"])

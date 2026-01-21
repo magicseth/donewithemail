@@ -41,6 +41,14 @@ export interface BatchEmailPreview {
   aiProcessedAt?: number;
   /** True if this email is already triaged as reply_needed (in TODO list) */
   isInTodo?: boolean;
+  /** Important attachments to display in inbox preview */
+  importantAttachments?: Array<{
+    _id: string;
+    filename: string;
+    mimeType: string;
+    size: number;
+    attachmentId: string;
+  }>;
 }
 
 export interface BatchTriageResult {

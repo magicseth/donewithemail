@@ -168,6 +168,8 @@ interface SummarizeResult {
   shouldAcceptCalendar?: boolean;
   // NEW facts about the sender discovered from this email
   suggestedFacts?: string[];
+  // Filenames of important attachments that should be shown in inbox
+  importantAttachments?: string[];
 }
 
 export const summarizeEmail = action({
@@ -199,11 +201,19 @@ export const summarizeEmail = action({
     // Build prompt - use full body, convert HTML to text
     const rawBody = email.bodyFull || email.bodyPreview || "";
     const bodyText = htmlToPlainText(rawBody).slice(0, 8000); // 8000 chars is ~2000 tokens
+
+    // Build attachment list (exclude inline images)
+    const attachmentList = (email.attachments || [])
+      .filter((att: any) => !att.isInline && att.filename)
+      .map((att: any) => `- ${att.filename} (${att.mimeType}, ${Math.round(att.size / 1024)}KB)`)
+      .join('\n');
+
     const emailContent = `
 From: ${email.fromName || email.fromEmail || "Unknown"}
 Subject: ${email.subject}
 
 ${bodyText}
+${attachmentList ? `\n\nAttachments:\n${attachmentList}` : ''}
 `.trim();
 
     // Call Anthropic via AI SDK with enhanced prompt (Opus with Sonnet fallback)
@@ -262,6 +272,15 @@ FIELDS:
    - Spam calendar invites → likely decline
    - Events at inconvenient times or conflicting with work → likely decline
    Only include this field when calendarEvent is present.
+11. importantAttachments: If the email has attachments, identify which ones (if any) are important enough to show in the inbox preview. Array of EXACT filenames (as shown in the Attachments list). Important attachments are:
+   - Documents that require review/approval (contracts, proposals, reports, invoices)
+   - Files explicitly mentioned in the email body as needing action
+   - Documents with deadlines or time-sensitive content
+   - NOT: Marketing materials, newsletters, signature images, logos, generic PDFs
+   - NOT: Automated receipts, invoices from services (unless requiring action)
+   - Maximum 2 attachments in the array
+   - Use EXACT filenames from the Attachments list above
+   - If no attachments are important, omit this field or return empty array
 
 Email:
 ${emailContent}
@@ -315,6 +334,19 @@ Respond with only valid JSON, no markdown or explanation.`);
       sanitizedDeadlineDescription = result.deadline.description;
     }
 
+    // Map important attachment filenames to IDs
+    let importantAttachmentIds: string[] | undefined;
+    if (result.importantAttachments && result.importantAttachments.length > 0 && email.attachments) {
+      importantAttachmentIds = email.attachments
+        .filter((att: any) =>
+          result.importantAttachments!.some((filename: string) =>
+            att.filename && att.filename.toLowerCase().includes(filename.toLowerCase())
+          )
+        )
+        .map((att: any) => att._id)
+        .slice(0, 2); // Max 2 important attachments
+    }
+
     // Save to database
     await ctx.runMutation(internal.summarize.updateEmailSummary, {
       emailId: args.emailId,
@@ -329,7 +361,8 @@ Respond with only valid JSON, no markdown or explanation.`);
       shouldAcceptCalendar: sanitizedCalendarEvent ? result.shouldAcceptCalendar : undefined,
       deadline: sanitizedDeadline,
       deadlineDescription: sanitizedDeadlineDescription,
-    });
+      importantAttachmentIds,
+    } as any);
 
     // Track AI usage cost per user
     try {
