@@ -20,9 +20,15 @@ export const syncImapForUser = internalAction({
     userEmail: v.string(),
   },
   handler: async (ctx, args) => {
-    const imapSimple = await import("imap-simple");
+    const imapSimple = await import("imap-simple").catch((err) => {
+      console.error("[IMAP] Failed to load imap-simple:", err);
+      throw new Error("IMAP functionality is not available in this environment");
+    });
     // @ts-ignore - mailparser types not available in Node.js action context
-    const { simpleParser } = await import("mailparser");
+    const { simpleParser } = await import("mailparser").catch((err) => {
+      console.error("[IMAP] Failed to load mailparser:", err);
+      throw new Error("Mail parsing functionality is not available in this environment");
+    });
 
     // Get user
     const user = await ctx.runQuery(internal.gmailSync.getUserByEmail, {

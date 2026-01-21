@@ -18,7 +18,10 @@ export const testImapConnection = action({
     tls: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const imapSimple = await import("imap-simple");
+    const imapSimple = await import("imap-simple").catch((err) => {
+      console.error("[IMAP] Failed to load imap-simple:", err);
+      throw new Error("IMAP functionality is not available in this environment");
+    });
 
     try {
       const config = {
