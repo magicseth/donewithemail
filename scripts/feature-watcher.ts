@@ -203,9 +203,11 @@ Important: Do not consider the task complete until convex dev and tsc both pass 
           },
         });
         console.log(`   ✓ Convex deployment successful`);
-      } catch (e) {
-        convexError = e instanceof Error ? e.message : String(e);
-        console.log(`   ✗ Convex deployment failed: ${convexError.slice(0, 200)}`);
+      } catch (e: any) {
+        // Capture both stdout and stderr for full error context
+        convexError = [e.stdout, e.stderr].filter(Boolean).join("\n") || e.message || String(e);
+        console.log(`   ✗ Convex deployment failed:`);
+        console.log(convexError.slice(0, 500));
       }
 
       // Check TypeScript
@@ -214,8 +216,10 @@ Important: Do not consider the task complete until convex dev and tsc both pass 
         execSync(`npx tsc --noEmit`, { cwd: workDir, encoding: "utf-8" });
         console.log(`   ✓ TypeScript check passed`);
       } catch (e: any) {
-        tscError = e.stdout || e.message || String(e);
-        console.log(`   ✗ TypeScript errors found`);
+        // TypeScript outputs errors to stdout, capture both stdout and stderr
+        tscError = [e.stdout, e.stderr].filter(Boolean).join("\n") || e.message || String(e);
+        console.log(`   ✗ TypeScript errors found:`);
+        console.log(tscError.slice(0, 500));
       }
 
       // If both pass, we're done
@@ -248,16 +252,24 @@ Important: Do not consider the task complete until convex dev and tsc both pass 
       console.log(`\n🔧 Asking Claude to fix errors (attempt ${attempts + 1})...`);
       await updateProgress("implementing", `Fixing errors (attempt ${attempts + 1})...`);
 
-      const fixPrompt = `The code has errors that need to be fixed:
+      const fixPrompt = `STOP. DO NOT explore or read the codebase. You have SPECIFIC errors to fix.
 
-${convexError ? `CONVEX DEPLOYMENT ERRORS:\n${convexError.slice(0, 2000)}\n\n` : ""}${tscError ? `TYPESCRIPT ERRORS:\n${tscError.slice(0, 2000)}` : ""}
+FIX THESE EXACT ERRORS:
+${convexError ? `\n=== CONVEX ERRORS ===\n${convexError.slice(0, 3000)}\n` : ""}${tscError ? `\n=== TYPESCRIPT ERRORS ===\n${tscError.slice(0, 3000)}\n` : ""}
 
-Please fix these errors. After fixing:
-1. Run \`npx convex dev --once\` to verify Convex works
-2. Run \`npx tsc --noEmit\` to verify TypeScript compiles
-3. Commit your fixes
+INSTRUCTIONS:
+1. Read ONLY the files mentioned in the errors above
+2. Fix ONLY the specific errors shown
+3. Run \`npx tsc --noEmit\` to verify the fix
+4. Commit your fixes with message "Fix TypeScript errors"
 
-Do not consider the task complete until both commands pass without errors.`;
+DO NOT:
+- Explore the codebase
+- Read unrelated files
+- Implement new features
+- Refactor code
+
+ONLY fix the exact errors listed above.`;
 
       claudeResult = await runClaudeCode(workDir, fixPrompt);
       attempts++;
