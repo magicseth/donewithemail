@@ -21,9 +21,20 @@ function updateSnapshot() {
   logsSnapshot = [...logs];
 }
 
+// Batch notifications to avoid triggering re-renders during render
+let notifyScheduled = false;
+
 function notifyListeners() {
   updateSnapshot();
-  listeners.forEach(listener => listener());
+
+  // Defer listener notifications to avoid "cannot update component while rendering" errors
+  if (!notifyScheduled) {
+    notifyScheduled = true;
+    queueMicrotask(() => {
+      notifyScheduled = false;
+      listeners.forEach(listener => listener());
+    });
+  }
 }
 
 // Store original console methods
