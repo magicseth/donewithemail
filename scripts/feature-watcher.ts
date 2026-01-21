@@ -55,23 +55,38 @@ const WORKTREE_BASE = path.join(os.tmpdir(), "tokmail-features");
 
 // Get Convex deployment from environment or .env.local
 let CONVEX_DEPLOYMENT = process.env.CONVEX_DEPLOYMENT;
-if (!CONVEX_DEPLOYMENT) {
-  const envPath = path.join(__dirname, "..", ".env.local");
-  if (fs.existsSync(envPath)) {
-    const envContent = fs.readFileSync(envPath, "utf-8");
+let ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+
+const envPath = path.join(__dirname, "..", ".env.local");
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, "utf-8");
+
+  if (!CONVEX_DEPLOYMENT) {
     const match = envContent.match(/CONVEX_DEPLOYMENT=([^\s#]+)/);
     if (match) {
       CONVEX_DEPLOYMENT = match[1].trim();
     }
   }
+
+  if (!ANTHROPIC_API_KEY) {
+    const match = envContent.match(/ANTHROPIC_API_KEY=([^\s#]+)/);
+    if (match) {
+      ANTHROPIC_API_KEY = match[1].trim();
+    }
+  }
 }
+
 if (!CONVEX_DEPLOYMENT) {
   console.error("Warning: CONVEX_DEPLOYMENT not found. Convex deploy may prompt interactively.");
+}
+if (!ANTHROPIC_API_KEY) {
+  console.error("Warning: ANTHROPIC_API_KEY not found. Claude Code may not work.");
 }
 
 console.log("🔄 Feature Request Watcher starting...");
 console.log(`   Convex URL: ${convexUrl}`);
 console.log(`   Convex Deployment: ${CONVEX_DEPLOYMENT || "(not set)"}`);
+console.log(`   Anthropic API Key: ${ANTHROPIC_API_KEY ? "✓ found" : "(not set)"}`);
 console.log(`   Repo: ${REPO_URL}`);
 console.log(`   Worktree base: ${WORKTREE_BASE}`);
 console.log("");
@@ -294,6 +309,8 @@ function runClaudeCode(cwd: string, prompt: string): Promise<ClaudeResult> {
         PATH: process.env.PATH,
         // Force color output
         FORCE_COLOR: "1",
+        // Pass Anthropic API key for Claude Code
+        ANTHROPIC_API_KEY: ANTHROPIC_API_KEY || "",
       },
     });
 
