@@ -129,6 +129,47 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  emailAttachments: {
+    document: {
+      attachmentId: string;
+      contentId?: string;
+      emailId: Id<"emails">;
+      filename: {
+        __encrypted: true;
+        c: string;
+        i: string;
+        k: string;
+        v: number;
+      };
+      isInline: boolean;
+      mimeType: string;
+      size: number;
+      _id: Id<"emailAttachments">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "attachmentId"
+      | "contentId"
+      | "emailId"
+      | "filename"
+      | "filename.__encrypted"
+      | "filename.c"
+      | "filename.i"
+      | "filename.k"
+      | "filename.v"
+      | "isInline"
+      | "mimeType"
+      | "size";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_email: ["emailId", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   emailBodies: {
     document: {
       bodyFull: {

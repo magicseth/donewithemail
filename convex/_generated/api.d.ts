@@ -299,6 +299,18 @@ export declare const api: {
       },
       any
     >;
+    downloadAttachment: FunctionReference<
+      "action",
+      "public",
+      { attachmentId: string; emailId: Id<"emails">; userEmail: string },
+      any
+    >;
+    getEmailAttachments: FunctionReference<
+      "query",
+      "public",
+      { emailId: Id<"emails"> },
+      any
+    >;
     getMyBatchTriagePreview: FunctionReference<
       "query",
       "public",
@@ -559,7 +571,7 @@ export declare const api: {
     downloadAttachment: FunctionReference<
       "action",
       "public",
-      { attachmentId: string; emailExternalId: string; userEmail: string },
+      { attachmentId: string; emailId: Id<"emails">; userEmail: string },
       any
     >;
     fetchEmailBody: FunctionReference<
@@ -575,9 +587,9 @@ export declare const api: {
       any
     >;
     getEmailAttachments: FunctionReference<
-      "action",
+      "query",
       "public",
-      { emailExternalId: string; userEmail: string },
+      { emailId: Id<"emails"> },
       any
     >;
   };
@@ -1076,6 +1088,23 @@ export declare const internal: {
       "query",
       "internal",
       { email: string },
+      any
+    >;
+    storeEmailAttachments: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        attachments: Array<{
+          attachmentId: string;
+          contentId?: string;
+          filename: string;
+          isInline: boolean;
+          mimeType: string;
+          size: number;
+        }>;
+        emailId: Id<"emails">;
+        userId: Id<"users">;
+      },
       any
     >;
     storeEmailInternal: FunctionReference<
