@@ -9,6 +9,7 @@ import { StyleSheet, Platform, Alert } from "react-native";
 import * as Updates from "expo-updates";
 import { AuthProvider, useAuth } from "../lib/authContext";
 import { AuthErrorProvider } from "../lib/AuthErrorBoundary";
+import { DemoModeProvider } from "../lib/demoModeContext";
 import { usePushNotifications } from "../hooks/usePushNotifications";
 import { getLastAuthRefreshSignal } from "../lib/authSignal";
 import * as SecureStore from "expo-secure-store";
@@ -253,44 +254,46 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.container}>
       <ConvexProviderWithAuth client={convex} useAuth={useAuthAdapter}>
         <AuthProvider>
-          <AuthErrorHandler>
-            <PushNotificationHandler>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  animation: "slide_from_right",
-                }}
-              >
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen
-                  name="email/[id]"
-                  options={{
-                    presentation: "card",
-                    headerShown: true,
-                    headerTitle: "Email",
-                    headerBackTitle: "Back",
+          <DemoModeProvider>
+            <AuthErrorHandler>
+              <PushNotificationHandler>
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    animation: "slide_from_right",
                   }}
-                />
-                <Stack.Screen
-                  name="person/[id]"
-                  options={{
-                    presentation: "card",
-                    headerShown: true,
-                    headerTitle: "Contact",
-                    headerBackTitle: "Back",
-                  }}
-                />
-                <Stack.Screen
-                  name="compose"
-                  options={{
-                    presentation: "modal",
-                    headerShown: true,
-                    headerTitle: "Compose",
-                  }}
-                />
-              </Stack>
-            </PushNotificationHandler>
-          </AuthErrorHandler>
+                >
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  <Stack.Screen
+                    name="email/[id]"
+                    options={{
+                      presentation: "card",
+                      headerShown: true,
+                      headerTitle: "Email",
+                      headerBackTitle: "Back",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="person/[id]"
+                    options={{
+                      presentation: "card",
+                      headerShown: true,
+                      headerTitle: "Contact",
+                      headerBackTitle: "Back",
+                    }}
+                  />
+                  <Stack.Screen
+                    name="compose"
+                    options={{
+                      presentation: "modal",
+                      headerShown: true,
+                      headerTitle: "Compose",
+                    }}
+                  />
+                </Stack>
+              </PushNotificationHandler>
+            </AuthErrorHandler>
+          </DemoModeProvider>
         </AuthProvider>
       </ConvexProviderWithAuth>
     </GestureHandlerRootView>

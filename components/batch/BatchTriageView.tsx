@@ -13,7 +13,8 @@ import {
 import { BatchCategoryCard } from "./BatchCategoryCard";
 import { QuickReplyOption } from "./BatchEmailRow";
 import { CelebrationOverlay } from "./CelebrationOverlay";
-import { useBatchTriage, BatchCategory } from "../../hooks/useBatchTriage";
+import { useBatchTriageData } from "../../hooks/useBatchTriageData";
+import { BatchCategory } from "../../hooks/useBatchTriage";
 
 // Web-specific scrollable container that actually scrolls
 const WebScrollView = forwardRef<HTMLDivElement, {
@@ -121,7 +122,7 @@ export function BatchTriageView({
     processingCategory,
     acceptingIds,
     unsubscribingIds,
-  } = useBatchTriage(userEmail);
+  } = useBatchTriageData(userEmail);
 
   // Only one category can be expanded at a time
   const [expandedCategory, setExpandedCategory] = useState<BatchCategory | null>(null);

@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/authContext";
+import { useDemoMode } from "../../lib/demoModeContext";
 import { useQuery, useAction, useMutation } from "convex/react";
 import * as Updates from "expo-updates";
 import Constants from "expo-constants";
@@ -25,6 +26,7 @@ import { VoiceRecordButton } from "../../components/VoiceRecordButton";
 
 export default function SettingsScreen() {
   const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
+  const { isDemoMode, enterDemoMode, exitDemoMode } = useDemoMode();
   const [autoProcess, setAutoProcess] = useState(true);
   const [urgencyThreshold, setUrgencyThreshold] = useState(80);
   const [isResummarizing, setIsResummarizing] = useState(false);
@@ -508,7 +510,7 @@ export default function SettingsScreen() {
     }
   }, [isAuthenticated]);
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !isDemoMode) {
     const { width, height } = Dimensions.get("window");
 
     return (
@@ -584,6 +586,18 @@ export default function SettingsScreen() {
             )}
           </TouchableOpacity>
 
+          {/* Try Demo Button */}
+          <TouchableOpacity
+            style={styles.demoButton}
+            onPress={() => {
+              enterDemoMode();
+              router.replace("/(tabs)");
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.demoButtonText}>Try Demo</Text>
+          </TouchableOpacity>
+
           {/* Privacy Notice */}
           <Text style={styles.privacyText}>
             By signing in, you agree to our Terms of Service and Privacy Policy
@@ -595,30 +609,54 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={styles.container}>
+      {/* Demo Mode Banner */}
+      {isDemoMode && (
+        <View style={styles.section}>
+          <View style={styles.demoBanner}>
+            <Text style={styles.demoBannerTitle}>🎭 Demo Mode</Text>
+            <Text style={styles.demoBannerText}>
+              You're exploring with sample data. Sign in to use your real Gmail account.
+            </Text>
+            <TouchableOpacity
+              style={styles.exitDemoButton}
+              onPress={() => {
+                exitDemoMode();
+                router.replace("/(tabs)/settings");
+              }}
+            >
+              <Text style={styles.exitDemoButtonText}>Exit Demo & Sign In</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Account Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account</Text>
-        <View style={styles.card}>
-          <View style={styles.profileRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {user?.firstName?.[0] || user?.email?.[0]?.toUpperCase() || "?"}
-              </Text>
-            </View>
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>
-                {user?.firstName && user?.lastName
-                  ? `${user.firstName} ${user.lastName}`
-                  : user?.email || "User"}
-              </Text>
-              <Text style={styles.profileEmail}>{user?.email || ""}</Text>
+      {!isDemoMode && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
+          <View style={styles.card}>
+            <View style={styles.profileRow}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {user?.firstName?.[0] || user?.email?.[0]?.toUpperCase() || "?"}
+                </Text>
+              </View>
+              <View style={styles.profileInfo}>
+                <Text style={styles.profileName}>
+                  {user?.firstName && user?.lastName
+                    ? `${user.firstName} ${user.lastName}`
+                    : user?.email || "User"}
+                </Text>
+                <Text style={styles.profileEmail}>{user?.email || ""}</Text>
+              </View>
             </View>
           </View>
         </View>
-      </View>
+      )}
 
       {/* Connected Accounts Section */}
-      <View style={styles.section}>
+      {!isDemoMode && (
+        <View style={styles.section}>
         <Text style={styles.sectionTitle}>Email Access</Text>
         <View style={styles.card}>
           <View style={styles.providerRow}>
@@ -657,9 +695,11 @@ export default function SettingsScreen() {
           )}
         </View>
       </View>
+      )}
 
       {/* Subscriptions Section */}
-      <View style={styles.section}>
+      {!isDemoMode && (
+        <View style={styles.section}>
         <Text style={styles.sectionTitle}>Email Management</Text>
         <View style={styles.card}>
           <TouchableOpacity
@@ -676,9 +716,11 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      )}
 
       {/* AI Settings Section */}
-      <View style={styles.section}>
+      {!isDemoMode && (
+        <View style={styles.section}>
         <Text style={styles.sectionTitle}>AI Settings</Text>
         <View style={styles.card}>
           <View style={styles.settingRow}>
@@ -734,9 +776,11 @@ export default function SettingsScreen() {
           </View>
         </View>
       </View>
+      )}
 
       {/* Debug Section */}
-      <View style={styles.section}>
+      {!isDemoMode && (
+        <View style={styles.section}>
         <Text style={styles.sectionTitle}>Debug</Text>
         <View style={styles.card}>
           <TouchableOpacity
@@ -898,6 +942,7 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      )}
 
       {/* About Section */}
       <View style={styles.section}>
@@ -1000,7 +1045,8 @@ export default function SettingsScreen() {
       </View>
 
       {/* Add Feature Section */}
-      <View style={styles.section}>
+      {!isDemoMode && (
+        <View style={styles.section}>
         <Text style={styles.sectionTitle}>Developer</Text>
         <View style={styles.card}>
           <View style={styles.settingRow}>
@@ -1104,13 +1150,16 @@ export default function SettingsScreen() {
           )}
         </View>
       </View>
+      )}
 
       {/* Sign Out */}
-      <View style={styles.section}>
+      {!isDemoMode && (
+        <View style={styles.section}>
         <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
       </View>
+      )}
 
       <View style={styles.bottomPadding} />
 
@@ -1205,6 +1254,37 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F5F5F5",
+  },
+  demoBanner: {
+    backgroundColor: "#FFF4E6",
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: "#FFB84D",
+  },
+  demoBannerTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1a1a1a",
+    marginBottom: 8,
+  },
+  demoBannerText: {
+    fontSize: 15,
+    color: "#666",
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  exitDemoButton: {
+    backgroundColor: "#6366F1",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  exitDemoButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
   section: {
     marginTop: 24,
@@ -1555,6 +1635,23 @@ const styles = StyleSheet.create({
   },
   signInButtonText: {
     color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  demoButton: {
+    backgroundColor: "transparent",
+    borderWidth: 2,
+    borderColor: "#6366F1",
+    paddingHorizontal: 32,
+    paddingVertical: 18,
+    borderRadius: 16,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 16,
+  },
+  demoButtonText: {
+    color: "#6366F1",
     fontSize: 18,
     fontWeight: "600",
   },
