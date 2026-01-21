@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { AppState, AppStateStatus } from "react-native";
+import { AppState, AppStateStatus, Alert } from "react-native";
 import { useMutation, useConvexAuth } from "convex/react";
 import { useRouter } from "expo-router";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
+import * as Updates from "expo-updates";
 import Constants from "expo-constants";
 import { api } from "../convex/_generated/api";
 
@@ -42,17 +43,67 @@ export function usePushNotifications() {
       console.log("[Push] Auth ready, navigating:", data);
       setPendingNavigation(null);
 
-      setTimeout(() => {
-        if (data.type === "missed_todos") {
-          router.navigate("/(tabs)");
-        } else if (data.type === "feature_completed" || data.type === "feature_failed") {
-          // Navigate to settings screen to show feature request status
-          router.navigate("/(tabs)/settings");
-        } else if (data.emailId) {
-          console.log("[Push] Navigating to email:", data.emailId);
-          router.push(`/email/${data.emailId}`);
+      // Check for updates if opening from feature-ready notification
+      if (data.type === "feature_completed") {
+        checkForUpdateAndNavigate();
+      } else {
+        // Navigate immediately for other notification types
+        setTimeout(() => {
+          if (data.type === "missed_todos") {
+            router.navigate("/(tabs)");
+          } else if (data.type === "feature_failed") {
+            // Navigate to settings screen to show feature request status
+            router.navigate("/(tabs)/settings");
+          } else if (data.emailId) {
+            console.log("[Push] Navigating to email:", data.emailId);
+            router.push(`/email/${data.emailId}`);
+          }
+        }, 100);
+      }
+    }
+
+    async function checkForUpdateAndNavigate() {
+      try {
+        console.log("[Push] Checking for updates after feature-ready notification...");
+        const update = await Updates.checkForUpdateAsync();
+
+        if (update.isAvailable) {
+          console.log("[Push] New update available, downloading...");
+          await Updates.fetchUpdateAsync();
+
+          // Prompt user to restart
+          Alert.alert(
+            "Update Available",
+            "Your feature is ready and a new version has been downloaded. Restart to apply the update?",
+            [
+              {
+                text: "Later",
+                style: "cancel",
+                onPress: () => {
+                  // Navigate to settings even if they don't restart
+                  router.navigate("/(tabs)/settings");
+                }
+              },
+              {
+                text: "Restart",
+                onPress: () => Updates.reloadAsync()
+              },
+            ]
+          );
+        } else {
+          console.log("[Push] No update available");
+          // No update, navigate to settings normally
+          setTimeout(() => {
+            router.navigate("/(tabs)/settings");
+          }, 100);
         }
-      }, 100);
+      } catch (e) {
+        // Don't crash on update check failure - just navigate normally
+        console.log("[Push] Update check failed:", e);
+        setTimeout(() => {
+          router.navigate("/(tabs)/settings");
+        }, 100);
+      }
     }
   }, [isAuthenticated, isLoading, pendingNavigation, router]);
 
