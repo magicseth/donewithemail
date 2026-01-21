@@ -135,6 +135,10 @@ async function processFeatureRequest(request: {
     }
     execSync(`git clone ${REPO_URL} ${workDir}`, { stdio: "inherit" });
 
+    // Install dependencies
+    console.log(`\n📦 Installing dependencies...`);
+    execSync(`npm install`, { cwd: workDir, stdio: "inherit" });
+
     // Start from voice-preview merged with main (so Claude sees all previous voice features + latest main)
     console.log(`\n🔀 Preparing base: merging main and voice-preview...`);
     execSync(`git fetch origin voice-preview`, { cwd: workDir, stdio: "inherit" });
