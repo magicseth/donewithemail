@@ -9,9 +9,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../lib/authContext";
+import { useDemoMode } from "../lib/demoModeContext";
 
 export function SignInScreen() {
   const { isLoading, signIn } = useAuth();
+  const { enterDemoMode } = useDemoMode();
   const insets = useSafeAreaInsets();
 
   return (
@@ -72,6 +74,16 @@ export function SignInScreen() {
               <Text style={styles.signInButtonText}>Continue with Google</Text>
             </>
           )}
+        </TouchableOpacity>
+
+        {/* Demo button */}
+        <TouchableOpacity
+          style={styles.demoButton}
+          onPress={enterDemoMode}
+          disabled={isLoading}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.demoButtonText}>Try Demo</Text>
         </TouchableOpacity>
 
         {/* Privacy note */}
@@ -284,6 +296,22 @@ const styles = StyleSheet.create({
   signInButtonText: {
     color: "#fff",
     fontSize: 18,
+    fontWeight: "600",
+  },
+  demoButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+    marginTop: 12,
+    borderWidth: 2,
+    borderColor: "#6366F1",
+    backgroundColor: "transparent",
+  },
+  demoButtonText: {
+    color: "#6366F1",
+    fontSize: 16,
     fontWeight: "600",
   },
   privacyNote: {
