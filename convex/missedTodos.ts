@@ -71,7 +71,7 @@ export const findMissedTodos = workflow.define({
 
     const analysisResults = await step.runAction(
       internal.missedTodosWorkflow.analyzeEmailsForMissedTodos,
-      { emails: emailsForAnalysis }
+      { userId: args.userId, emails: emailsForAnalysis }
     );
 
     const needsResponse = analysisResults.filter((r) => r.needsResponse);

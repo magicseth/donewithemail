@@ -161,13 +161,94 @@ async function processFeatureRequest(request: {
 "${request.transcript}"
 
 After implementing:
-1. Make sure the code compiles (run: npx tsc --noEmit)
-2. Commit your changes with a descriptive message
-3. Do NOT push to remote - I will handle that
+1. Run \`npx convex dev --once --typecheck=disable\` to deploy Convex changes
+2. Run \`npx tsc --noEmit\` to check for TypeScript errors
+3. Fix any TypeScript errors you find
+4. Commit your changes with a descriptive message
+5. Do NOT push to remote - I will handle that
 
-Important: This is a React Native Expo app. Follow existing patterns in the codebase.`;
+Important: This is a React Native Expo app. Follow existing patterns in the codebase.
+Important: Do not consider the task complete until convex dev and tsc both pass without errors.`;
 
-    const claudeResult = await runClaudeCode(workDir, prompt);
+    let claudeResult = await runClaudeCode(workDir, prompt);
+    let attempts = 1;
+    const maxAttempts = 3;
+
+    // Verify code compiles - retry if needed
+    while (attempts <= maxAttempts) {
+      console.log(`\n🔍 Verifying code compiles (attempt ${attempts}/${maxAttempts})...`);
+
+      // Check Convex
+      let convexError: string | null = null;
+      try {
+        execSync(`npx convex dev --once --typecheck=disable`, {
+          cwd: workDir,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            CONVEX_DEPLOYMENT: CONVEX_DEPLOYMENT || "",
+          },
+        });
+        console.log(`   ✓ Convex deployment successful`);
+      } catch (e) {
+        convexError = e instanceof Error ? e.message : String(e);
+        console.log(`   ✗ Convex deployment failed: ${convexError.slice(0, 200)}`);
+      }
+
+      // Check TypeScript
+      let tscError: string | null = null;
+      try {
+        execSync(`npx tsc --noEmit`, { cwd: workDir, encoding: "utf-8" });
+        console.log(`   ✓ TypeScript check passed`);
+      } catch (e: any) {
+        tscError = e.stdout || e.message || String(e);
+        console.log(`   ✗ TypeScript errors found`);
+      }
+
+      // If both pass, we're done
+      if (!convexError && !tscError) {
+        console.log(`\n✅ Code verification passed!`);
+        break;
+      }
+
+      // If we've exhausted attempts, fail
+      if (attempts >= maxAttempts) {
+        const errorMsg = [
+          convexError ? `Convex: ${convexError.slice(0, 500)}` : null,
+          tscError ? `TypeScript: ${tscError.slice(0, 500)}` : null,
+        ].filter(Boolean).join("\n\n");
+
+        console.log(`\n❌ Code verification failed after ${maxAttempts} attempts`);
+        await client.mutation(api.featureRequests.updateClaudeOutput, {
+          id: request._id as any,
+          claudeOutput: claudeResult.output.slice(-5000),
+          claudeSuccess: false,
+        });
+        await client.mutation(api.featureRequests.markFailed, {
+          id: request._id as any,
+          error: `Code verification failed:\n${errorMsg}`,
+        });
+        return;
+      }
+
+      // Try to fix the errors
+      console.log(`\n🔧 Asking Claude to fix errors (attempt ${attempts + 1})...`);
+      await updateProgress("implementing", `Fixing errors (attempt ${attempts + 1})...`);
+
+      const fixPrompt = `The code has errors that need to be fixed:
+
+${convexError ? `CONVEX DEPLOYMENT ERRORS:\n${convexError.slice(0, 2000)}\n\n` : ""}${tscError ? `TYPESCRIPT ERRORS:\n${tscError.slice(0, 2000)}` : ""}
+
+Please fix these errors. After fixing:
+1. Run \`npx convex dev --once --typecheck=disable\` to verify Convex works
+2. Run \`npx tsc --noEmit\` to verify TypeScript compiles
+3. Commit your fixes
+
+Do not consider the task complete until both commands pass without errors.`;
+
+      claudeResult = await runClaudeCode(workDir, fixPrompt);
+      attempts++;
+    }
 
     // Save Claude's output to Convex
     await client.mutation(api.featureRequests.updateClaudeOutput, {
@@ -235,11 +316,11 @@ Important: This is a React Native Expo app. Follow existing patterns in the code
       },
     });
 
-    // Run EAS update on voice-preview channel
-    console.log(`\n📱 Running EAS update for voice-preview...`);
+    // Run EAS update on production channel
+    console.log(`\n📱 Running EAS update for production...`);
     await updateProgress("uploading", "Uploading to Expo (EAS Update)...");
     const easOutput = execSync(
-      `npx eas update --branch voice-preview --message "Feature: ${request.transcript.slice(0, 50)}..."`,
+      `npx eas update --branch production --message "Feature: ${request.transcript.slice(0, 50)}..."`,
       { cwd: workDir, encoding: "utf-8" }
     );
 
