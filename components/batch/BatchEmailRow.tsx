@@ -377,7 +377,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
               </View>
             ) : (
               /* Quick reply chips - limit to 2 to fit on one line */
-              email.quickReplies?.slice(0, 2).map((reply, idx) => (
+              (Array.isArray(email.quickReplies) ? email.quickReplies.slice(0, 2) : []).map((reply, idx) => (
                 <TouchableOpacity
                   key={idx}
                   style={styles.quickReplyChip}
