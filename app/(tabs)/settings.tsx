@@ -819,7 +819,7 @@ export default function SettingsScreen() {
               <View style={styles.costItem}>
                 <Text style={styles.costLabel}>AI Summarization</Text>
                 <Text style={styles.costValue}>
-                  {myCosts.aiCosts ? `$${myCosts.aiCosts.totalRawCost.toFixed(4)}` : "$0.00"}
+                  {myCosts.aiCosts?.totalRawCost != null ? `$${myCosts.aiCosts.totalRawCost.toFixed(4)}` : "$0.00"}
                 </Text>
                 <Text style={styles.costCount}>
                   {myCosts.aiCosts?.count ?? 0} calls
@@ -829,7 +829,7 @@ export default function SettingsScreen() {
               <View style={styles.costItem}>
                 <Text style={styles.costLabel}>Embeddings</Text>
                 <Text style={styles.costValue}>
-                  {myCosts.toolCosts ? `$${myCosts.toolCosts.totalRawCost.toFixed(4)}` : "$0.00"}
+                  {myCosts.toolCosts?.totalRawCost != null ? `$${myCosts.toolCosts.totalRawCost.toFixed(4)}` : "$0.00"}
                 </Text>
                 <Text style={styles.costCount}>
                   {myCosts.toolCosts?.count ?? 0} calls
@@ -840,7 +840,7 @@ export default function SettingsScreen() {
             <View style={styles.totalCostRow}>
               <Text style={styles.totalCostLabel}>Total AI Cost</Text>
               <Text style={styles.totalCostValue}>
-                ${myCosts.totalCost.toFixed(4)}
+                ${myCosts.totalCost != null ? myCosts.totalCost.toFixed(4) : "0.0000"}
               </Text>
             </View>
           </View>
