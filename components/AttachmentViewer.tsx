@@ -76,7 +76,7 @@ export function AttachmentViewer({
       );
     }
 
-    // PDFs and documents - show in iframe/webview on web, prompt download on mobile
+    // PDFs and documents - show in iframe/webview
     if (
       contentType.includes("pdf") ||
       contentType.includes("word") ||
@@ -86,40 +86,24 @@ export function AttachmentViewer({
       contentType.includes("presentation") ||
       contentType.includes("powerpoint")
     ) {
-      if (Platform.OS === "web") {
-        // On web, embed the PDF or document
-        const blob = base64Data;
-        const htmlContent = `
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <style>
-                body { margin: 0; padding: 0; overflow: hidden; }
-                iframe { border: none; width: 100vw; height: 100vh; }
-              </style>
-            </head>
-            <body>
-              <iframe src="data:${contentType};base64,${blob}" width="100%" height="100%"></iframe>
-            </body>
-          </html>
-        `;
-        return <WebViewWrapper html={htmlContent} />;
-      } else {
-        // On mobile, show download prompt
-        return (
-          <View style={styles.downloadPromptContainer}>
-            <Text style={styles.downloadPromptIcon}>📄</Text>
-            <Text style={styles.downloadPromptTitle}>{attachment.filename}</Text>
-            <Text style={styles.downloadPromptText}>
-              This file type cannot be previewed on mobile.
-            </Text>
-            <TouchableOpacity style={styles.downloadButton} onPress={onDownload}>
-              <Text style={styles.downloadButtonText}>Download File</Text>
-            </TouchableOpacity>
-          </View>
-        );
-      }
+      // Embed the PDF or document in WebView (works on both web and mobile)
+      const blob = base64Data;
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+              body { margin: 0; padding: 0; overflow: hidden; }
+              iframe { border: none; width: 100vw; height: 100vh; }
+            </style>
+          </head>
+          <body>
+            <iframe src="data:${contentType};base64,${blob}" width="100%" height="100%"></iframe>
+          </body>
+        </html>
+      `;
+      return <WebViewWrapper html={htmlContent} />;
     }
 
     // Text files
