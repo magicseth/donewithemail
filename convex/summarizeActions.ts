@@ -153,6 +153,14 @@ interface Deadline {
   description: string;  // e.g., "respond by", "submit proposal by"
 }
 
+// Type for actionable items (links, attachments that need user action)
+interface ActionableItem {
+  type: 'link' | 'attachment';
+  label: string;
+  url?: string;
+  attachmentId?: string;
+}
+
 // Type for summarization result
 interface SummarizeResult {
   summary: string;
@@ -162,6 +170,7 @@ interface SummarizeResult {
   actionRequired?: "reply" | "action" | "fyi" | "none";
   actionDescription?: string;
   quickReplies?: QuickReply[];
+  actionableItems?: ActionableItem[];
   calendarEvent?: CalendarEvent;
   deadline?: Deadline;
   // AI prediction: should user accept this calendar invite?
@@ -249,12 +258,18 @@ FIELDS:
 4. actionRequired: "reply" | "action" | "fyi" | "none"
 5. actionDescription: Specific action needed if any. Use {{DATE:YYYY-MM-DD}} for any date references.
 6. quickReplies: If reply needed, up to 3 options as [{label, body}] - label max 20 chars, body is full reply
-7. calendarEvent: If meeting/event mentioned, extract {title, startTime, endTime, location, description, recurrence, recurrenceDescription}. Use ISO 8601 format for startTime/endTime (e.g., "2025-01-20T14:00:00"). For recurring events, include BOTH:
+7. actionableItems: If the email requires clicking a link or opening an attachment, provide up to 3 actionable items as [{type, label, url}]. Examples:
+   - LinkedIn message notification → {type: "link", label: "Open LinkedIn", url: "https://linkedin.com/..."}
+   - Shared document → {type: "link", label: "View Document", url: "https://docs.google.com/..."}
+   - Important PDF attachment → {type: "attachment", label: "View Invoice.pdf", attachmentId: "..."}
+   - Zoom meeting link → {type: "link", label: "Join Zoom", url: "https://zoom.us/..."}
+   Only include items that require immediate action. Extract actual URLs from the email body.
+8. calendarEvent: If meeting/event mentioned, extract {title, startTime, endTime, location, description, recurrence, recurrenceDescription}. Use ISO 8601 format for startTime/endTime (e.g., "2025-01-20T14:00:00"). For recurring events, include BOTH:
    - recurrence: RRULE format WITHOUT "RRULE:" prefix (e.g., "FREQ=WEEKLY;BYDAY=TU", "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU" for bi-weekly, "FREQ=MONTHLY;BYMONTHDAY=15")
    - recurrenceDescription: Human-readable text (e.g., "Every Tuesday", "Every other Tuesday", "Monthly on the 15th")
-8. suggestedReply: Optional longer draft reply
-9. deadline: If there's a deadline or due date mentioned (e.g., "please respond by Friday", "submit by Jan 25"), extract {date, description}. Use ISO 8601 format for date. Only include if there's a clear deadline for the recipient.
-10. shouldAcceptCalendar: If calendarEvent is present, predict whether the user likely wants to accept this calendar invite (true) or decline/ignore it (false). Consider:
+9. suggestedReply: Optional longer draft reply
+10. deadline: If there's a deadline or due date mentioned (e.g., "please respond by Friday", "submit by Jan 25"), extract {date, description}. Use ISO 8601 format for date. Only include if there's a clear deadline for the recipient.
+11. shouldAcceptCalendar: If calendarEvent is present, predict whether the user likely wants to accept this calendar invite (true) or decline/ignore it (false). Consider:
    - Work meetings with colleagues/team → likely accept
    - 1:1 meetings with important contacts → likely accept
    - Social events from friends/family → likely accept
@@ -325,6 +340,7 @@ Respond with only valid JSON, no markdown or explanation.`);
       actionRequired: result.actionRequired || undefined,
       actionDescription: result.actionDescription || undefined,
       quickReplies: result.quickReplies || undefined,
+      actionableItems: result.actionableItems || undefined,
       calendarEvent: sanitizedCalendarEvent,
       shouldAcceptCalendar: sanitizedCalendarEvent ? result.shouldAcceptCalendar : undefined,
       deadline: sanitizedDeadline,
@@ -517,12 +533,18 @@ FIELDS:
 4. actionRequired: "reply" | "action" | "fyi" | "none"
 5. actionDescription: Specific action needed if any. Use {{DATE:YYYY-MM-DD}} for any date references.
 6. quickReplies: If reply needed, up to 3 options as [{label, body}] - label max 20 chars, body is full reply
-7. calendarEvent: If meeting/event mentioned, extract {title, startTime, endTime, location, description, recurrence, recurrenceDescription}. Use ISO 8601 format for startTime/endTime (e.g., "2025-01-20T14:00:00"). For recurring events, include BOTH:
+7. actionableItems: If the email requires clicking a link or opening an attachment, provide up to 3 actionable items as [{type, label, url}]. Examples:
+   - LinkedIn message notification → {type: "link", label: "Open LinkedIn", url: "https://linkedin.com/..."}
+   - Shared document → {type: "link", label: "View Document", url: "https://docs.google.com/..."}
+   - Important PDF attachment → {type: "attachment", label: "View Invoice.pdf", attachmentId: "..."}
+   - Zoom meeting link → {type: "link", label: "Join Zoom", url: "https://zoom.us/..."}
+   Only include items that require immediate action. Extract actual URLs from the email body.
+8. calendarEvent: If meeting/event mentioned, extract {title, startTime, endTime, location, description, recurrence, recurrenceDescription}. Use ISO 8601 format for startTime/endTime (e.g., "2025-01-20T14:00:00"). For recurring events, include BOTH:
    - recurrence: RRULE format WITHOUT "RRULE:" prefix (e.g., "FREQ=WEEKLY;BYDAY=TU", "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU" for bi-weekly, "FREQ=MONTHLY;BYMONTHDAY=15")
    - recurrenceDescription: Human-readable text (e.g., "Every Tuesday", "Every other Tuesday", "Monthly on the 15th")
-8. suggestedReply: Optional longer draft reply
-9. deadline: If there's a deadline or due date mentioned (e.g., "please respond by Friday", "submit by Jan 25"), extract {date, description}. Use ISO 8601 format for date. Only include if there's a clear deadline for the recipient.
-10. shouldAcceptCalendar: If calendarEvent is present, predict whether the user likely wants to accept this calendar invite (true) or decline/ignore it (false). Consider:
+9. suggestedReply: Optional longer draft reply
+10. deadline: If there's a deadline or due date mentioned (e.g., "please respond by Friday", "submit by Jan 25"), extract {date, description}. Use ISO 8601 format for date. Only include if there's a clear deadline for the recipient.
+11. shouldAcceptCalendar: If calendarEvent is present, predict whether the user likely wants to accept this calendar invite (true) or decline/ignore it (false). Consider:
    - Work meetings with colleagues/team → likely accept
    - 1:1 meetings with important contacts → likely accept
    - Social events from friends/family → likely accept

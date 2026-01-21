@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 import { encryptedPii } from "./pii";
-import { CalendarEvent, QuickReply } from "./schema";
+import { CalendarEvent, QuickReply, ActionableItem } from "./schema";
 
 // Internal mutation to mark an event as added to calendar
 export const markCalendarEventAdded = internalMutation({
@@ -556,6 +556,12 @@ export const updateEmailSummary = internalMutation({
       label: v.string(),
       body: v.string(),
     }))),
+    actionableItems: v.optional(v.array(v.object({
+      type: v.union(v.literal("link"), v.literal("attachment")),
+      label: v.string(),
+      url: v.optional(v.string()),
+      attachmentId: v.optional(v.string()),
+    }))),
     calendarEvent: v.optional(v.object({
       title: v.string(),
       startTime: v.optional(v.string()),
@@ -591,6 +597,9 @@ export const updateEmailSummary = internalMutation({
     const encryptedQuickReplies = args.quickReplies
       ? await pii.encrypt(JSON.stringify(args.quickReplies))
       : undefined;
+    const encryptedActionableItems = args.actionableItems
+      ? await pii.encrypt(JSON.stringify(args.actionableItems))
+      : undefined;
     const encryptedCalendarEvent = args.calendarEvent
       ? await pii.encrypt(JSON.stringify(args.calendarEvent))
       : undefined;
@@ -612,6 +621,7 @@ export const updateEmailSummary = internalMutation({
       actionRequired: args.actionRequired,
       actionDescription: encryptedActionDescription,
       quickReplies: encryptedQuickReplies,
+      actionableItems: encryptedActionableItems,
       calendarEvent: encryptedCalendarEvent,
       shouldAcceptCalendar: args.shouldAcceptCalendar,
       deadline: args.deadline,

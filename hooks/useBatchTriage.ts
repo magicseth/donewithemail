@@ -11,6 +11,13 @@ export interface QuickReplyOption {
   body: string;
 }
 
+export interface ActionableItem {
+  type: 'link' | 'attachment';
+  label: string;
+  url?: string;
+  attachmentId?: string;
+}
+
 export interface BatchEmailPreview {
   _id: string;
   subject: string;
@@ -20,6 +27,7 @@ export interface BatchEmailPreview {
   urgencyScore?: number;
   actionRequired?: "reply" | "action" | "fyi" | "none";
   quickReplies?: QuickReplyOption[];
+  actionableItems?: ActionableItem[];
   calendarEvent?: {
     title: string;
     startTime?: string;

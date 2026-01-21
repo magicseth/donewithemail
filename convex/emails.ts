@@ -3,7 +3,7 @@ import { mutation, internalQuery, DatabaseReader, QueryCtx } from "./_generated/
 import { authedQuery, authedMutation } from "./functions";
 import { Id, Doc } from "./_generated/dataModel";
 import { encryptedPii, EncryptedField } from "./pii";
-import { QuickReply, CalendarEvent } from "./schema";
+import { QuickReply, CalendarEvent, ActionableItem } from "./schema";
 
 // Helper to fetch summary for an email
 async function getSummaryForEmail(db: DatabaseReader, emailId: Id<"emails">) {
@@ -86,6 +86,12 @@ async function decryptSummaryForQuery(
     if (qrJson) quickReplies = JSON.parse(qrJson);
   }
 
+  let actionableItems: ActionableItem[] | null = null;
+  if (summary.actionableItems) {
+    const aiJson = await pii.decrypt(summary.actionableItems);
+    if (aiJson) actionableItems = JSON.parse(aiJson);
+  }
+
   let calendarEvent: CalendarEvent | null = null;
   if (summary.calendarEvent) {
     const ceJson = await pii.decrypt(summary.calendarEvent);
@@ -98,6 +104,7 @@ async function decryptSummaryForQuery(
     suggestedReply: decrypted.suggestedReply,
     actionDescription: decrypted.actionDescription,
     quickReplies,
+    actionableItems,
     calendarEvent,
     deadlineDescription: decrypted.deadlineDescription,
   };
@@ -412,6 +419,12 @@ export const getMyUntriagedEmails = authedQuery({
             if (qrJson) quickReplies = JSON.parse(qrJson);
           }
 
+          let actionableItems: ActionableItem[] | null = null;
+          if (summaryData.actionableItems) {
+            const aiJson = await pii.decrypt(summaryData.actionableItems);
+            if (aiJson) actionableItems = JSON.parse(aiJson);
+          }
+
           let calendarEvent: CalendarEvent | null = null;
           if (summaryData.calendarEvent) {
             const ceJson = await pii.decrypt(summaryData.calendarEvent);
@@ -462,6 +475,7 @@ export const getMyUntriagedEmails = authedQuery({
           actionRequired: summaryData?.actionRequired,
           actionDescription: decryptedSummary?.actionDescription ?? undefined,
           quickReplies: decryptedSummary?.quickReplies ?? undefined,
+          actionableItems: decryptedSummary?.actionableItems ?? undefined,
           calendarEvent: decryptedSummary?.calendarEvent ?? undefined,
           shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
           calendarEventId: summaryData?.calendarEventId,
@@ -568,6 +582,12 @@ export const getMyTodoEmails = authedQuery({
             if (qrJson) quickReplies = JSON.parse(qrJson);
           }
 
+          let actionableItems: ActionableItem[] | null = null;
+          if (summaryData.actionableItems) {
+            const aiJson = await pii.decrypt(summaryData.actionableItems);
+            if (aiJson) actionableItems = JSON.parse(aiJson);
+          }
+
           let calendarEvent: CalendarEvent | null = null;
           if (summaryData.calendarEvent) {
             const ceJson = await pii.decrypt(summaryData.calendarEvent);
@@ -618,6 +638,7 @@ export const getMyTodoEmails = authedQuery({
           actionRequired: summaryData?.actionRequired,
           actionDescription: decryptedSummary?.actionDescription ?? undefined,
           quickReplies: decryptedSummary?.quickReplies ?? undefined,
+          actionableItems: decryptedSummary?.actionableItems ?? undefined,
           calendarEvent: decryptedSummary?.calendarEvent ?? undefined,
           shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
           calendarEventId: summaryData?.calendarEventId,
@@ -952,6 +973,7 @@ export const searchMyEmails = authedQuery({
         let suggestedReply: string | undefined;
         let actionDescription: string | undefined;
         let quickReplies: QuickReply[] | undefined;
+        let actionableItems: ActionableItem[] | undefined;
         let calendarEvent: CalendarEvent | undefined;
 
         if (pii && summaryData) {
@@ -969,6 +991,11 @@ export const searchMyEmails = authedQuery({
           if (summaryData.quickReplies) {
             const qrJson = await pii.decrypt(summaryData.quickReplies);
             if (qrJson) quickReplies = JSON.parse(qrJson);
+          }
+
+          if (summaryData.actionableItems) {
+            const aiJson = await pii.decrypt(summaryData.actionableItems);
+            if (aiJson) actionableItems = JSON.parse(aiJson);
           }
 
           if (summaryData.calendarEvent) {
@@ -1009,6 +1036,7 @@ export const searchMyEmails = authedQuery({
           actionRequired: summaryData?.actionRequired,
           actionDescription,
           quickReplies,
+          actionableItems,
           calendarEvent,
           shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
           calendarEventId: summaryData?.calendarEventId,
@@ -1341,6 +1369,7 @@ export const getMyBatchTriagePreview = authedQuery({
       // Decrypt summary fields
       let summary: string | undefined;
       let quickReplies: QuickReply[] | undefined;
+      let actionableItems: ActionableItem[] | undefined;
       let calendarEvent: CalendarEvent | undefined;
 
       if (pii && summaryData) {
@@ -1349,6 +1378,11 @@ export const getMyBatchTriagePreview = authedQuery({
         if (summaryData.quickReplies) {
           const qrJson = await pii.decrypt(summaryData.quickReplies);
           if (qrJson) quickReplies = JSON.parse(qrJson);
+        }
+
+        if (summaryData.actionableItems) {
+          const aiJson = await pii.decrypt(summaryData.actionableItems);
+          if (aiJson) actionableItems = JSON.parse(aiJson);
         }
 
         if (summaryData.calendarEvent) {
@@ -1366,6 +1400,7 @@ export const getMyBatchTriagePreview = authedQuery({
         urgencyScore: summaryData?.urgencyScore,
         actionRequired: summaryData?.actionRequired,
         quickReplies,
+        actionableItems,
         calendarEvent,
         shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
         isSubscription: email.isSubscription,
