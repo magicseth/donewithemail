@@ -53,9 +53,10 @@ export const refreshPricingData = internalAction({
 export const getMyTotalCosts = query({
   args: {},
   handler: async (ctx): Promise<{
-    aiCosts: { count: number; totalRawCost: number; totalUserCost: number } | null;
-    toolCosts: { count: number; totalRawCost: number; totalUserCost: number } | null;
+    aiCosts: { count: number; totalAmount: number; totalUserAmount: number } | null;
+    toolCosts: { count: number; totalAmount: number; totalUserAmount: number } | null;
     totalCost: number;
+    debug?: { userId: string };
   }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
@@ -73,13 +74,14 @@ export const getMyTotalCosts = query({
     }
 
     // Get total AI costs using component directly
+    // Note: user._id is passed as a string to the component
     const aiCosts = await costs.getTotalAICostsByUser(ctx, user._id);
 
     // Get total tool costs (embeddings, etc.)
     const toolCosts = await costs.getTotalToolCostsByUser(ctx, user._id);
 
-    const totalCost = (aiCosts?.totalRawCost ?? 0) + (toolCosts?.totalRawCost ?? 0);
+    const totalCost = (aiCosts?.totalAmount ?? 0) + (toolCosts?.totalAmount ?? 0);
 
-    return { aiCosts, toolCosts, totalCost };
+    return { aiCosts, toolCosts, totalCost, debug: { userId: user._id } };
   },
 });
