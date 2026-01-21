@@ -45,6 +45,9 @@ export function usePushNotifications() {
       setTimeout(() => {
         if (data.type === "missed_todos") {
           router.navigate("/(tabs)");
+        } else if (data.type === "feature_completed" || data.type === "feature_failed") {
+          // Navigate to settings screen to show feature request status
+          router.navigate("/(tabs)/settings");
         } else if (data.emailId) {
           console.log("[Push] Navigating to email:", data.emailId);
           router.push(`/email/${data.emailId}`);
