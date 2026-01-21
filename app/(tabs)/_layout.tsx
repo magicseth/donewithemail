@@ -1,6 +1,7 @@
 import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
 import { useAuth } from "../../lib/authContext";
+import { useDemoMode } from "../../lib/demoModeContext";
 import { SignInScreen } from "../../components/SignInScreen";
 import { AddFeatureButton } from "../../components/AddFeatureButton";
 
@@ -24,9 +25,10 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
 
 export default function TabsLayout() {
   const { isAuthenticated, isLoading } = useAuth();
+  const { isDemoMode } = useDemoMode();
 
-  // Show sign-in screen when not authenticated
-  if (!isLoading && !isAuthenticated) {
+  // Show sign-in screen when not authenticated and not in demo mode
+  if (!isLoading && !isAuthenticated && !isDemoMode) {
     return <SignInScreen />;
   }
 
