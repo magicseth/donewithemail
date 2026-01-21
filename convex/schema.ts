@@ -61,6 +61,18 @@ export default defineSchema({
   })
     .index("by_email", ["emailId"]),
 
+  // Email attachments stored separately for efficient querying
+  emailAttachments: defineTable({
+    emailId: v.id("emails"),
+    filename: piiField(),
+    mimeType: v.string(),
+    size: v.number(), // Size in bytes
+    attachmentId: v.string(), // Gmail attachment ID for downloading
+    contentId: v.optional(v.string()), // For inline images (e.g., cid:xxx)
+    isInline: v.boolean(), // Whether this is an inline attachment (image in HTML)
+  })
+    .index("by_email", ["emailId"]),
+
   // AI-generated email summaries (separate table for cleaner data model)
   emailSummaries: defineTable({
     emailId: v.id("emails"),

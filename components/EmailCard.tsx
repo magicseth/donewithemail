@@ -9,6 +9,8 @@ import {
 } from "react-native";
 import { AISummary } from "./AISummary";
 import { WebViewWrapper } from "./WebViewWrapper";
+import { AttachmentList, AttachmentData } from "./AttachmentList";
+import { Id } from "../convex/_generated/dataModel";
 
 // Check if content looks like HTML
 function isHtml(content: string): boolean {
@@ -108,6 +110,9 @@ export interface EmailCardData {
     name?: string;
     avatarUrl?: string;
   }>;
+  // Attachments
+  attachments?: AttachmentData[];
+  userEmail?: string; // User's email for downloading attachments
 }
 
 interface EmailCardProps {
@@ -263,6 +268,15 @@ export function EmailCard({
           </Text>
         )}
       </View>
+
+      {/* Attachments */}
+      {showFullContent && email.attachments && email.attachments.length > 0 && email.userEmail && (
+        <AttachmentList
+          attachments={email.attachments}
+          emailId={email._id as Id<"emails">}
+          userEmail={email.userEmail}
+        />
+      )}
 
       {/* Urgency indicator bar */}
       {email.urgencyScore !== undefined && (

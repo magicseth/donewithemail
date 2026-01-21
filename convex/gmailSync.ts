@@ -7,13 +7,13 @@
  * - gmailQueries.ts: Read-only queries (getUserByEmail, getCachedEmails, etc.)
  */
 import { v } from "convex/values";
-import { action, internalAction, internalMutation } from "./_generated/server";
+import { action, internalAction, internalMutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { encryptedPii } from "./pii";
 
 // Import from extracted modules
-import { extractBody } from "./gmailHelpers";
+import { extractBody, extractAttachments } from "./gmailHelpers";
 import {
   refreshTokenIfNeeded,
   fetchProfilePhotoUrl,
@@ -163,6 +163,51 @@ export const storeEmailInternal = internalMutation({
   },
 });
 
+// Internal mutation to store email attachments
+export const storeEmailAttachments = internalMutation({
+  args: {
+    emailId: v.id("emails"),
+    userId: v.id("users"),
+    attachments: v.array(
+      v.object({
+        filename: v.string(),
+        mimeType: v.string(),
+        size: v.number(),
+        attachmentId: v.string(),
+        contentId: v.optional(v.string()),
+        isInline: v.boolean(),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    // Get PII helper for encrypting filenames
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+
+    // Delete any existing attachments for this email (in case of reprocessing)
+    const existingAttachments = await ctx.db
+      .query("emailAttachments")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .collect();
+
+    for (const attachment of existingAttachments) {
+      await ctx.db.delete(attachment._id);
+    }
+
+    // Store new attachments
+    for (const attachment of args.attachments) {
+      const encryptedFilename = await pii.encrypt(attachment.filename);
+      await ctx.db.insert("emailAttachments", {
+        emailId: args.emailId,
+        filename: encryptedFilename,
+        mimeType: attachment.mimeType,
+        size: attachment.size,
+        attachmentId: attachment.attachmentId,
+        contentId: attachment.contentId,
+        isInline: attachment.isInline,
+      });
+    }
+  },
+});
 
 // Fetch full email body on demand (for email detail view)
 export const fetchEmailBody = action({
@@ -237,11 +282,23 @@ export const fetchEmailBody = action({
     const bodyFull = html || plain || email.bodyPreview || "";
     const isHtml = !!html;
 
+    // Extract attachments from the payload
+    const attachments = extractAttachments(data.payload);
+
     // Update the email with full body
     await ctx.runMutation(internal.gmailSync.updateEmailBody, {
       emailId: args.emailId,
       bodyFull,
     });
+
+    // Store attachments if any
+    if (attachments.length > 0) {
+      await ctx.runMutation(internal.gmailSync.storeEmailAttachments, {
+        emailId: args.emailId,
+        userId: user._id,
+        attachments,
+      });
+    }
 
     return { body: bodyFull, isHtml };
   },
@@ -849,5 +906,120 @@ export const fetchAndStoreEmailsByIds = internalAction({
     }
 
     return { stored, failed };
+  },
+});
+
+// Query to get attachments for an email
+export const getEmailAttachments = query({
+  args: {
+    emailId: v.id("emails"),
+  },
+  handler: async (ctx, args) => {
+    // Get the email to verify ownership
+    const email = await ctx.db.get(args.emailId);
+    if (!email) {
+      return [];
+    }
+
+    // Get PII helper for decrypting filenames
+    const pii = await encryptedPii.forUser(ctx, email.userId);
+
+    // Get all attachments for this email
+    const attachments = await ctx.db
+      .query("emailAttachments")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .collect();
+
+    // Decrypt filenames
+    return Promise.all(
+      attachments.map(async (attachment) => ({
+        _id: attachment._id,
+        filename: await pii.decrypt(attachment.filename),
+        mimeType: attachment.mimeType,
+        size: attachment.size,
+        attachmentId: attachment.attachmentId,
+        isInline: attachment.isInline,
+      }))
+    );
+  },
+});
+
+// Action to download an attachment
+export const downloadAttachment = action({
+  args: {
+    userEmail: v.string(),
+    emailId: v.id("emails"),
+    attachmentId: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ data: string; mimeType: string; filename: string }> => {
+    // Get the email to find its externalId
+    type EmailData = {
+      externalId: string;
+    };
+    const email: EmailData | null = await ctx.runQuery(internal.emails.getEmailById, {
+      emailId: args.emailId,
+    });
+
+    if (!email) {
+      throw new Error("Email not found");
+    }
+
+    // Get user's Gmail tokens
+    const user = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+      email: args.userEmail,
+    });
+
+    if (!user?.gmailAccessToken) {
+      throw new Error("Gmail not connected");
+    }
+
+    // Refresh token if needed
+    let accessToken: string = user.gmailAccessToken;
+    if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
+      const refreshed = await refreshTokenIfNeeded(
+        user.gmailAccessToken,
+        user.gmailRefreshToken,
+        user.gmailTokenExpiresAt
+      );
+      accessToken = refreshed.accessToken;
+
+      // Save refreshed token to database
+      if (refreshed.refreshed) {
+        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+          userId: user._id,
+          accessToken: refreshed.accessToken,
+          expiresAt: refreshed.expiresAt,
+        });
+      }
+    }
+
+    // Get attachment metadata from database to verify it exists and get filename
+    const attachments = await ctx.runQuery(internal.gmailSync.getEmailAttachments, {
+      emailId: args.emailId,
+    });
+
+    const attachment = attachments.find((a: any) => a.attachmentId === args.attachmentId);
+    if (!attachment) {
+      throw new Error("Attachment not found");
+    }
+
+    // Fetch attachment from Gmail
+    const response = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${email.externalId}/attachments/${args.attachmentId}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch attachment: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // Return the base64url-encoded data along with metadata
+    return {
+      data: data.data, // Base64url-encoded data
+      mimeType: attachment.mimeType,
+      filename: attachment.filename,
+    };
   },
 });

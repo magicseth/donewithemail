@@ -10,12 +10,13 @@ import {
   Platform,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
-import { useAction } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { EmailCard, EmailCardData, CalendarEventData } from "../../components/EmailCard";
 import { useEmail, useEmailActions, useThreadEmails } from "../../hooks/useEmails";
 import { useAuth } from "../../lib/authContext";
 import { Id } from "../../convex/_generated/dataModel";
+import { AttachmentData } from "../../components/AttachmentList";
 
 function showAlert(title: string, message: string) {
   if (Platform.OS === "web") {
@@ -67,6 +68,12 @@ export default function EmailDetailScreen() {
 
   // Use the Convex _id from the email object for mutations
   const convexId = email?._id;
+
+  // Fetch attachments for the current email
+  const attachments = useQuery(
+    api.gmailSync.getEmailAttachments,
+    convexId ? { emailId: convexId } : "skip"
+  );
 
   // Fetch full body for the current email and thread emails
   useEffect(() => {
@@ -325,6 +332,8 @@ export default function EmailDetailScreen() {
           name: c.name,
           avatarUrl: c.avatarUrl,
         })),
+        attachments: attachments as AttachmentData[] | undefined,
+        userEmail: user?.email,
       }
     : mockEmail;
 
@@ -411,6 +420,7 @@ export default function EmailDetailScreen() {
                 name: c.name,
                 avatarUrl: c.avatarUrl,
               })),
+              userEmail: user?.email,
             };
 
             return (

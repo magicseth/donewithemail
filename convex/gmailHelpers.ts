@@ -125,3 +125,55 @@ export function parseSender(from: string): { name: string; email: string } {
 
   return { name: senderName, email: senderEmail };
 }
+
+/**
+ * Attachment metadata extracted from Gmail payload.
+ */
+export type AttachmentData = {
+  filename: string;
+  mimeType: string;
+  size: number;
+  attachmentId: string;
+  contentId?: string;
+  isInline: boolean;
+};
+
+/**
+ * Extract attachments from Gmail payload.
+ * Handles multipart messages recursively.
+ */
+export function extractAttachments(payload: any): AttachmentData[] {
+  const attachments: AttachmentData[] = [];
+
+  function processPartForAttachments(part: any) {
+    // Check if this part has an attachment
+    if (part.filename && part.body?.attachmentId) {
+      attachments.push({
+        filename: part.filename,
+        mimeType: part.mimeType || "application/octet-stream",
+        size: part.body.size || 0,
+        attachmentId: part.body.attachmentId,
+        contentId: part.headers?.find((h: any) => h.name.toLowerCase() === "content-id")?.value,
+        isInline: part.headers?.some(
+          (h: any) => h.name.toLowerCase() === "content-disposition" && h.value.toLowerCase().includes("inline")
+        ) || false,
+      });
+    }
+
+    // Recursively process nested parts
+    if (part.parts) {
+      for (const subPart of part.parts) {
+        processPartForAttachments(subPart);
+      }
+    }
+  }
+
+  // Start with the root payload
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      processPartForAttachments(part);
+    }
+  }
+
+  return attachments;
+}
