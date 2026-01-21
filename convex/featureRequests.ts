@@ -314,6 +314,39 @@ export const cancel = mutation({
   },
 });
 
+/**
+ * Reset failed feature requests back to pending (for retry)
+ */
+export const retryFailed = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const failed = await ctx.db
+      .query("featureRequests")
+      .withIndex("by_status", (q) => q.eq("status", "failed"))
+      .collect();
+
+    let count = 0;
+    for (const request of failed) {
+      // Skip user-cancelled requests
+      if (request.error === "Cancelled by user") {
+        continue;
+      }
+      await ctx.db.patch(request._id, {
+        status: "pending",
+        error: undefined,
+        completedAt: undefined,
+        progressStep: undefined,
+        progressMessage: undefined,
+        claudeOutput: undefined,
+        claudeSuccess: undefined,
+      });
+      count++;
+    }
+
+    return { count };
+  },
+});
+
 // =============================================================================
 // Internal Mutations (for notifications)
 // =============================================================================
