@@ -735,12 +735,10 @@ const styles = StyleSheet.create({
     color: "#6366F1",
     fontWeight: "500",
   },
-  // Sender group styling with left/right borders
+  // Sender group styling with blue outline all around
   senderGroupContainer: {
-    borderLeftWidth: 3,
-    borderRightWidth: 3,
-    borderLeftColor: "#E5E7EB",
-    borderRightColor: "#E5E7EB",
+    borderWidth: 3,
+    borderColor: "#6366F1",
     marginHorizontal: 4,
     marginBottom: 8,
     borderRadius: 4,
@@ -748,10 +746,10 @@ const styles = StyleSheet.create({
   },
   // For native SectionList - header wrapper
   senderGroupHeader: {
+    borderTopWidth: 3,
     borderLeftWidth: 3,
     borderRightWidth: 3,
-    borderLeftColor: "#E5E7EB",
-    borderRightColor: "#E5E7EB",
+    borderColor: "#6366F1",
     marginHorizontal: 4,
     borderTopLeftRadius: 4,
     borderTopRightRadius: 4,
@@ -761,12 +759,12 @@ const styles = StyleSheet.create({
   senderGroupItem: {
     borderLeftWidth: 3,
     borderRightWidth: 3,
-    borderLeftColor: "#E5E7EB",
-    borderRightColor: "#E5E7EB",
+    borderColor: "#6366F1",
     marginHorizontal: 4,
   },
-  // Last item in section gets bottom radius and margin
+  // Last item in section gets bottom radius, border and margin
   senderGroupItemLast: {
+    borderBottomWidth: 3,
     borderBottomLeftRadius: 4,
     borderBottomRightRadius: 4,
     marginBottom: 8,
