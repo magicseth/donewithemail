@@ -31,7 +31,7 @@ export const startChat = action({
   args: {
     message: v.string(),
   },
-  handler: async (ctx, args): Promise<{ threadId: string; response: string }> => {
+  handler: async (ctx, args): Promise<{ threadId: string; response: string; toolResults?: any[] }> => {
     const user = await getAuthenticatedUser(ctx);
 
     // Create a new thread for this conversation
@@ -55,9 +55,12 @@ export const startChat = action({
       console.log(`[EmailAgent] Steps:`, result.steps?.length ?? 0);
       console.log(`[EmailAgent] Tool calls:`, result.toolCalls?.length ?? 0);
       console.log(`[EmailAgent] Tool results:`, result.toolResults?.length ?? 0);
+
+      // Return tool results for frontend to show visual feedback
       return {
         threadId,
         response: result.text,
+        toolResults: result.toolResults,
       };
     } catch (error) {
       console.error(`[EmailAgent] Error generating response:`, error);
@@ -72,7 +75,7 @@ export const continueChat = action({
     threadId: v.string(),
     message: v.string(),
   },
-  handler: async (ctx, args): Promise<{ response: string }> => {
+  handler: async (ctx, args): Promise<{ response: string; toolResults?: any[] }> => {
     const user = await getAuthenticatedUser(ctx);
 
     // Generate response using the agent's generateText method directly
@@ -85,6 +88,7 @@ export const continueChat = action({
 
     return {
       response: result.text,
+      toolResults: result.toolResults,
     };
   },
 });

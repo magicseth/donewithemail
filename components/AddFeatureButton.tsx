@@ -96,19 +96,23 @@ export function AddFeatureButton() {
   return (
     <>
       <View style={styles.container}>
-        {/* Show streaming transcript or status */}
-        {(isRecordingFeature || isSubmittingFeature) && (
-          <View style={styles.statusContainer}>
-            <Text style={[
-              styles.statusText,
-              isRecordingFeature && streamingTranscript && styles.streamingText
-            ]}>
-              {isSubmittingFeature
-                ? "Submitting..."
-                : isRecordingFeature
-                  ? (streamingTranscript || "Listening...")
-                  : ""}
+        {/* Show prominent streaming transcript when recording */}
+        {isRecordingFeature && (
+          <View style={styles.streamingContainer}>
+            <View style={styles.recordingIndicator}>
+              <View style={styles.recordingDot} />
+              <Text style={styles.recordingLabel}>Recording</Text>
+            </View>
+            <Text style={styles.streamingTranscriptText}>
+              {streamingTranscript || "Listening..."}
             </Text>
+          </View>
+        )}
+        {/* Show submitting status */}
+        {isSubmittingFeature && (
+          <View style={styles.statusContainer}>
+            <ActivityIndicator size="small" color="#6366F1" />
+            <Text style={styles.statusText}>Submitting...</Text>
           </View>
         )}
         <VoiceRecordButton
@@ -174,16 +178,48 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   statusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
     marginRight: 12,
-    maxWidth: 200,
+    gap: 8,
   },
   statusText: {
     fontSize: 12,
     color: "#666",
   },
-  streamingText: {
-    color: "#6366F1",
+  streamingContainer: {
+    marginRight: 12,
+    maxWidth: 250,
+    backgroundColor: "#FEF2F2",
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+  },
+  recordingIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+    gap: 6,
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#EF4444",
+  },
+  recordingLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#DC2626",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  streamingTranscriptText: {
+    fontSize: 13,
+    color: "#1a1a1a",
     fontStyle: "italic",
+    lineHeight: 18,
   },
   modalOverlay: {
     flex: 1,

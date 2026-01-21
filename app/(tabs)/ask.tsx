@@ -22,6 +22,7 @@ interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  toolResults?: any[];
 }
 
 interface ThreadInfo {
@@ -42,6 +43,7 @@ export default function AskScreen() {
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [streamingTranscript, setStreamingTranscript] = useState("");
   const [processingStages, setProcessingStages] = useState<string[]>([]);
+  const [relevantEmails, setRelevantEmails] = useState<Array<{ subject: string; from: string }>>([]);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
 
@@ -95,20 +97,14 @@ export default function AskScreen() {
     setInput("");
     setIsLoading(true);
     setProcessingStages([]);
-
-    // Simulate processing stages for visual feedback
-    const stagesTimer = setTimeout(() => {
-      setProcessingStages(["Searching emails..."]);
-      setTimeout(() => {
-        setProcessingStages((prev) => [...prev, "Analyzing content..."]);
-        setTimeout(() => {
-          setProcessingStages((prev) => [...prev, "Generating response..."]);
-        }, 800);
-      }, 800);
-    }, 300);
+    setRelevantEmails([]);
 
     try {
       let response: string;
+      let toolResults: any[] | undefined;
+
+      // Show initial searching stage
+      setProcessingStages(["Searching emails..."]);
 
       if (threadId) {
         // Continue existing thread
@@ -117,6 +113,7 @@ export default function AskScreen() {
           message: trimmedInput,
         });
         response = result.response;
+        toolResults = result.toolResults;
       } else {
         // Start new thread
         const result = await startChat({
@@ -124,19 +121,55 @@ export default function AskScreen() {
         });
         setThreadId(result.threadId);
         response = result.response;
+        toolResults = result.toolResults;
       }
 
-      clearTimeout(stagesTimer);
+      // Process tool results to extract and display relevant emails
+      if (toolResults && toolResults.length > 0) {
+        const emails: Array<{ subject: string; from: string }> = [];
+        const stages: string[] = ["Searching emails..."];
+
+        toolResults.forEach((toolResult: any) => {
+          if (toolResult.result?.emails && Array.isArray(toolResult.result.emails)) {
+            // Extract emails from search results
+            toolResult.result.emails.forEach((email: any) => {
+              if (email.subject && email.from) {
+                emails.push({
+                  subject: email.subject,
+                  from: email.from,
+                });
+              }
+            });
+            if (emails.length > 0) {
+              setRelevantEmails(emails);
+              stages.push(`Found ${emails.length} relevant email${emails.length > 1 ? 's' : ''}`);
+            }
+          }
+
+          // Detect other tool calls
+          if (toolResult.toolName === "getEmailDetails") {
+            stages.push("Analyzing email content...");
+          } else if (toolResult.toolName === "createCalendarEvent") {
+            stages.push("Creating calendar event...");
+          }
+        });
+
+        stages.push("Generating response...");
+        setProcessingStages(stages);
+
+        // Give user time to see the stages
+        await new Promise(resolve => setTimeout(resolve, 800));
+      }
 
       // Add assistant message
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
         content: response,
+        toolResults,
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
-      clearTimeout(stagesTimer);
       console.error("Failed to send message:", err);
       // Add error message
       const errorMessage: Message = {
@@ -148,6 +181,7 @@ export default function AskScreen() {
     } finally {
       setIsLoading(false);
       setProcessingStages([]);
+      setRelevantEmails([]);
     }
   }, [input, isLoading, threadId, startChat, continueChat]);
 
@@ -412,6 +446,26 @@ export default function AskScreen() {
             flatListRef.current?.scrollToEnd({ animated: true })
           }
         />
+      )}
+
+      {/* Relevant emails being processed */}
+      {isLoading && relevantEmails.length > 0 && (
+        <View style={styles.relevantEmailsContainer}>
+          <Text style={styles.relevantEmailsTitle}>Relevant Emails:</Text>
+          {relevantEmails.map((email, index) => (
+            <View key={index} style={styles.relevantEmailItem}>
+              <View style={styles.emailDot} />
+              <View style={styles.emailInfo}>
+                <Text style={styles.emailSubject} numberOfLines={1}>
+                  {email.subject}
+                </Text>
+                <Text style={styles.emailFrom} numberOfLines={1}>
+                  {email.from}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
       )}
 
       {/* Loading indicator with processing stages */}
@@ -747,5 +801,48 @@ const styles = StyleSheet.create({
   },
   sendButtonTextDisabled: {
     color: "#999",
+  },
+  relevantEmailsContainer: {
+    backgroundColor: "#F0F9FF",
+    borderRadius: 12,
+    padding: 12,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#BAE6FD",
+  },
+  relevantEmailsTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#0284C7",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  relevantEmailItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 6,
+    gap: 8,
+  },
+  emailDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#0284C7",
+    marginTop: 6,
+  },
+  emailInfo: {
+    flex: 1,
+  },
+  emailSubject: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#1a1a1a",
+    marginBottom: 2,
+  },
+  emailFrom: {
+    fontSize: 11,
+    color: "#666",
   },
 });
