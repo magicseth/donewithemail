@@ -372,22 +372,24 @@ export default function AskScreen() {
       {/* Messages or Empty State with History */}
       {messages.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>Ask about your emails</Text>
-          <Text style={styles.emptySubtitle}>
-            I can search through your emails to find information about
-            reservations, appointments, orders, and more.
-          </Text>
-          <View style={styles.examplesContainer}>
-            <Text style={styles.examplesTitle}>Try asking:</Text>
-            {exampleQuestions.map((q, i) => (
-              <TouchableOpacity
-                key={i}
-                style={styles.exampleButton}
-                onPress={() => setInput(q)}
-              >
-                <Text style={styles.exampleText}>{q}</Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.topSection}>
+            <Text style={styles.emptyTitle}>Ask about your emails</Text>
+            <Text style={styles.emptySubtitle}>
+              I can search through your emails to find information about
+              reservations, appointments, orders, and more.
+            </Text>
+            <View style={styles.examplesContainer}>
+              <Text style={styles.examplesTitle}>Try asking:</Text>
+              {exampleQuestions.map((q, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={styles.exampleButton}
+                  onPress={() => setInput(q)}
+                >
+                  <Text style={styles.exampleText}>{q}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
 
           {/* History section integrated into empty state */}
@@ -635,6 +637,9 @@ const styles = StyleSheet.create({
   emptyState: {
     flex: 1,
     padding: 24,
+  },
+  topSection: {
+    flex: 1,
     justifyContent: "center",
   },
   emptyTitle: {
