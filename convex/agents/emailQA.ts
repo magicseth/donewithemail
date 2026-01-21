@@ -2,7 +2,7 @@
 
 import { Agent, createTool, type ToolCtx } from "@convex-dev/agent";
 import { anthropic } from "@ai-sdk/anthropic";
-import { components, internal } from "../_generated/api";
+import { components, internal, api } from "../_generated/api";
 import { z } from "zod";
 import { Id } from "../_generated/dataModel";
 
@@ -136,10 +136,23 @@ const createCalendarEventTool = createTool({
     try {
       console.log(`[CreateCalendarEventTool] Creating event: "${args.title}" at ${args.startTime}`);
 
+      // Get user's email
+      const user = await ctx.runQuery(internal.users.get, {
+        userId: ctx.userId as Id<"users">,
+      });
+
+      if (!user?.email) {
+        return {
+          success: false,
+          error: "User email not found",
+        };
+      }
+
       // Get user's timezone (default to America/Los_Angeles if not available)
       const timezone = "America/Los_Angeles"; // TODO: Get from user settings
 
-      const result = await ctx.runAction(internal.calendar.addToCalendar, {
+      const result = await ctx.runAction(api.calendar.addToCalendar, {
+        userEmail: user.email,
         title: args.title,
         startTime: args.startTime,
         endTime: args.endTime,

@@ -63,7 +63,7 @@ function SenderGroupHeader({
   return (
     <View style={senderStyles.container}>
       {avatarUrl ? (
-        <Image source={{ uri: avatarUrl }} style={senderStyles.avatar} />
+        <Image source={{ uri: avatarUrl }} style={senderStyles.avatar as any} />
       ) : (
         <View style={[senderStyles.avatar, senderStyles.avatarPlaceholder]}>
           <Text style={senderStyles.avatarText}>{initials}</Text>
@@ -128,7 +128,7 @@ const senderStyles = StyleSheet.create({
     backgroundColor: "#F9FAFB",
     // Sticky positioning for web
     ...(Platform.OS === "web" ? {
-      position: "sticky" as const,
+      position: "sticky" as any,
       top: 0,
       zIndex: 10,
     } : {}),

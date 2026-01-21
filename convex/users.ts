@@ -94,6 +94,18 @@ export const connectGmailAccount = mutation({
 // =============================================================================
 
 /**
+ * Internal: Get user by ID
+ */
+export const get = internalQuery({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.userId);
+  },
+});
+
+/**
  * Internal: Get user by WorkOS ID or email (for auth system)
  */
 export const getUserForAuth = internalQuery({
