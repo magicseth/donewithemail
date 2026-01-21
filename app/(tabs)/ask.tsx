@@ -289,7 +289,7 @@ export default function AskScreen() {
         const threadMessages = await getThreadMessages({ threadId: thread.threadId });
 
         // Convert to our Message format
-        const loadedMessages: Message[] = threadMessages.map((m, i) => ({
+        const loadedMessages: Message[] = threadMessages.map((m: any, i: number) => ({
           id: `${thread.threadId}-${i}`,
           role: m.role as "user" | "assistant",
           content: m.content,

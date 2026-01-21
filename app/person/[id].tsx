@@ -154,7 +154,7 @@ export default function PersonScreen() {
     : mockContact;
 
   const displayEmails = contactStats?.recentEmails
-    ? contactStats.recentEmails.map((e) => ({
+    ? contactStats.recentEmails.map((e: any) => ({
         _id: e._id,
         subject: e.subject,
         bodyPreview: e.bodyPreview,

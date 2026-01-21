@@ -210,8 +210,8 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
 
       // Split into punted (go to TODO) and unpunted (mark done)
       // Exclude isInTodo emails - they're already triaged as reply_needed
-      const toPunt = emailsInCategory.filter(e => puntedEmails.has(e._id) && !e.isInTodo);
-      const toDone = emailsInCategory.filter(e => !puntedEmails.has(e._id) && !e.isInTodo);
+      const toPunt = emailsInCategory.filter((e: any) => puntedEmails.has(e._id) && !e.isInTodo);
+      const toDone = emailsInCategory.filter((e: any) => !puntedEmails.has(e._id) && !e.isInTodo);
 
       // Build triage actions
       const triageActions: Array<{
@@ -238,8 +238,8 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
       // For calendar category, also add events to calendar (for unpunted only)
       if (category === "calendar") {
         const calendarEmailIds = toDone
-          .filter(e => e.calendarEvent)
-          .map(e => e._id as Id<"emails">);
+          .filter((e: any) => e.calendarEvent)
+          .map((e: any) => e._id as Id<"emails">);
 
         if (calendarEmailIds.length > 0) {
           try {
@@ -250,7 +250,7 @@ export function useBatchTriage(userEmail: string | undefined): BatchTriageResult
               timezone,
             });
             if (calendarResult.errors.length > 0) {
-              errors.push(...calendarResult.errors.map(e => `Calendar: ${e.error}`));
+              errors.push(...calendarResult.errors.map((e: any) => `Calendar: ${e.error}`));
             }
           } catch (err) {
             errors.push(`Calendar batch failed: ${err instanceof Error ? err.message : "Unknown error"}`);

@@ -292,8 +292,8 @@ export default function TodosScreen() {
 
   // Filter out processed emails for optimistic updates
   const emails: TodoEmail[] = (todoEmails || [])
-    .filter((email) => !processedIds.has(email._id))
-    .map((email): TodoEmail => ({
+    .filter((email: any) => !processedIds.has(email._id))
+    .map((email: any): TodoEmail => ({
       _id: email._id,
       subject: email.subject,
       bodyPreview: email.bodyPreview,

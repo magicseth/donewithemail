@@ -187,7 +187,7 @@ export default function SubscriptionsScreen() {
   const actionableSubscriptions = useMemo(() => {
     if (!subscriptions) return [];
     return subscriptions.filter(
-      (s) =>
+      (s: any) =>
         s.unsubscribeStatus === "subscribed" ||
         s.unsubscribeStatus === "failed" ||
         s.unsubscribeStatus === "manual_required"
@@ -209,7 +209,7 @@ export default function SubscriptionsScreen() {
 
   // Select all actionable
   const selectAll = useCallback(() => {
-    setSelectedIds(new Set(actionableSubscriptions.map((s) => s._id)));
+    setSelectedIds(new Set(actionableSubscriptions.map((s: any) => s._id)));
   }, [actionableSubscriptions]);
 
   // Clear selection

@@ -569,6 +569,41 @@ export declare const api: {
       any
     >;
   };
+  imapAuth: {
+    listImapAccounts: FunctionReference<"mutation", "public", {}, any>;
+    removeImapAccount: FunctionReference<
+      "mutation",
+      "public",
+      { email: string },
+      any
+    >;
+    storeImapCredentials: FunctionReference<
+      "mutation",
+      "public",
+      {
+        email: string;
+        host: string;
+        password: string;
+        port: number;
+        tls?: boolean;
+      },
+      any
+    >;
+  };
+  imapAuthActions: {
+    testImapConnection: FunctionReference<
+      "action",
+      "public",
+      {
+        email: string;
+        host: string;
+        password: string;
+        port: number;
+        tls?: boolean;
+      },
+      any
+    >;
+  };
   missedTodos: {
     startMissedTodosSearchByEmail: FunctionReference<
       "mutation",
@@ -1074,6 +1109,22 @@ export declare const internal: {
         name?: string;
         userId: Id<"users">;
       },
+      any
+    >;
+  };
+  imapAuth: {
+    updateConnectedProviders: FunctionReference<
+      "mutation",
+      "internal",
+      { connectedProviders: any; userId: Id<"users"> },
+      any
+    >;
+  };
+  imapSync: {
+    syncImapForUser: FunctionReference<
+      "action",
+      "internal",
+      { providerEmail: string; userEmail: string; userId: Id<"users"> },
       any
     >;
   };

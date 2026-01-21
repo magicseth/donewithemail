@@ -374,7 +374,7 @@ export default function EmailDetailScreen() {
 
         {/* Show all thread emails */}
         {threadEmails && threadEmails.length > 1 ? (
-          threadEmails.map((threadEmail, index) => {
+          threadEmails.map((threadEmail: any, index: number) => {
             const isCurrentEmail = threadEmail._id === id;
             const isLastEmail = index === threadEmails.length - 1;
             const isExpanded = isCurrentEmail || isLastEmail || expandedEmails.has(threadEmail._id);

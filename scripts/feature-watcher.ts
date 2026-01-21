@@ -207,7 +207,9 @@ Important: Do not consider the task complete until convex dev and tsc both pass 
         // Capture both stdout and stderr for full error context
         convexError = [e.stdout, e.stderr].filter(Boolean).join("\n") || e.message || String(e);
         console.log(`   ✗ Convex deployment failed:`);
-        console.log(convexError.slice(0, 500));
+        if (convexError) {
+          console.log(convexError.slice(0, 500));
+        }
       }
 
       // Check TypeScript
@@ -219,7 +221,9 @@ Important: Do not consider the task complete until convex dev and tsc both pass 
         // TypeScript outputs errors to stdout, capture both stdout and stderr
         tscError = [e.stdout, e.stderr].filter(Boolean).join("\n") || e.message || String(e);
         console.log(`   ✗ TypeScript errors found:`);
-        console.log(tscError.slice(0, 500));
+        if (tscError) {
+          console.log(tscError.slice(0, 500));
+        }
       }
 
       // If both pass, we're done

@@ -4,7 +4,7 @@
  * IMAP sync actions - fetching and storing emails from IMAP servers.
  */
 import { v } from "convex/values";
-import { action } from "./_generated/server";
+import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { ConnectedProvider } from "./schema";
@@ -13,7 +13,7 @@ import { encryptedPii } from "./pii";
 /**
  * Sync emails from IMAP for a specific user and provider
  */
-export const syncImapForUser = action({
+export const syncImapForUser = internalAction({
   args: {
     userId: v.id("users"),
     providerEmail: v.string(),

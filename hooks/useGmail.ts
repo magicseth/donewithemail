@@ -162,9 +162,9 @@ export function useGmail(sessionStart?: number) {
         nextPageToken = result.nextPageToken;
 
         // Summarize emails that don't have summaries yet
-        const emailsNeedingSummary = result.emails.filter((e) => !e.summary);
+        const emailsNeedingSummary = result.emails.filter((e: any) => !e.summary);
         if (emailsNeedingSummary.length > 0) {
-          const emailIds = emailsNeedingSummary.map((e) => e.id);
+          const emailIds = emailsNeedingSummary.map((e: any) => e.id);
           console.log(`Summarizing ${emailIds.length} emails`);
           summarizeEmails(emailIds);
         }
@@ -197,9 +197,9 @@ export function useGmail(sessionStart?: number) {
         nextPageToken = result.nextPageToken;
 
         // Summarize new emails
-        const emailsNeedingSummary = result.emails.filter((e) => !e.summary);
+        const emailsNeedingSummary = result.emails.filter((e: any) => !e.summary);
         if (emailsNeedingSummary.length > 0) {
-          summarizeEmails(emailsNeedingSummary.map((e) => e.id));
+          summarizeEmails(emailsNeedingSummary.map((e: any) => e.id));
         }
       } catch (e) {
         console.error("Failed to load more emails:", e);

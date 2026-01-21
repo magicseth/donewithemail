@@ -23,7 +23,7 @@ export default function AddImapScreen() {
   const [isTesting, setIsTesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const testConnection = useAction(api.imapAuth.testImapConnection);
+  const testConnection = useAction(api.imapAuthActions.testImapConnection);
   const storeCredentials = useMutation(api.imapAuth.storeImapCredentials);
 
   const handleTest = async () => {
