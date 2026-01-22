@@ -62,10 +62,12 @@ export default function SettingsScreen() {
   const [includeDebugLogs, setIncludeDebugLogs] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [selectedErrorRequest, setSelectedErrorRequest] = useState<{
+    id: string;
     transcript: string;
     error: string;
     claudeOutput?: string;
   } | null>(null);
+  const [isRetryingRequest, setIsRetryingRequest] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [selectedSuccessRequest, setSelectedSuccessRequest] = useState<{
     transcript: string;
@@ -78,6 +80,7 @@ export default function SettingsScreen() {
   } | null>(null);
   const submitFeatureRequest = useMutation(api.featureRequests.submit);
   const cancelFeatureRequest = useMutation(api.featureRequests.cancel);
+  const retryFeatureRequest = useMutation(api.featureRequests.retryOne);
   const myFeatureRequests = useQuery(api.featureRequests.getMine);
   const myCosts = useQuery(api.costs.getMyTotalCosts);
 
@@ -494,11 +497,12 @@ export default function SettingsScreen() {
   }, [cancelFeatureRequest]);
 
   const handleShowErrorDetails = useCallback((
+    id: string,
     transcript: string,
     error: string,
     claudeOutput?: string
   ) => {
-    setSelectedErrorRequest({ transcript, error, claudeOutput });
+    setSelectedErrorRequest({ id, transcript, error, claudeOutput });
     setShowErrorModal(true);
   }, []);
 
@@ -506,6 +510,24 @@ export default function SettingsScreen() {
     setShowErrorModal(false);
     setSelectedErrorRequest(null);
   }, []);
+
+  const handleRetryFeatureRequest = useCallback(async () => {
+    if (!selectedErrorRequest) return;
+
+    setIsRetryingRequest(true);
+    try {
+      await retryFeatureRequest({ id: selectedErrorRequest.id as any });
+      const msg = "Feature request queued for retry";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Retry Queued", msg);
+      setShowErrorModal(false);
+      setSelectedErrorRequest(null);
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : "Unknown error";
+      Platform.OS === "web" ? window.alert(`Error: ${errorMsg}`) : Alert.alert("Error", errorMsg);
+    } finally {
+      setIsRetryingRequest(false);
+    }
+  }, [selectedErrorRequest, retryFeatureRequest]);
 
   const handleShowSuccessDetails = useCallback((
     transcript: string,
@@ -1262,6 +1284,7 @@ export default function SettingsScreen() {
                         onPress: () => {
                           if (isFailed) {
                             handleShowErrorDetails(
+                              req._id,
                               req.transcript,
                               req.error || "Unknown error",
                               req.claudeOutput
@@ -1419,12 +1442,26 @@ export default function SettingsScreen() {
               </View>
             )}
 
-            <TouchableOpacity
-              style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16, flex: undefined }]}
-              onPress={handleCloseErrorModal}
-            >
-              <Text style={styles.modalButtonSubmitText}>Close</Text>
-            </TouchableOpacity>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel, { marginTop: 16, flex: 1 }]}
+                onPress={handleCloseErrorModal}
+                disabled={isRetryingRequest}
+              >
+                <Text style={styles.modalButtonCancelText}>Close</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16, flex: 1 }]}
+                onPress={handleRetryFeatureRequest}
+                disabled={isRetryingRequest}
+              >
+                {isRetryingRequest ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalButtonSubmitText}>Retry</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

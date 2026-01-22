@@ -505,6 +505,62 @@ export const retryFailed = mutation({
   },
 });
 
+/**
+ * Retry a single failed or cancelled feature request
+ */
+export const retryOne = mutation({
+  args: {
+    id: v.id("featureRequests"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const request = await ctx.db.get(args.id);
+    if (!request) {
+      throw new Error("Feature request not found");
+    }
+
+    // Verify ownership by checking user
+    const workosId = identity.subject;
+    let user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+      .first();
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
+
+    if (!user || request.userId !== user._id) {
+      throw new Error("Not authorized to retry this request");
+    }
+
+    // Only allow retrying failed requests
+    if (request.status !== "failed") {
+      throw new Error("Can only retry failed requests");
+    }
+
+    // Reset the request to pending
+    await ctx.db.patch(args.id, {
+      status: "pending",
+      error: undefined,
+      completedAt: undefined,
+      progressStep: undefined,
+      progressMessage: undefined,
+      claudeOutput: undefined,
+      claudeSuccess: undefined,
+    });
+
+    return { success: true };
+  },
+});
+
 // Reset a request back to pending (for stuck requests)
 export const resetToPending = internalMutation({
   args: { id: v.id("featureRequests") },

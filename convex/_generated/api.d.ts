@@ -470,6 +470,12 @@ export declare const api: {
       any
     >;
     retryFailed: FunctionReference<"mutation", "public", {}, any>;
+    retryOne: FunctionReference<
+      "mutation",
+      "public",
+      { id: Id<"featureRequests"> },
+      any
+    >;
     submit: FunctionReference<
       "mutation",
       "public",
