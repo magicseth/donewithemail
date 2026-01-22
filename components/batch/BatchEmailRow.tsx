@@ -205,6 +205,13 @@ export const BatchEmailRow = memo(function BatchEmailRow({
     return replaceDatePlaceholders(text);
   }, [email.summary, email.bodyPreview]);
 
+  // Debug logging for actionableItems - helps troubleshoot missing links
+  useEffect(() => {
+    if (email.actionableItems && email.actionableItems.length > 0) {
+      console.log(`[ActionableItems] Email "${email.subject?.slice(0, 40)}..." has ${email.actionableItems.length} actionable item(s):`, email.actionableItems);
+    }
+  }, [email._id, email.subject, email.actionableItems]);
+
   const hasCalendar = !!email.calendarEvent;
 
   const handlePress = useCallback(() => {
