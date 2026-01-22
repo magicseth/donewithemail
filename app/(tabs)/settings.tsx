@@ -1420,7 +1420,7 @@ export default function SettingsScreen() {
             )}
 
             <TouchableOpacity
-              style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16 }]}
+              style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16, flex: undefined }]}
               onPress={handleCloseErrorModal}
             >
               <Text style={styles.modalButtonSubmitText}>Close</Text>
@@ -1478,7 +1478,7 @@ export default function SettingsScreen() {
 
             {selectedSuccessRequest?.easDashboardUrl && (
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16, marginBottom: 8 }]}
+                style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16, marginBottom: 8, flex: undefined }]}
                 onPress={() => {
                   if (selectedSuccessRequest.easDashboardUrl) {
                     Linking.openURL(selectedSuccessRequest.easDashboardUrl);
@@ -1490,7 +1490,7 @@ export default function SettingsScreen() {
             )}
 
             <TouchableOpacity
-              style={[styles.modalButton, styles.modalButtonCancel, { marginTop: selectedSuccessRequest?.easDashboardUrl ? 0 : 16 }]}
+              style={[styles.modalButton, styles.modalButtonCancel, { marginTop: selectedSuccessRequest?.easDashboardUrl ? 0 : 16, flex: undefined }]}
               onPress={handleCloseSuccessModal}
             >
               <Text style={styles.modalButtonCancelText}>Close</Text>
@@ -2090,7 +2090,9 @@ const styles = StyleSheet.create({
   modalButton: {
     flex: 1,
     paddingVertical: 12,
+    paddingHorizontal: 20,
     borderRadius: 8,
+    minWidth: 80,
     alignItems: "center",
   },
   modalButtonCancel: {
@@ -2102,7 +2104,7 @@ const styles = StyleSheet.create({
   modalButtonCancelText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#666",
+    color: "#333",
   },
   modalButtonSubmitText: {
     fontSize: 16,
