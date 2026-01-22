@@ -515,7 +515,7 @@ export default function AskScreen() {
                       disabled={isDeleting}
                     >
                       <Text style={styles.threadMessage} numberOfLines={1}>
-                        {thread.firstMessage || "Empty conversation"}
+                        {thread.title || thread.firstMessage || "Conversation"}
                       </Text>
                       <Text style={styles.threadDate}>{dateStr}</Text>
                     </TouchableOpacity>

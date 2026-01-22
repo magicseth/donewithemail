@@ -182,6 +182,7 @@ export default function EmailDetailScreen() {
         replyTo,
         subject,
         emailId: email._id,
+        gmailAccountId: (email as any).gmailAccountId || undefined,
       },
     });
   }, [email]);
@@ -413,6 +414,7 @@ export default function EmailDetailScreen() {
         })),
         attachments: attachments as AttachmentData[] | undefined,
         userEmail: user?.email,
+        gmailAccount: (email as any).gmailAccount,
       }
     : mockEmail;
 

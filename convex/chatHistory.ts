@@ -53,47 +53,26 @@ export const listThreads = action({
   handler: async (ctx): Promise<ThreadInfo[]> => {
     const user = await getAuthenticatedUser(ctx);
 
-    // Query threads from the agent component
+    // Query threads from the agent component - limit to 10 recent threads for faster loading
     const threads = await ctx.runQuery(components.agent.threads.listThreadsByUserId, {
       userId: user._id,
       order: "desc",
       paginationOpts: {
-        numItems: 50,
+        numItems: 10,
         cursor: null,
       },
     });
 
-    // Get the first message for each thread to show as preview
-    const threadsWithMessages: ThreadInfo[] = await Promise.all(
-      threads.page.map(async (thread) => {
-        // Get messages for this thread
-        const messages = await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
-          threadId: thread._id,
-          order: "asc",
-          paginationOpts: {
-            numItems: 2,
-            cursor: null,
-          },
-        });
+    // Return threads immediately without fetching messages
+    // The first message can be fetched on-demand if needed
+    const threadInfos: ThreadInfo[] = threads.page.map((thread) => ({
+      threadId: thread._id,
+      title: thread.title || null,
+      createdAt: thread._creationTime,
+      firstMessage: null, // Will be populated on demand when thread is opened
+    }));
 
-        let firstMessageText: string | null = null;
-        for (const msg of messages.page) {
-          if (msg.message?.role === "user") {
-            firstMessageText = extractTextFromContent(msg.message.content);
-            break;
-          }
-        }
-
-        return {
-          threadId: thread._id,
-          title: thread.title || null,
-          createdAt: thread._creationTime,
-          firstMessage: firstMessageText,
-        };
-      })
-    );
-
-    return threadsWithMessages;
+    return threadInfos;
   },
 });
 

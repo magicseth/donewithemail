@@ -8,6 +8,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
@@ -24,6 +25,7 @@ export function AddFeatureButton() {
   const [isRecordingFeature, setIsRecordingFeature] = useState(false);
   const [showFeatureConfirmModal, setShowFeatureConfirmModal] = useState(false);
   const [pendingTranscript, setPendingTranscript] = useState<string | null>(null);
+  const [editableTranscript, setEditableTranscript] = useState<string>("");
   const [includeDebugLogs, setIncludeDebugLogs] = useState(false);
 
   // Toast state
@@ -38,12 +40,15 @@ export function AddFeatureButton() {
   const handleFeatureTranscript = useCallback((transcript: string) => {
     setFeatureTranscript(transcript);
     setPendingTranscript(transcript);
+    setEditableTranscript(transcript);
     setIncludeDebugLogs(false);
-    setShowFeatureConfirmModal(true);
+    // Modal is already shown from handleFeatureRecordingStart
   }, []);
 
   const handleConfirmFeatureSubmit = useCallback(async () => {
-    if (!pendingTranscript) return;
+    // Use edited transcript instead of pendingTranscript
+    const finalTranscript = editableTranscript.trim();
+    if (!finalTranscript) return;
 
     setShowFeatureConfirmModal(false);
     setIsSubmittingFeature(true);
@@ -58,24 +63,26 @@ export function AddFeatureButton() {
       }
 
       await submitFeatureRequest({
-        transcript: pendingTranscript,
+        transcript: finalTranscript,
         debugLogs: debugLogsStr,
       });
-      showToast(`Feature request submitted: "${pendingTranscript}"`);
+      showToast(`Feature request submitted: "${finalTranscript}"`);
       setFeatureTranscript(null);
       setPendingTranscript(null);
+      setEditableTranscript("");
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : "Unknown error";
       Platform.OS === "web" ? window.alert(`Error: ${errorMsg}`) : Alert.alert("Error", errorMsg);
     } finally {
       setIsSubmittingFeature(false);
     }
-  }, [pendingTranscript, includeDebugLogs, logs, submitFeatureRequest]);
+  }, [editableTranscript, includeDebugLogs, logs, submitFeatureRequest, showToast]);
 
   const handleCancelFeatureConfirm = useCallback(() => {
     setShowFeatureConfirmModal(false);
     setFeatureTranscript(null);
     setPendingTranscript(null);
+    setEditableTranscript("");
     setIncludeDebugLogs(false);
   }, []);
 
@@ -83,6 +90,7 @@ export function AddFeatureButton() {
     setShowFeatureConfirmModal(false);
     setFeatureTranscript(null);
     setPendingTranscript(null);
+    setEditableTranscript("");
     setIncludeDebugLogs(false);
     // User can now tap the voice button again to re-record
   }, []);
@@ -95,12 +103,20 @@ export function AddFeatureButton() {
 
   const handleFeatureStreamingTranscript = useCallback((transcript: string) => {
     setStreamingTranscript(transcript);
-  }, []);
+    // Update editable transcript with streaming content while recording
+    if (isRecordingFeature) {
+      setEditableTranscript(transcript);
+    }
+  }, [isRecordingFeature]);
 
   const handleFeatureRecordingStart = useCallback(() => {
     setIsRecordingFeature(true);
     setStreamingTranscript(null);
     setFeatureTranscript(null);
+    setEditableTranscript("");
+    setIncludeDebugLogs(false);
+    // Show modal immediately when recording starts
+    setShowFeatureConfirmModal(true);
   }, []);
 
   const handleFeatureRecordingEnd = useCallback(() => {
@@ -149,41 +165,67 @@ export function AddFeatureButton() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Confirm Feature Request</Text>
-            <Text style={styles.modalMessage}>Submit this request?</Text>
-            <Text style={styles.modalTranscript}>"{pendingTranscript}"</Text>
+            <Text style={styles.modalTitle}>
+              {isRecordingFeature ? "Recording Voice..." : "Confirm Feature Request"}
+            </Text>
+            <Text style={styles.modalMessage}>
+              {isRecordingFeature
+                ? "Speak your feature request. Release to finish."
+                : "Review and edit your request below:"}
+            </Text>
 
-            <TouchableOpacity
-              style={styles.checkboxRow}
-              onPress={() => setIncludeDebugLogs(!includeDebugLogs)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.checkbox, includeDebugLogs && styles.checkboxChecked]}>
-                {includeDebugLogs && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={styles.checkboxLabel}>Include debug logs ({logs.length})</Text>
-            </TouchableOpacity>
+            {/* Editable transcript field */}
+            <TextInput
+              style={[
+                styles.modalTranscriptInput,
+                isRecordingFeature && styles.modalTranscriptInputRecording,
+              ]}
+              value={editableTranscript}
+              onChangeText={setEditableTranscript}
+              placeholder={isRecordingFeature ? "Listening..." : "Enter your feature request"}
+              placeholderTextColor="#999"
+              multiline
+              editable={!isRecordingFeature}
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
-                onPress={handleCancelFeatureConfirm}
-              >
-                <Text style={styles.modalButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonRetry]}
-                onPress={handleRetryRecording}
-              >
-                <Text style={styles.modalButtonText}>Retry</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonSubmit]}
-                onPress={handleConfirmFeatureSubmit}
-              >
-                <Text style={styles.modalButtonTextLight}>Submit</Text>
-              </TouchableOpacity>
-            </View>
+            {!isRecordingFeature && (
+              <>
+                <TouchableOpacity
+                  style={styles.checkboxRow}
+                  onPress={() => setIncludeDebugLogs(!includeDebugLogs)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, includeDebugLogs && styles.checkboxChecked]}>
+                    {includeDebugLogs && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.checkboxLabel}>Include debug logs ({logs.length})</Text>
+                </TouchableOpacity>
+
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalButtonCancel]}
+                    onPress={handleCancelFeatureConfirm}
+                  >
+                    <Text style={styles.modalButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalButtonRetry]}
+                    onPress={handleRetryRecording}
+                  >
+                    <Text style={styles.modalButtonText}>Retry</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalButtonSubmit]}
+                    onPress={handleConfirmFeatureSubmit}
+                    disabled={!editableTranscript.trim()}
+                  >
+                    <Text style={styles.modalButtonTextLight}>Submit</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -281,6 +323,23 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: "#f5f5f5",
     borderRadius: 8,
+  },
+  modalTranscriptInput: {
+    fontSize: 14,
+    color: "#333",
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    minHeight: 100,
+  },
+  modalTranscriptInputRecording: {
+    fontStyle: "italic",
+    backgroundColor: "#FEF2F2",
+    borderColor: "#FCA5A5",
+    color: "#666",
   },
   checkboxRow: {
     flexDirection: "row",

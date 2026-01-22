@@ -34,10 +34,11 @@ export const getEmailAttachments = query({
       .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
       .collect();
 
-    // Get PII helper for decrypting filenames
+    // Get PII helper for decrypting filenames (read-only query context)
     const pii = await encryptedPii.forUserQuery(ctx, email.userId);
     if (!pii) {
-      throw new Error("Encryption key not found");
+      // User has no encryption key yet - return empty array
+      return [];
     }
 
     // Decrypt filenames and generate storage URLs
@@ -60,7 +61,6 @@ export const getEmailAttachments = query({
           contentId: attachment.contentId,
           // Include attachmentId for downloading if not yet stored
           attachmentId: attachment.storageId ? undefined : attachment.attachmentId,
-          isInline: !!attachment.contentId,
         };
       })
     );
@@ -194,7 +194,7 @@ export const getAttachmentById = internalMutation({
       return null;
     }
 
-    // Get PII helper for decrypting filename
+    // Get PII helper for decrypting filename (mutation context allows read/write)
     const pii = await encryptedPii.forUser(ctx, attachment.userId);
     const filename = await pii.decrypt(attachment.filename);
 

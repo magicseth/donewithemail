@@ -42,7 +42,10 @@ interface UseVoiceResult {
   isConnecting: boolean;
   isConnected: boolean;
   error: string | null;
+  recordingDuration: number; // Current recording duration in seconds
 }
+
+const MAX_RECORDING_DURATION_MS = 10000; // 10 seconds
 
 // Native implementation using react-native-live-audio-stream + Deepgram WebSocket
 function useDeepgramNative(): UseVoiceResult {
@@ -50,11 +53,15 @@ function useDeepgramNative(): UseVoiceResult {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recordingDuration, setRecordingDuration] = useState(0);
 
   const wsRef = useRef<WebSocket | null>(null);
   const transcriptRef = useRef("");
   const isStreamingRef = useRef(false);
   const sessionIdRef = useRef(0); // Track recording sessions to prevent cross-contamination
+  const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordingStartTimeRef = useRef<number>(0);
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const getDeepgramKey = useAction(api.voice.getDeepgramKey);
 
@@ -67,6 +74,12 @@ function useDeepgramNative(): UseVoiceResult {
       }
       if (wsRef.current) {
         wsRef.current.close();
+      }
+      if (recordingTimerRef.current) {
+        clearTimeout(recordingTimerRef.current);
+      }
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
       }
     };
   }, []);
@@ -94,6 +107,8 @@ function useDeepgramNative(): UseVoiceResult {
     setError(null);
     setTranscript("");
     transcriptRef.current = "";
+    setRecordingDuration(0);
+    recordingStartTimeRef.current = Date.now();
 
     // Buffer to hold audio chunks until WebSocket connects
     const audioBuffer: ArrayBuffer[] = [];
@@ -161,6 +176,20 @@ function useDeepgramNative(): UseVoiceResult {
       LiveAudioStream.start();
       isStreamingRef.current = true;
       console.log("Audio capture started, connecting to Deepgram...");
+
+      // Start duration counter (updates every 100ms for smooth UI)
+      durationIntervalRef.current = setInterval(() => {
+        const elapsed = Date.now() - recordingStartTimeRef.current;
+        setRecordingDuration(Math.floor(elapsed / 1000));
+      }, 100);
+
+      // Set up auto-stop timer (10 seconds)
+      recordingTimerRef.current = setTimeout(() => {
+        console.log("[Voice] Auto-stopping recording after 10 seconds");
+        stopRecording().catch(err => {
+          console.error("[Voice] Error auto-stopping recording:", err);
+        });
+      }, MAX_RECORDING_DURATION_MS);
 
       // Get Deepgram API key from backend (in parallel with audio capture)
       const { apiKey } = await getDeepgramKey();
@@ -263,6 +292,16 @@ function useDeepgramNative(): UseVoiceResult {
     console.log("[Voice] stopRecording called");
     const initialTranscript = transcriptRef.current;
 
+    // Clear timers
+    if (recordingTimerRef.current) {
+      clearTimeout(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
+
     // Stop live audio stream
     if (isStreamingRef.current) {
       LiveAudioStream.stop();
@@ -307,6 +346,17 @@ function useDeepgramNative(): UseVoiceResult {
 
   const cancelRecording = useCallback(() => {
     console.log("[Voice] cancelRecording called");
+
+    // Clear timers
+    if (recordingTimerRef.current) {
+      clearTimeout(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
+
     if (isStreamingRef.current) {
       console.log("[Voice] Cancelling active stream");
       LiveAudioStream.stop();
@@ -323,6 +373,7 @@ function useDeepgramNative(): UseVoiceResult {
     setIsConnecting(false);
     setIsConnected(false);
     setError(null);
+    setRecordingDuration(0);
   }, []);
 
   return {
@@ -333,6 +384,7 @@ function useDeepgramNative(): UseVoiceResult {
     isConnecting,
     isConnected,
     error,
+    recordingDuration,
   };
 }
 
@@ -342,11 +394,15 @@ function useDeepgramWeb(): UseVoiceResult {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recordingDuration, setRecordingDuration] = useState(0);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const transcriptRef = useRef("");
+  const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordingStartTimeRef = useRef<number>(0);
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const getDeepgramKey = useAction(api.voice.getDeepgramKey);
 
@@ -362,6 +418,12 @@ function useDeepgramWeb(): UseVoiceResult {
       if (wsRef.current) {
         wsRef.current.close();
       }
+      if (recordingTimerRef.current) {
+        clearTimeout(recordingTimerRef.current);
+      }
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+      }
     };
   }, []);
 
@@ -375,6 +437,8 @@ function useDeepgramWeb(): UseVoiceResult {
     setError(null);
     setTranscript("");
     transcriptRef.current = "";
+    setRecordingDuration(0);
+    recordingStartTimeRef.current = Date.now();
 
     try {
       // Request microphone access
@@ -415,6 +479,20 @@ function useDeepgramWeb(): UseVoiceResult {
 
         mediaRecorder.start(250); // Send chunks every 250ms
         mediaRecorderRef.current = mediaRecorder;
+
+        // Start duration counter (updates every 100ms for smooth UI)
+        durationIntervalRef.current = setInterval(() => {
+          const elapsed = Date.now() - recordingStartTimeRef.current;
+          setRecordingDuration(Math.floor(elapsed / 1000));
+        }, 100);
+
+        // Set up auto-stop timer (10 seconds)
+        recordingTimerRef.current = setTimeout(() => {
+          console.log("[Voice] Auto-stopping recording after 10 seconds");
+          stopRecording().catch(err => {
+            console.error("[Voice] Error auto-stopping recording:", err);
+          });
+        }, MAX_RECORDING_DURATION_MS);
       };
 
       ws.onmessage = (event) => {
@@ -466,6 +544,16 @@ function useDeepgramWeb(): UseVoiceResult {
   const stopRecording = useCallback(async (): Promise<string> => {
     const finalTranscript = transcriptRef.current;
 
+    // Clear timers
+    if (recordingTimerRef.current) {
+      clearTimeout(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
+
     // Stop MediaRecorder
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
@@ -492,6 +580,16 @@ function useDeepgramWeb(): UseVoiceResult {
   }, []);
 
   const cancelRecording = useCallback(() => {
+    // Clear timers
+    if (recordingTimerRef.current) {
+      clearTimeout(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current = null;
@@ -512,6 +610,7 @@ function useDeepgramWeb(): UseVoiceResult {
     setIsConnecting(false);
     setIsConnected(false);
     setError(null);
+    setRecordingDuration(0);
   }, []);
 
   return {
@@ -522,6 +621,7 @@ function useDeepgramWeb(): UseVoiceResult {
     isConnecting,
     isConnected,
     error,
+    recordingDuration,
   };
 }
 

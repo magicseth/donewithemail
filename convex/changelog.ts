@@ -78,7 +78,10 @@ export const updateLastOpened = mutation({
     }
 
     if (!user) {
-      throw new Error("User not found");
+      // User record doesn't exist yet - this can happen if they authenticated
+      // but the user record hasn't been created yet. Just skip updating.
+      console.warn("updateLastOpened: User not found for email:", identity.email);
+      return;
     }
 
     await ctx.db.patch(user._id, {
