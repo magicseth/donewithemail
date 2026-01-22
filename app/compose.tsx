@@ -12,12 +12,20 @@ import {
   Alert,
   ActivityIndicator,
   SafeAreaView,
+  Modal,
+  FlatList,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { useAction, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../lib/authContext";
 import { Id } from "../convex/_generated/dataModel";
+
+type GmailAccount = {
+  _id: Id<"gmailAccounts">;
+  email: string;
+  isPrimary?: boolean;
+};
 
 export default function ComposeScreen() {
   const { replyTo, subject: initialSubject, emailId, body: initialBody } = useLocalSearchParams<{
@@ -32,18 +40,55 @@ export default function ComposeScreen() {
   const [subject, setSubject] = useState(initialSubject || "");
   const [body, setBody] = useState(initialBody || "");
   const [isSending, setIsSending] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [showAccountPicker, setShowAccountPicker] = useState(false);
 
   const isReply = Boolean(replyTo);
   const hasAutoFilledRef = useRef(false);
+  const hasAutoSelectedAccountRef = useRef(false);
 
-  // Memoize screen options to prevent infinite loop in React Navigation
-  const screenOptions = useMemo(() => ({ headerShown: false }), []);
+  // Query gmail accounts
+  const gmailAccounts = useQuery(api.gmailAccounts.getMyGmailAccounts) as GmailAccount[] | undefined;
 
   // Get AI suggested reply if available (only if no body was passed)
   const originalEmail = useQuery(
     api.emails.getMyEmail,
     emailId ? { emailId: emailId as Id<"emails"> } : "skip"
   );
+
+  // Memoize screen options to prevent infinite loop in React Navigation
+  const screenOptions = useMemo(() => ({ headerShown: false }), []);
+
+  // Auto-select account: prefer the one that received the email, then primary, then first
+  // Use ref guard to prevent running multiple times
+  useEffect(() => {
+    if (hasAutoSelectedAccountRef.current || !gmailAccounts || gmailAccounts.length === 0) {
+      return;
+    }
+
+    hasAutoSelectedAccountRef.current = true;
+
+    // If replying, try to use the account that received the email
+    if (originalEmail?.gmailAccountId) {
+      const matchingAccount = gmailAccounts.find(
+        (a: GmailAccount) => a._id === originalEmail.gmailAccountId
+      );
+      if (matchingAccount) {
+        setSelectedAccountId(matchingAccount._id);
+        return;
+      }
+    }
+
+    // Otherwise use primary or first account
+    const primary = gmailAccounts.find((a: GmailAccount) => a.isPrimary);
+    setSelectedAccountId(primary?._id ?? gmailAccounts[0]._id);
+  }, [gmailAccounts, originalEmail?.gmailAccountId]);
+
+  // Get the selected account object for display
+  const selectedAccount = useMemo(() => {
+    if (!gmailAccounts || !selectedAccountId) return null;
+    return gmailAccounts.find((a: GmailAccount) => a._id === selectedAccountId) ?? null;
+  }, [gmailAccounts, selectedAccountId]);
 
   // Pre-fill with AI suggested reply if available and no body was passed
   // Use ref to ensure we only auto-fill once
@@ -69,8 +114,9 @@ export default function ComposeScreen() {
       return;
     }
 
-    if (!user?.email) {
-      Alert.alert("Error", "Not authenticated");
+    const senderEmail = selectedAccount?.email ?? user?.email;
+    if (!senderEmail) {
+      Alert.alert("Error", "No sender account selected");
       return;
     }
 
@@ -78,7 +124,7 @@ export default function ComposeScreen() {
 
     try {
       await sendEmailAction({
-        userEmail: user.email,
+        userEmail: senderEmail,
         to: to.trim(),
         subject: subject.trim(),
         body: body.trim(),
@@ -97,7 +143,7 @@ export default function ComposeScreen() {
     } finally {
       setIsSending(false);
     }
-  }, [to, subject, body, user?.email, emailId, sendEmailAction]);
+  }, [to, subject, body, selectedAccount?.email, user?.email, emailId, sendEmailAction]);
 
   const handleDiscard = useCallback(() => {
     console.log("Cancel pressed - going back");
@@ -152,6 +198,26 @@ export default function ComposeScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView style={styles.scrollView} keyboardShouldPersistTaps="handled">
+          {/* From field - account picker */}
+          {gmailAccounts && gmailAccounts.length > 1 && (
+            <>
+              <TouchableOpacity
+                style={styles.fieldRow}
+                onPress={() => setShowAccountPicker(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.fieldLabel}>From:</Text>
+                <View style={styles.fromFieldContent}>
+                  <Text style={styles.fieldInput} numberOfLines={1}>
+                    {selectedAccount?.email ?? "Select account..."}
+                  </Text>
+                  <Text style={styles.chevron}>›</Text>
+                </View>
+              </TouchableOpacity>
+              <View style={styles.divider} />
+            </>
+          )}
+
           {/* To field */}
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>To:</Text>
@@ -204,6 +270,44 @@ export default function ComposeScreen() {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      {/* Account picker modal */}
+      <Modal
+        visible={showAccountPicker}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAccountPicker(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Send from</Text>
+            <TouchableOpacity
+              onPress={() => setShowAccountPicker(false)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.modalClose}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={gmailAccounts}
+            keyExtractor={(item) => item._id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.accountItem}
+                onPress={() => {
+                  setSelectedAccountId(item._id);
+                  setShowAccountPicker(false);
+                }}
+              >
+                <Text style={styles.accountEmail}>{item.email}</Text>
+                {item._id === selectedAccountId && (
+                  <Text style={styles.checkmark}>✓</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -317,5 +421,56 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6366F1",
     fontWeight: "500",
+  },
+  fromFieldContent: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  chevron: {
+    fontSize: 20,
+    color: "#999",
+    marginLeft: 8,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#1a1a1a",
+  },
+  modalClose: {
+    fontSize: 17,
+    color: "#6366F1",
+    fontWeight: "500",
+  },
+  accountItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  accountEmail: {
+    fontSize: 16,
+    color: "#1a1a1a",
+  },
+  checkmark: {
+    fontSize: 18,
+    color: "#6366F1",
+    fontWeight: "600",
   },
 });
