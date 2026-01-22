@@ -104,6 +104,10 @@ export default defineSchema({
     calendarEventId: v.optional(v.string()),
     calendarEventLink: v.optional(v.string()),
 
+    // Meeting request detection - encrypted as JSON string
+    // JSON: {isMeetingRequest: boolean, proposedTimes: Array<{startTime: string, endTime: string}>}
+    meetingRequest: v.optional(piiField()),
+
     // Deadline extracted from email (ISO string)
     deadline: v.optional(v.string()),
     deadlineDescription: v.optional(piiField()),  // e.g., "respond by", "submit by"
@@ -290,6 +294,14 @@ export type CalendarEvent = {
   description?: string;
   recurrence?: string;
   recurrenceDescription?: string;
+};
+
+export type MeetingRequest = {
+  isMeetingRequest: boolean;
+  proposedTimes?: Array<{
+    startTime: string;
+    endTime: string;
+  }>;
 };
 
 export type ContactFact = {

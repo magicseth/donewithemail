@@ -712,6 +712,7 @@ export const getMyEmail = authedQuery({
     let urgencyReason: string | undefined;
     let suggestedReply: string | undefined;
     let calendarEvent: CalendarEvent | undefined;
+    let meetingRequest: { isMeetingRequest: boolean; proposedTimes?: Array<{ startTime: string; endTime: string }> } | undefined;
     if (pii && summaryData) {
       const decrypted = await pii.decryptMany({
         summary: summaryData.summary,
@@ -725,6 +726,11 @@ export const getMyEmail = authedQuery({
       if (summaryData.calendarEvent) {
         const ceJson = await pii.decrypt(summaryData.calendarEvent);
         if (ceJson) calendarEvent = JSON.parse(ceJson);
+      }
+
+      if ((summaryData as any).meetingRequest) {
+        const mrJson = await pii.decrypt((summaryData as any).meetingRequest);
+        if (mrJson) meetingRequest = JSON.parse(mrJson);
       }
     }
 
@@ -753,6 +759,7 @@ export const getMyEmail = authedQuery({
       urgencyReason,
       suggestedReply,
       calendarEvent,
+      meetingRequest,
       calendarEventId: summaryData?.calendarEventId,
       calendarEventLink: summaryData?.calendarEventLink,
       aiProcessedAt: summaryData?.createdAt,
@@ -1099,6 +1106,7 @@ export const getMyThreadEmails = authedQuery({
       let urgencyReason: string | undefined;
       let suggestedReply: string | undefined;
       let calendarEvent: CalendarEvent | undefined;
+      let meetingRequest: { isMeetingRequest: boolean; proposedTimes?: Array<{ startTime: string; endTime: string }> } | undefined;
       if (pii && summaryData) {
         const decrypted = await pii.decryptMany({
           summary: summaryData.summary,
@@ -1112,6 +1120,11 @@ export const getMyThreadEmails = authedQuery({
         if (summaryData.calendarEvent) {
           const ceJson = await pii.decrypt(summaryData.calendarEvent);
           if (ceJson) calendarEvent = JSON.parse(ceJson);
+        }
+
+        if ((summaryData as any).meetingRequest) {
+          const mrJson = await pii.decrypt((summaryData as any).meetingRequest);
+          if (mrJson) meetingRequest = JSON.parse(mrJson);
         }
       }
 
@@ -1140,6 +1153,7 @@ export const getMyThreadEmails = authedQuery({
         urgencyReason,
         suggestedReply,
         calendarEvent,
+        meetingRequest,
         shouldAcceptCalendar: summaryData?.shouldAcceptCalendar,
         calendarEventId: summaryData?.calendarEventId,
         calendarEventLink: summaryData?.calendarEventLink,

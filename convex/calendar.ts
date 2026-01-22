@@ -676,3 +676,140 @@ export const batchAddToCalendar = action({
     return { added, errors };
   },
 });
+
+/**
+ * Check calendar availability for proposed meeting times
+ * Returns whether each time slot has conflicts
+ */
+export const checkMeetingAvailability = action({
+  args: {
+    userEmail: v.string(),
+    proposedTimes: v.array(v.object({
+      startTime: v.string(),
+      endTime: v.string(),
+    })),
+  },
+  handler: async (ctx, args): Promise<Array<{
+    startTime: string;
+    endTime: string;
+    isAvailable: boolean;
+    conflicts: Array<{
+      id: string;
+      title: string;
+      startTime: string;
+      endTime: string;
+      htmlLink: string;
+    }>;
+  }>> => {
+    // Get user's tokens
+    type UserWithTokens = {
+      _id: any;
+      gmailAccessToken?: string;
+      gmailRefreshToken?: string;
+      gmailTokenExpiresAt?: number;
+    };
+    const user: UserWithTokens | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+      email: args.userEmail,
+    });
+
+    if (!user?.gmailAccessToken) {
+      // Can't check calendar without token, return all as available
+      return args.proposedTimes.map(time => ({
+        ...time,
+        isAvailable: true,
+        conflicts: [],
+      }));
+    }
+
+    // Refresh token if needed
+    let accessToken: string = user.gmailAccessToken;
+    if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
+      const refreshed = await refreshTokenIfNeeded(
+        user.gmailAccessToken,
+        user.gmailRefreshToken,
+        user.gmailTokenExpiresAt
+      );
+      accessToken = refreshed.accessToken;
+
+      if (refreshed.refreshed) {
+        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+          userId: user._id,
+          accessToken: refreshed.accessToken,
+          expiresAt: refreshed.expiresAt,
+        });
+      }
+    }
+
+    // Find the earliest and latest times to minimize API calls
+    const allTimes = args.proposedTimes.flatMap(t => [
+      new Date(parseRelativeTime(t.startTime) || t.startTime),
+      new Date(parseRelativeTime(t.endTime) || t.endTime),
+    ]);
+    const minTime = new Date(Math.min(...allTimes.map(d => d.getTime())));
+    const maxTime = new Date(Math.max(...allTimes.map(d => d.getTime())));
+
+    // Query Google Calendar for events in the entire time range
+    const params = new URLSearchParams({
+      timeMin: minTime.toISOString(),
+      timeMax: maxTime.toISOString(),
+      singleEvents: "true",
+      maxResults: "250",
+    });
+
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error(`Failed to fetch calendar events: ${error}`);
+      // Return all as available on error
+      return args.proposedTimes.map(time => ({
+        ...time,
+        isAvailable: true,
+        conflicts: [],
+      }));
+    }
+
+    const data = await response.json();
+    const existingEvents = data.items || [];
+
+    // Check each proposed time for conflicts
+    return args.proposedTimes.map(proposedTime => {
+      const proposedStart = new Date(parseRelativeTime(proposedTime.startTime) || proposedTime.startTime);
+      const proposedEnd = new Date(parseRelativeTime(proposedTime.endTime) || proposedTime.endTime);
+
+      const conflicts = existingEvents
+        .filter((event: any) => {
+          // Skip all-day events and events without start/end times
+          if (!event.start?.dateTime || !event.end?.dateTime) return false;
+
+          const eventStart = new Date(event.start.dateTime);
+          const eventEnd = new Date(event.end.dateTime);
+
+          // Check if events overlap
+          // Two events overlap if: (StartA < EndB) and (EndA > StartB)
+          return proposedStart < eventEnd && proposedEnd > eventStart;
+        })
+        .map((event: any) => ({
+          id: event.id,
+          title: event.summary || "(No title)",
+          startTime: event.start.dateTime,
+          endTime: event.end.dateTime,
+          htmlLink: event.htmlLink,
+        }));
+
+      return {
+        startTime: proposedTime.startTime,
+        endTime: proposedTime.endTime,
+        isAvailable: conflicts.length === 0,
+        conflicts,
+      };
+    });
+  },
+});

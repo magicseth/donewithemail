@@ -51,11 +51,24 @@ export default function EmailDetailScreen() {
   const [loadingBodies, setLoadingBodies] = useState<Set<string>>(new Set());
   const [isAddingToCalendar, setIsAddingToCalendar] = useState(false);
   const [isReprocessing, setIsReprocessing] = useState(false);
+  const [meetingAvailability, setMeetingAvailability] = useState<Array<{
+    startTime: string;
+    endTime: string;
+    isAvailable: boolean;
+    conflicts: Array<{
+      id: string;
+      title: string;
+      startTime: string;
+      endTime: string;
+      htmlLink: string;
+    }>;
+  }> | undefined>();
 
   const { user } = useAuth();
   const fetchEmailBody = useAction(api.gmailSync.fetchEmailBody);
   const addToCalendar = useAction(api.calendar.addToCalendar);
   const checkExistingCalendarEvents = useAction(api.calendar.checkExistingCalendarEvents);
+  const checkMeetingAvailability = useAction((api.calendar as any).checkMeetingAvailability);
   const reprocessEmail = useAction(api.summarizeActions.reprocessEmail);
 
   // Look up email by Convex ID (authenticated)
@@ -109,6 +122,33 @@ export default function EmailDetailScreen() {
 
     fetchBodies();
   }, [email, threadEmails, user?.email, fetchEmailBody, fullBodies, loadingBodies]);
+
+  // Check meeting availability when email has a meeting request
+  useEffect(() => {
+    async function checkAvailability() {
+      if (!user?.email || !email?.meetingRequest?.isMeetingRequest || !email.meetingRequest.proposedTimes) {
+        return;
+      }
+
+      try {
+        const availability = await checkMeetingAvailability({
+          userEmail: user.email,
+          proposedTimes: email.meetingRequest.proposedTimes,
+        });
+        setMeetingAvailability(availability);
+      } catch (err) {
+        console.error("Failed to check meeting availability:", err);
+        // Set all as available on error
+        setMeetingAvailability(email.meetingRequest.proposedTimes.map((time: any) => ({
+          ...time,
+          isAvailable: true,
+          conflicts: [],
+        })));
+      }
+    }
+
+    checkAvailability();
+  }, [email?.meetingRequest, user?.email, checkMeetingAvailability]);
 
   const toggleExpanded = useCallback((emailId: string) => {
     setExpandedEmails(prev => {
@@ -237,6 +277,44 @@ export default function EmailDetailScreen() {
       setIsAddingToCalendar(false);
     }
   }, [user?.email, addToCalendar, checkExistingCalendarEvents, convexId]);
+
+  const handleSelectMeetingTime = useCallback(async (startTime: string, endTime: string) => {
+    if (!user?.email || !email) {
+      showAlert("Error", "Not signed in");
+      return;
+    }
+
+    // Get client timezone
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
+
+    setIsAddingToCalendar(true);
+    try {
+      // Create calendar event with the selected time
+      const result = await addToCalendar({
+        userEmail: user.email,
+        title: email.subject || "Meeting",
+        startTime,
+        endTime,
+        description: `Meeting scheduled from email: ${email.subject}`,
+        timezone,
+        emailId: convexId,
+      });
+
+      // Show success message
+      showAlert("Success", "Meeting added to your calendar!");
+
+      // Open the calendar link on web
+      if (Platform.OS === "web" && result.htmlLink) {
+        window.open(result.htmlLink, "_blank");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to add meeting";
+      showAlert("Error", message);
+      console.error("Failed to add meeting to calendar:", err);
+    } finally {
+      setIsAddingToCalendar(false);
+    }
+  }, [user?.email, email, addToCalendar, convexId]);
 
   const handleContactPress = useCallback((contactId?: string) => {
     if (contactId) {
@@ -451,6 +529,8 @@ export default function EmailDetailScreen() {
                       onContactPress={handleContactPress}
                       onUseReply={isLastEmail ? handleReply : undefined}
                       onAddToCalendar={handleAddToCalendar}
+                      onSelectMeetingTime={handleSelectMeetingTime}
+                      meetingAvailability={isCurrentEmail ? meetingAvailability : undefined}
                       isAddingToCalendar={isAddingToCalendar}
                       showFullContent
                     />
@@ -466,6 +546,8 @@ export default function EmailDetailScreen() {
             onContactPress={handleContactPress}
             onUseReply={handleReply}
             onAddToCalendar={handleAddToCalendar}
+            onSelectMeetingTime={handleSelectMeetingTime}
+            meetingAvailability={meetingAvailability}
             isAddingToCalendar={isAddingToCalendar}
             showFullContent
           />

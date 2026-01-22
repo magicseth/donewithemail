@@ -585,6 +585,13 @@ export const updateEmailSummary = internalMutation({
       recurrenceDescription: v.optional(v.string()),
     })),
     shouldAcceptCalendar: v.optional(v.boolean()),
+    meetingRequest: v.optional(v.object({
+      isMeetingRequest: v.boolean(),
+      proposedTimes: v.optional(v.array(v.object({
+        startTime: v.string(),
+        endTime: v.string(),
+      }))),
+    })),
     deadline: v.optional(v.string()),
     deadlineDescription: v.optional(v.string()),
     importantAttachmentIds: v.optional(v.array(v.id("emailAttachments"))),
@@ -614,6 +621,9 @@ export const updateEmailSummary = internalMutation({
     const encryptedCalendarEvent = args.calendarEvent
       ? await pii.encrypt(JSON.stringify(args.calendarEvent))
       : undefined;
+    const encryptedMeetingRequest = args.meetingRequest
+      ? await pii.encrypt(JSON.stringify(args.meetingRequest))
+      : undefined;
     const encryptedDeadlineDescription = args.deadlineDescription
       ? await pii.encrypt(args.deadlineDescription)
       : undefined;
@@ -634,6 +644,7 @@ export const updateEmailSummary = internalMutation({
       quickReplies: encryptedQuickReplies,
       calendarEvent: encryptedCalendarEvent,
       shouldAcceptCalendar: args.shouldAcceptCalendar,
+      meetingRequest: encryptedMeetingRequest,
       deadline: args.deadline,
       deadlineDescription: encryptedDeadlineDescription,
       importantAttachmentIds: args.importantAttachmentIds,
