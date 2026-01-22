@@ -28,12 +28,19 @@ interface CalendarEventInfo {
   emailId?: string;
 }
 
+interface RelevantEmail {
+  emailId: string;
+  subject: string;
+  from: string;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   toolResults?: any[];
   calendarEvent?: CalendarEventInfo;
+  relevantEmails?: RelevantEmail[];
 }
 
 interface ThreadInfo {
@@ -140,6 +147,7 @@ export default function AskScreen() {
 
       // Process tool results to extract and display relevant emails
       let calendarEvent: CalendarEventInfo | undefined;
+      let relevantEmailsList: RelevantEmail[] = [];
       if (toolResults && toolResults.length > 0) {
         const emails: Array<{ subject: string; from: string }> = [];
         const stages: string[] = ["Searching emails..."];
@@ -148,11 +156,14 @@ export default function AskScreen() {
           if (toolResult.result?.emails && Array.isArray(toolResult.result.emails)) {
             // Extract emails from search results
             toolResult.result.emails.forEach((email: any) => {
-              if (email.subject && email.from) {
-                emails.push({
+              if (email.subject && email.from && email.emailId) {
+                const emailData = {
+                  emailId: email.emailId,
                   subject: email.subject,
                   from: email.from,
-                });
+                };
+                emails.push(emailData);
+                relevantEmailsList.push(emailData);
               }
             });
             if (emails.length > 0) {
@@ -194,6 +205,7 @@ export default function AskScreen() {
         content: response,
         toolResults,
         calendarEvent,
+        relevantEmails: relevantEmailsList.length > 0 ? relevantEmailsList : undefined,
       };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
@@ -408,6 +420,32 @@ export default function AskScreen() {
               </Markdown>
             )}
           </View>
+          {/* Show relevant emails if available */}
+          {!isUser && item.relevantEmails && item.relevantEmails.length > 0 && (
+            <View style={styles.relevantEmailsMessageContainer}>
+              <Text style={styles.relevantEmailsMessageTitle}>📧 Emails Referenced:</Text>
+              {item.relevantEmails.map((email, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.relevantEmailMessageItem}
+                  onPress={() => {
+                    router.push(`/email/${email.emailId}`);
+                  }}
+                >
+                  <View style={styles.emailMessageDot} />
+                  <View style={styles.emailMessageInfo}>
+                    <Text style={styles.emailMessageSubject} numberOfLines={1}>
+                      {email.subject}
+                    </Text>
+                    <Text style={styles.emailMessageFrom} numberOfLines={1}>
+                      {email.from}
+                    </Text>
+                  </View>
+                  <Text style={styles.emailMessageChevron}>›</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           {/* Show calendar event button if available */}
           {!isUser && item.calendarEvent && (
             <View style={styles.calendarEventContainer}>
@@ -444,7 +482,7 @@ export default function AskScreen() {
         </View>
       );
     },
-    [markdownStyles, handleLinkPress, handleAddToCalendar, isAddingToCalendar]
+    [markdownStyles, handleLinkPress, handleAddToCalendar, isAddingToCalendar, router]
   );
 
   const exampleQuestions = [
@@ -992,5 +1030,59 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "600",
+  },
+  relevantEmailsMessageContainer: {
+    marginTop: 8,
+    marginLeft: 0,
+    marginRight: "15%",
+    backgroundColor: "#F0F9FF",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#BAE6FD",
+  },
+  relevantEmailsMessageTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#0284C7",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  relevantEmailMessageItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: "#E0F2FE",
+  },
+  emailMessageDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#0284C7",
+    marginRight: 10,
+  },
+  emailMessageInfo: {
+    flex: 1,
+  },
+  emailMessageSubject: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    marginBottom: 2,
+  },
+  emailMessageFrom: {
+    fontSize: 11,
+    color: "#666",
+  },
+  emailMessageChevron: {
+    fontSize: 24,
+    color: "#0284C7",
+    fontWeight: "300",
+    marginLeft: 8,
   },
 });
