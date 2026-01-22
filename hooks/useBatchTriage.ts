@@ -3,6 +3,10 @@ import { useQuery, useMutation, useAction, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 
+// Module-level cache to persist data across auth transitions
+// This prevents UI from showing "Inbox Zero" when auth temporarily desynchronizes
+let lastBatchPreviewCache: any = null;
+
 // Types for batch triage
 export type BatchCategory = "done" | "humanWaiting" | "actionNeeded" | "calendar" | "lowConfidence" | "pending";
 
@@ -98,10 +102,19 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
 
   // Query for batch triage preview with session stability
-  const batchPreview = useQuery(
+  const batchPreviewQuery = useQuery(
     api.emails.getMyBatchTriagePreview,
     isAuthenticated && !authLoading ? { sessionStart } : "skip"
   );
+
+  // Update module-level cache when we get fresh data
+  if (batchPreviewQuery !== undefined) {
+    lastBatchPreviewCache = batchPreviewQuery;
+  }
+
+  // Use fresh data if available, otherwise show stale data from module cache
+  // This prevents the UI from flashing to "Inbox Zero" during auth transitions
+  const batchPreview = batchPreviewQuery ?? lastBatchPreviewCache;
 
   // Mutations and actions
   const batchTriageMutation = useMutation(api.emails.batchTriageMyEmails);
