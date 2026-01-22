@@ -1039,6 +1039,12 @@ export declare const internal: {
       { limit?: number },
       any
     >;
+    resetToPending: FunctionReference<
+      "mutation",
+      "internal",
+      { id: Id<"featureRequests"> },
+      any
+    >;
     sendFeatureCompletedNotification: FunctionReference<
       "mutation",
       "internal",

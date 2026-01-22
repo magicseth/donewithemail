@@ -505,6 +505,20 @@ export const retryFailed = mutation({
   },
 });
 
+// Reset a request back to pending (for stuck requests)
+export const resetToPending = internalMutation({
+  args: { id: v.id("featureRequests") },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      status: "pending",
+      startedAt: undefined,
+      progressStep: undefined,
+      progressMessage: undefined,
+      error: undefined,
+    });
+  },
+});
+
 // =============================================================================
 // Internal Mutations (for notifications)
 // =============================================================================
