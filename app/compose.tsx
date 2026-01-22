@@ -52,7 +52,7 @@ export default function ComposeScreen() {
     if (originalEmail?.suggestedReply && !body && !initialBody) {
       setBody(originalEmail.suggestedReply);
     }
-  }, [originalEmail?.suggestedReply]);
+  }, [originalEmail?.suggestedReply, body, initialBody]);
 
   // Send email action
   const sendEmailAction = useAction(api.gmailSend.sendEmail);
