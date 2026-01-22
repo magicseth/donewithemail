@@ -281,8 +281,8 @@ export default function ComposeScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView style={styles.scrollView} keyboardShouldPersistTaps="handled">
-          {/* From field - account picker */}
-          {gmailAccounts && gmailAccounts.length > 1 && (
+          {/* From field - account picker (multi-account) or display (single account) */}
+          {gmailAccounts && gmailAccounts.length > 1 ? (
             <>
               <TouchableOpacity
                 style={styles.fieldRow}
@@ -291,6 +291,15 @@ export default function ComposeScreen() {
               >
                 <Text style={styles.fieldLabel}>From:</Text>
                 <View style={styles.fromFieldContent}>
+                  {selectedAccount?.avatarUrl ? (
+                    <Image source={{ uri: selectedAccount.avatarUrl }} style={styles.fromAvatar} />
+                  ) : (
+                    <View style={styles.fromAvatarPlaceholder}>
+                      <Text style={styles.fromAvatarText}>
+                        {selectedAccount?.email?.charAt(0).toUpperCase() ?? "?"}
+                      </Text>
+                    </View>
+                  )}
                   <Text style={styles.fieldInput} numberOfLines={1}>
                     {selectedAccount?.email ?? "Select account..."}
                   </Text>
@@ -299,7 +308,28 @@ export default function ComposeScreen() {
               </TouchableOpacity>
               <View style={styles.divider} />
             </>
-          )}
+          ) : gmailAccounts && gmailAccounts.length === 1 ? (
+            <>
+              <View style={styles.fieldRow}>
+                <Text style={styles.fieldLabel}>From:</Text>
+                <View style={styles.fromFieldContent}>
+                  {selectedAccount?.avatarUrl ? (
+                    <Image source={{ uri: selectedAccount.avatarUrl }} style={styles.fromAvatar} />
+                  ) : (
+                    <View style={styles.fromAvatarPlaceholder}>
+                      <Text style={styles.fromAvatarText}>
+                        {selectedAccount?.email?.charAt(0).toUpperCase() ?? "?"}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={styles.fieldInput} numberOfLines={1}>
+                    {selectedAccount?.email ?? user?.email ?? "No account"}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.divider} />
+            </>
+          ) : null}
 
           {/* To field with autocomplete */}
           <View style={styles.fieldRow}>
@@ -555,6 +585,26 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
+  },
+  fromAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    marginRight: 10,
+  },
+  fromAvatarPlaceholder: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#6366F1",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 10,
+  },
+  fromAvatarText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
   },
   chevron: {
     fontSize: 20,

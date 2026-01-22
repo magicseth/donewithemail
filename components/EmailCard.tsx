@@ -226,6 +226,23 @@ export function EmailCard({
         {decodeHtmlEntities(email.subject)}
       </Text>
 
+      {/* Show from field for outgoing emails */}
+      {isOutgoing && email.gmailAccount && (
+        <View style={styles.fromSection}>
+          <Text style={styles.fromLabel}>From: </Text>
+          {email.gmailAccount.email && (
+            <>
+              <View style={styles.fromAvatarSmall}>
+                <Text style={styles.fromAvatarTextSmall}>
+                  {email.gmailAccount.email.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <Text style={styles.fromEmail}>{email.gmailAccount.email}</Text>
+            </>
+          )}
+        </View>
+      )}
+
       {/* AI Summary */}
       {email.summary && (
         <AISummary
@@ -494,6 +511,40 @@ const styles = StyleSheet.create({
     color: "#1a1a1a",
     marginBottom: 12,
     lineHeight: 26,
+  },
+  fromSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#F8F9FF",
+    borderRadius: 8,
+  },
+  fromLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#6366F1",
+    marginRight: 8,
+  },
+  fromAvatarSmall: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#6366F1",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+  },
+  fromAvatarTextSmall: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  fromEmail: {
+    fontSize: 14,
+    color: "#1a1a1a",
+    fontWeight: "500",
   },
   bodyContainer: {
     flex: 1,
