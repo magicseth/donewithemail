@@ -88,7 +88,7 @@ export default function EmailDetailScreen() {
 
   // Fetch attachments for this email
   const attachments = useQuery(
-    (api as any).attachments?.getEmailAttachments,
+    api.attachments.getEmailAttachments,
     convexId ? { emailId: convexId } : "skip"
   );
 
@@ -581,7 +581,7 @@ export default function EmailDetailScreen() {
         {/* Show all thread emails */}
         {threadEmails && threadEmails.length > 1 ? (
           threadEmails.map((threadEmail: any, index: number) => {
-            const isCurrentEmail = threadEmail._id === id;
+            const isCurrentEmail = String(threadEmail._id) === String(id);
             const isLastEmail = index === threadEmails.length - 1;
             const isExpanded = isCurrentEmail || isLastEmail || expandedEmails.has(threadEmail._id);
 
