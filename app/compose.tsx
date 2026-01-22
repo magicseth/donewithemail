@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -35,6 +35,9 @@ export default function ComposeScreen() {
 
   const isReply = Boolean(replyTo);
   const hasAutoFilledRef = useRef(false);
+
+  // Memoize screen options to prevent infinite loop in React Navigation
+  const screenOptions = useMemo(() => ({ headerShown: false }), []);
 
   // Get AI suggested reply if available (only if no body was passed)
   const originalEmail = useQuery(
@@ -114,11 +117,7 @@ export default function ComposeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <Stack.Screen
-        options={{
-          headerShown: false,
-        }}
-      />
+      <Stack.Screen options={screenOptions} />
 
       {/* Custom header for better cross-platform support */}
       <View style={styles.header}>
