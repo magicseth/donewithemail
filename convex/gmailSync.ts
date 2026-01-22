@@ -104,6 +104,8 @@ export const storeEmailInternal = internalMutation({
     listUnsubscribe: v.optional(v.string()),
     listUnsubscribePost: v.optional(v.boolean()),
     isSubscription: v.optional(v.boolean()),
+    // Gmail account reference
+    gmailAccountId: v.optional(v.id("gmailAccounts")),
   },
   handler: async (ctx, args) => {
     // Check if email already exists
@@ -136,7 +138,7 @@ export const storeEmailInternal = internalMutation({
     const pii = await encryptedPii.forUser(ctx, args.userId);
 
     // Extract bodyFull from args - it goes into emailBodies table, not emails
-    const { bodyFull, subject, bodyPreview, ...restArgs } = args;
+    const { bodyFull, subject, bodyPreview, gmailAccountId, ...restArgs } = args;
 
     // Encrypt PII fields
     const encryptedSubject = await pii.encrypt(subject);
@@ -148,6 +150,7 @@ export const storeEmailInternal = internalMutation({
       bodyPreview: encryptedBodyPreview,
       isTriaged: false,
       direction: args.direction || "incoming",
+      gmailAccountId,
     });
 
     // Store body in separate emailBodies table (encrypted)
@@ -727,18 +730,35 @@ export const fetchAndStoreEmailsByIds = internalAction({
   args: {
     userEmail: v.string(),
     messageIds: v.array(v.string()),
+    gmailAccountId: v.optional(v.id("gmailAccounts")),
   },
   handler: async (ctx, args): Promise<{ stored: string[]; failed: string[] }> => {
-    // Get user's Gmail tokens
-    const user = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
-      email: args.userEmail,
-    });
+    // Get user's Gmail tokens (fallback to legacy user tokens if no account ID provided)
+    let userId: any;
+    let accessToken: string;
 
-    if (!user?.gmailAccessToken) {
-      throw new Error("Gmail not connected");
+    if (args.gmailAccountId) {
+      // Use new Gmail account structure
+      const account = await ctx.runMutation(
+        internal.gmailAccountHelpers.decryptGmailAccountTokens,
+        { accountId: args.gmailAccountId }
+      );
+      if (!account || !account.accessToken) {
+        throw new Error("Gmail account not found or no access token");
+      }
+      userId = account.userId;
+      accessToken = account.accessToken;
+    } else {
+      // Fallback to legacy user tokens
+      const user = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+        email: args.userEmail,
+      });
+      if (!user?.gmailAccessToken) {
+        throw new Error("Gmail not connected");
+      }
+      userId = user._id;
+      accessToken = user.gmailAccessToken;
     }
-
-    let accessToken = user.gmailAccessToken;
 
     // Helper for delays
     const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -853,7 +873,7 @@ export const fetchAndStoreEmailsByIds = internalAction({
     for (const [email, name] of uniqueContacts) {
       try {
         const result = await ctx.runMutation(internal.gmailSync.upsertContact, {
-          userId: user._id,
+          userId,
           email,
           name: name !== email ? name : undefined,
         });
@@ -876,7 +896,7 @@ export const fetchAndStoreEmailsByIds = internalAction({
           externalId: msg.msgId,
           threadId: msg.threadId,
           provider: "gmail",
-          userId: user._id,
+          userId,
           from: contactId,
           to: [],
           subject: msg.subject,
@@ -887,6 +907,7 @@ export const fetchAndStoreEmailsByIds = internalAction({
           listUnsubscribe: msg.listUnsubscribe,
           listUnsubscribePost: msg.listUnsubscribePost,
           isSubscription: msg.isSubscription,
+          gmailAccountId: args.gmailAccountId,
         });
         stored.push(msg.msgId);
 
@@ -894,7 +915,7 @@ export const fetchAndStoreEmailsByIds = internalAction({
         if (msg.isSubscription && msg.listUnsubscribe) {
           try {
             await ctx.runMutation(internal.subscriptionsHelpers.upsertSubscription, {
-              userId: user._id,
+              userId,
               senderEmail: msg.senderEmail,
               senderName: msg.senderName !== msg.senderEmail ? msg.senderName : undefined,
               listUnsubscribe: msg.listUnsubscribe,

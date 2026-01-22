@@ -94,6 +94,25 @@ export const authenticate = action({
       googleRefreshToken,
     });
 
+    // If we have Google tokens, create/update a Gmail account entry
+    if (googleAccessToken && user.email) {
+      try {
+        await ctx.runMutation(api.gmailAccountAuth.storeGmailAccount, {
+          email: user.email,
+          accessToken: googleAccessToken,
+          refreshToken: googleRefreshToken,
+          expiresIn: 3600, // Default to 1 hour if not provided
+          displayName: user.first_name
+            ? `${user.first_name} ${user.last_name || ""}`.trim()
+            : undefined,
+          avatarUrl: user.profile_picture_url,
+        });
+      } catch (error) {
+        console.error("Failed to store Gmail account:", error);
+        // Don't fail auth if account storage fails
+      }
+    }
+
     return {
       success: true,
       user: {

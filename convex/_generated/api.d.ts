@@ -535,6 +535,47 @@ export declare const api: {
       any
     >;
   };
+  gmailAccountAuth: {
+    getGmailAuthUrl: FunctionReference<
+      "query",
+      "public",
+      { redirectUri: string },
+      any
+    >;
+    hasGmailAccounts: FunctionReference<"query", "public", {}, any>;
+    linkGmailAccount: FunctionReference<
+      "action",
+      "public",
+      { code: string; redirectUri: string },
+      any
+    >;
+    listGmailAccounts: FunctionReference<"query", "public", {}, any>;
+    removeGmailAccount: FunctionReference<
+      "mutation",
+      "public",
+      { accountId: Id<"gmailAccounts"> },
+      any
+    >;
+    setPrimaryAccount: FunctionReference<
+      "mutation",
+      "public",
+      { accountId: Id<"gmailAccounts"> },
+      any
+    >;
+    storeGmailAccount: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accessToken: string;
+        avatarUrl?: string;
+        displayName?: string;
+        email: string;
+        expiresIn: number;
+        refreshToken?: string;
+      },
+      any
+    >;
+  };
   gmailAuth: {
     exchangeCodeForTokens: FunctionReference<
       "action",
@@ -1083,7 +1124,12 @@ export declare const internal: {
     startEmailProcessing: FunctionReference<
       "mutation",
       "internal",
-      { externalIds: Array<string>; userEmail: string; userId: Id<"users"> },
+      {
+        externalIds: Array<string>;
+        gmailAccountId?: Id<"gmailAccounts">;
+        userEmail: string;
+        userId: Id<"users">;
+      },
       any
     >;
   };
@@ -1127,6 +1173,38 @@ export declare const internal: {
       any
     >;
   };
+  gmailAccountHelpers: {
+    decryptGmailAccountTokens: FunctionReference<
+      "mutation",
+      "internal",
+      { accountId: Id<"gmailAccounts"> },
+      any
+    >;
+    getGmailAccountsForSync: FunctionReference<"query", "internal", {}, any>;
+    getUserIdFromAccount: FunctionReference<
+      "query",
+      "internal",
+      { accountId: Id<"gmailAccounts"> },
+      any
+    >;
+    updateGmailAccountLastSync: FunctionReference<
+      "mutation",
+      "internal",
+      { accountId: Id<"gmailAccounts">; timestamp: number },
+      any
+    >;
+    updateGmailAccountTokens: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        accessToken: string;
+        accountId: Id<"gmailAccounts">;
+        refreshToken?: string;
+        tokenExpiresAt: number;
+      },
+      any
+    >;
+  };
   gmailAuth: {
     updateUserTokens: FunctionReference<
       "mutation",
@@ -1159,7 +1237,11 @@ export declare const internal: {
     fetchAndStoreEmailsByIds: FunctionReference<
       "action",
       "internal",
-      { messageIds: Array<string>; userEmail: string },
+      {
+        gmailAccountId?: Id<"gmailAccounts">;
+        messageIds: Array<string>;
+        userEmail: string;
+      },
       any
     >;
     getCachedEmails: FunctionReference<
@@ -1204,6 +1286,7 @@ export declare const internal: {
         direction?: "incoming" | "outgoing";
         externalId: string;
         from: Id<"contacts">;
+        gmailAccountId?: Id<"gmailAccounts">;
         isRead: boolean;
         isSubscription?: boolean;
         listUnsubscribe?: string;

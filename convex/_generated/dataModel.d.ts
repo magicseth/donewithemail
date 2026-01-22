@@ -280,6 +280,7 @@ export type DataModel = {
         k: string;
         v: number;
       };
+      gmailAccountId?: Id<"gmailAccounts">;
       isPunted?: boolean;
       isRead: boolean;
       isSubscription?: boolean;
@@ -323,6 +324,7 @@ export type DataModel = {
       | "fromName.i"
       | "fromName.k"
       | "fromName.v"
+      | "gmailAccountId"
       | "isPunted"
       | "isRead"
       | "isSubscription"
@@ -630,6 +632,90 @@ export type DataModel = {
       by_creation_time: ["_creationTime"];
       by_status: ["status", "createdAt", "_creationTime"];
       by_user: ["userId", "createdAt", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  gmailAccounts: {
+    document: {
+      accessToken: {
+        __encrypted: true;
+        c: string;
+        i: string;
+        k: string;
+        v: number;
+      };
+      avatarUrl?: string;
+      createdAt: number;
+      displayName?: {
+        __encrypted: true;
+        c: string;
+        i: string;
+        k: string;
+        v: number;
+      };
+      email: string;
+      isPrimary: boolean;
+      lastSyncAt?: number;
+      refreshToken?: {
+        __encrypted: true;
+        c: string;
+        i: string;
+        k: string;
+        v: number;
+      };
+      tokenExpiresAt: number;
+      userId: Id<"users">;
+      workosRefreshToken?: {
+        __encrypted: true;
+        c: string;
+        i: string;
+        k: string;
+        v: number;
+      };
+      _id: Id<"gmailAccounts">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "accessToken"
+      | "accessToken.__encrypted"
+      | "accessToken.c"
+      | "accessToken.i"
+      | "accessToken.k"
+      | "accessToken.v"
+      | "avatarUrl"
+      | "createdAt"
+      | "displayName"
+      | "displayName.__encrypted"
+      | "displayName.c"
+      | "displayName.i"
+      | "displayName.k"
+      | "displayName.v"
+      | "email"
+      | "isPrimary"
+      | "lastSyncAt"
+      | "refreshToken"
+      | "refreshToken.__encrypted"
+      | "refreshToken.c"
+      | "refreshToken.i"
+      | "refreshToken.k"
+      | "refreshToken.v"
+      | "tokenExpiresAt"
+      | "userId"
+      | "workosRefreshToken"
+      | "workosRefreshToken.__encrypted"
+      | "workosRefreshToken.c"
+      | "workosRefreshToken.i"
+      | "workosRefreshToken.k"
+      | "workosRefreshToken.v";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_email: ["email", "_creationTime"];
+      by_user: ["userId", "_creationTime"];
+      by_user_email: ["userId", "email", "_creationTime"];
     };
     searchIndexes: {};
     vectorIndexes: {};

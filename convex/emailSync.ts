@@ -105,14 +105,36 @@ export const debugUserTokens = internalAction({
 export const checkNewEmailsForAllUsers = internalAction({
   args: {},
   handler: async (ctx) => {
-    // Get all users with Gmail tokens (returns encrypted tokens - we just need IDs)
-    const usersWithGmail = await ctx.runQuery(internal.emailSyncHelpers.getUsersWithGmail, {});
+    // Get all Gmail accounts
+    const gmailAccounts = await ctx.runQuery(internal.gmailAccountHelpers.getGmailAccountsForSync, {});
+    console.log(`Checking new emails for ${gmailAccounts.length} Gmail accounts`);
 
-    console.log(`Checking new emails for ${usersWithGmail.length} users`);
+    for (const rawAccount of gmailAccounts) {
+      try {
+        // Decrypt tokens for each account
+        const decryptedAccount = await ctx.runMutation(
+          internal.gmailAccountHelpers.decryptGmailAccountTokens,
+          { accountId: rawAccount._id }
+        );
+
+        if (!decryptedAccount || !decryptedAccount.accessToken) {
+          console.log(`Could not decrypt tokens for account ${rawAccount.email}`);
+          continue;
+        }
+
+        // Sync this Gmail account
+        await checkNewEmailsForGmailAccount(ctx, decryptedAccount);
+      } catch (error) {
+        console.error(`Failed to check emails for account ${rawAccount.email}:`, error);
+      }
+    }
+
+    // Also sync legacy user Gmail tokens and IMAP accounts
+    const usersWithGmail = await ctx.runQuery(internal.emailSyncHelpers.getUsersWithGmail, {});
+    console.log(`Checking legacy Gmail tokens for ${usersWithGmail.length} users`);
 
     for (const rawUser of usersWithGmail) {
       try {
-        // Decrypt tokens for each user
         const decryptedUser = await ctx.runMutation(internal.emailSyncHelpers.decryptUserTokens, {
           userId: rawUser._id,
         });
@@ -122,7 +144,7 @@ export const checkNewEmailsForAllUsers = internalAction({
           continue;
         }
 
-        // Sync Gmail if user has Gmail tokens
+        // Sync legacy Gmail tokens (will be deprecated)
         if (decryptedUser.gmailAccessToken) {
           await checkNewEmailsForUser(ctx, {
             _id: decryptedUser._id,
@@ -160,7 +182,135 @@ export const checkNewEmailsForAllUsers = internalAction({
   },
 });
 
-// Check for new emails for a single user
+// Check for new emails for a Gmail account
+async function checkNewEmailsForGmailAccount(
+  ctx: any,
+  account: {
+    _id: any;
+    userId: any;
+    email: string;
+    accessToken: string;
+    refreshToken?: string | null;
+    tokenExpiresAt: number;
+    lastSyncAt?: number;
+  }
+) {
+  if (!account.accessToken) {
+    console.log(`Account ${account.email} has no access token, skipping`);
+    return;
+  }
+
+  // Check if token is expired (with 5 minute buffer)
+  const tokenExpired = Date.now() >= (account.tokenExpiresAt - 5 * 60 * 1000);
+
+  // Helper to save updated token
+  const saveToken = async (accessToken: string, expiresAt: number) => {
+    await ctx.runMutation(internal.gmailAccountHelpers.updateGmailAccountTokens, {
+      accountId: account._id,
+      accessToken,
+      tokenExpiresAt: expiresAt,
+    });
+  };
+
+  // Refresh token if needed and possible
+  let accessToken = account.accessToken;
+  if (tokenExpired && account.refreshToken) {
+    try {
+      console.log(`Refreshing Google token for ${account.email}...`);
+      const refreshed = await refreshGoogleToken(account.refreshToken);
+      accessToken = refreshed.accessToken;
+      await saveToken(refreshed.accessToken, refreshed.expiresAt);
+      console.log(`Token refreshed for ${account.email}, expires at ${new Date(refreshed.expiresAt).toISOString()}`);
+    } catch (error) {
+      if (error instanceof GmailAuthError && error.requiresReauth) {
+        console.error(`[EmailSync] Account ${account.email} needs to re-authenticate:`, error.message);
+      } else {
+        console.error(`Token refresh failed for ${account.email}:`, error);
+      }
+      return; // Can't continue without valid token
+    }
+  } else if (tokenExpired && !account.refreshToken) {
+    console.log(`Account ${account.email} token expired but no refresh token available`);
+    return;
+  }
+
+  // Get last sync time (default to 1 hour ago if never synced)
+  const lastSync = account.lastSyncAt || Date.now() - 60 * 60 * 1000;
+
+  // Query Gmail for messages newer than last sync
+  const afterEpoch = Math.floor(lastSync / 1000);
+  const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX&q=after:${afterEpoch}`;
+
+  // Make Gmail API call with retry on 401
+  let response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  // If we get 401 and have a refresh token, try to refresh and retry
+  if (response.status === 401 && account.refreshToken) {
+    console.log(`[EmailSync] Got 401 for ${account.email}, attempting token refresh and retry...`);
+    try {
+      const refreshed = await refreshGoogleToken(account.refreshToken);
+      accessToken = refreshed.accessToken;
+      await saveToken(refreshed.accessToken, refreshed.expiresAt);
+
+      // Retry the request
+      response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+    } catch (error) {
+      if (error instanceof GmailAuthError && error.requiresReauth) {
+        console.error(`[EmailSync] Account ${account.email} needs to re-authenticate:`, error.message);
+      } else {
+        console.error(`[EmailSync] Token refresh failed for ${account.email}:`, error);
+      }
+      return;
+    }
+  }
+
+  if (!response.ok) {
+    console.error(`Gmail API error for ${account.email}: ${response.status}`);
+    return;
+  }
+
+  const data = await response.json();
+  const messages = data.messages || [];
+
+  // Filter to only truly new messages (not in our database yet)
+  const newMessageIds: string[] = [];
+
+  for (const msg of messages) {
+    // Check if we already have this email
+    const existing = await ctx.runQuery(internal.emailSyncHelpers.checkEmailExists, {
+      externalId: msg.id,
+    });
+
+    if (!existing) {
+      newMessageIds.push(msg.id);
+    }
+  }
+
+  // Update last sync time
+  await ctx.runMutation(internal.gmailAccountHelpers.updateGmailAccountLastSync, {
+    accountId: account._id,
+    timestamp: Date.now(),
+  });
+
+  // If there are new emails, trigger the workflow to process and conditionally notify
+  if (newMessageIds.length > 0) {
+    console.log(`Found ${newMessageIds.length} new emails for ${account.email}, starting workflow...`);
+
+    // Trigger the workflow with the account ID
+    await ctx.runMutation(internal.emailWorkflow.startEmailProcessing, {
+      userId: account.userId,
+      userEmail: account.email,
+      externalIds: newMessageIds,
+      gmailAccountId: account._id,
+    });
+  }
+}
+
+// Check for new emails for a single user (legacy - for backward compatibility)
 async function checkNewEmailsForUser(
   ctx: any,
   user: {

@@ -12,6 +12,7 @@ export const processNewEmails = workflow.define({
     userId: v.id("users"),
     userEmail: v.string(),
     externalIds: v.array(v.string()),
+    gmailAccountId: v.optional(v.id("gmailAccounts")),
   },
   returns: v.object({
     stored: v.number(),
@@ -26,6 +27,7 @@ export const processNewEmails = workflow.define({
       {
         userEmail: args.userEmail,
         messageIds: args.externalIds,
+        gmailAccountId: args.gmailAccountId,
       }
     );
 
@@ -115,6 +117,7 @@ export const startEmailProcessing = internalMutation({
     userId: v.id("users"),
     userEmail: v.string(),
     externalIds: v.array(v.string()),
+    gmailAccountId: v.optional(v.id("gmailAccounts")),
   },
   handler: async (ctx, args): Promise<{ workflowId: string }> => {
     const workflowId: string = await workflow.start(
@@ -124,6 +127,7 @@ export const startEmailProcessing = internalMutation({
         userId: args.userId,
         userEmail: args.userEmail,
         externalIds: args.externalIds,
+        gmailAccountId: args.gmailAccountId,
       }
     );
     return { workflowId };
