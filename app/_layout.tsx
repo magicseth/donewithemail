@@ -198,8 +198,9 @@ function useAuthAdapter() {
   return result;
 }
 
-// Component that registers push notifications and handles changelog display
-function PushNotificationHandler({ children }: { children: React.ReactNode }) {
+// Component that handles authenticated-only features (push notifications, changelog)
+// This should only be rendered when Convex is actually authenticated
+function AuthenticatedFeatures() {
   usePushNotifications();
 
   // Changelog tracking
@@ -207,20 +208,16 @@ function PushNotificationHandler({ children }: { children: React.ReactNode }) {
   const [newChangelogs, setNewChangelogs] = useState<ChangelogEntry[]>([]);
   const hasCheckedChangelog = useRef(false);
 
-  const { isAuthenticated } = useAuth();
-  const lastOpenedAt = useQuery(api.changelog.getLastOpened, isAuthenticated ? {} : "skip");
+  const lastOpenedAt = useQuery(api.changelog.getLastOpened);
   const updateLastOpened = useMutation(api.changelog.updateLastOpened);
   const changelogsSince = useQuery(
     api.changelog.getChangelogsSince,
-    isAuthenticated && lastOpenedAt !== undefined
-      ? { since: lastOpenedAt ?? undefined }
-      : "skip"
+    lastOpenedAt !== undefined ? { since: lastOpenedAt ?? undefined } : "skip"
   );
 
-  // Check for new changelogs when user is authenticated and data is loaded
+  // Check for new changelogs when data is loaded
   useEffect(() => {
     if (
-      isAuthenticated &&
       !hasCheckedChangelog.current &&
       changelogsSince !== undefined &&
       lastOpenedAt !== undefined
@@ -238,20 +235,33 @@ function PushNotificationHandler({ children }: { children: React.ReactNode }) {
         console.error("[Changelog] Failed to update lastOpenedAt:", error);
       });
     }
-  }, [isAuthenticated, changelogsSince, lastOpenedAt, updateLastOpened]);
+  }, [changelogsSince, lastOpenedAt, updateLastOpened]);
 
   const handleCloseChangelog = useCallback(() => {
     setShowChangelog(false);
   }, []);
 
   return (
+    <ChangelogModal
+      visible={showChangelog}
+      changelogs={newChangelogs}
+      onClose={handleCloseChangelog}
+    />
+  );
+}
+
+// Wrapper that only renders authenticated features when Convex is ready
+function AuthenticatedFeaturesWrapper({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated } = useAuth();
+  // Use a simple query to verify Convex is actually authenticated
+  // If this returns undefined, Convex auth isn't ready yet
+  const convexAuthCheck = useQuery(api.changelog.getLastOpened, isAuthenticated ? {} : "skip");
+  const isConvexAuthenticated = isAuthenticated && convexAuthCheck !== undefined;
+
+  return (
     <>
       {children}
-      <ChangelogModal
-        visible={showChangelog}
-        changelogs={newChangelogs}
-        onClose={handleCloseChangelog}
-      />
+      {isConvexAuthenticated && <AuthenticatedFeatures />}
     </>
   );
 }
@@ -317,7 +327,7 @@ export default function RootLayout() {
         <AuthProvider>
           <DemoModeProvider>
             <AuthErrorHandler>
-              <PushNotificationHandler>
+              <AuthenticatedFeaturesWrapper>
                 <Stack
                   screenOptions={{
                     headerShown: false,
@@ -352,7 +362,7 @@ export default function RootLayout() {
                     }}
                   />
                 </Stack>
-              </PushNotificationHandler>
+              </AuthenticatedFeaturesWrapper>
             </AuthErrorHandler>
           </DemoModeProvider>
         </AuthProvider>
