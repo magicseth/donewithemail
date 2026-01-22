@@ -7,7 +7,7 @@
  * - gmailQueries.ts: Read-only queries (getUserByEmail, getCachedEmails, etc.)
  */
 import { v } from "convex/values";
-import { action, internalAction, internalMutation, query } from "./_generated/server";
+import { action, internalAction, internalMutation, internalQuery, query } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { encryptedPii } from "./pii";
@@ -1080,6 +1080,188 @@ export const downloadAttachment = action({
       data: data.data, // Base64url-encoded data
       mimeType: attachment.mimeType,
       filename: attachment.filename,
+    };
+  },
+});
+
+// Re-fetch and update email body from Gmail (for fixing extraction issues)
+export const refetchEmailBody = internalAction({
+  args: {
+    emailId: v.id("emails"),
+  },
+  handler: async (ctx, args) => {
+    const email = await ctx.runQuery(internal.gmailSync.getEmailForSync, {
+      emailId: args.emailId,
+    });
+
+    if (!email) {
+      throw new Error("Email not found");
+    }
+
+    // Get Gmail account for this email
+    const gmailAccount = email.gmailAccountId
+      ? await ctx.runMutation(internal.gmailAccountHelpers.decryptGmailAccountTokens, {
+          accountId: email.gmailAccountId,
+        })
+      : null;
+
+    if (!gmailAccount?.accessToken) {
+      throw new Error("No Gmail account found for this email");
+    }
+
+    // Fetch the raw email from Gmail
+    const response = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${email.externalId}?format=full`,
+      { headers: { Authorization: `Bearer ${gmailAccount.accessToken}` } }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch email: ${response.status}`);
+    }
+
+    const msgData = await response.json();
+
+    // Extract body using improved extraction
+    const { html, plain } = extractBody(msgData.payload);
+    const bodyFull = html || plain || msgData.snippet || "";
+
+    // Update the email body in the database
+    await ctx.runMutation(internal.gmailSync.refetchUpdateEmailBody, {
+      emailId: args.emailId,
+      bodyFull,
+    });
+
+    return {
+      success: true,
+      bodyPreview: bodyFull.substring(0, 200),
+    };
+  },
+});
+
+// Update email body after refetch (internal mutation)
+export const refetchUpdateEmailBody = internalMutation({
+  args: {
+    emailId: v.id("emails"),
+    bodyFull: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const email = await ctx.db.get(args.emailId);
+    if (!email) {
+      throw new Error("Email not found");
+    }
+
+    // Get the email body record
+    const body = await ctx.db
+      .query("emailBodies")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .first();
+
+    if (!body) {
+      throw new Error("Email body record not found");
+    }
+
+    // Encrypt the new body
+    const pii = await encryptedPii.forUser(ctx, email.userId);
+    const encryptedBody = await pii.encrypt(args.bodyFull);
+
+    // Update the body
+    await ctx.db.patch(body._id, {
+      bodyFull: encryptedBody,
+    });
+
+    // Also update the preview on the email
+    const preview = args.bodyFull.replace(/<[^>]*>/g, ' ').substring(0, 200).trim();
+    await ctx.db.patch(args.emailId, {
+      bodyPreview: await pii.encrypt(preview),
+    });
+  },
+});
+
+// Get email info for sync/debug operations
+export const getEmailForSync = internalQuery({
+  args: {
+    emailId: v.id("emails"),
+  },
+  handler: async (ctx, args) => {
+    const email = await ctx.db.get(args.emailId);
+    if (!email) return null;
+    return {
+      _id: email._id,
+      externalId: email.externalId,
+      gmailAccountId: email.gmailAccountId,
+      userId: email.userId,
+    };
+  },
+});
+
+// Debug: Fetch raw email from Gmail to inspect payload structure
+export const debugFetchRawEmail = internalAction({
+  args: {
+    emailId: v.id("emails"),
+  },
+  handler: async (ctx, args) => {
+    const email = await ctx.runQuery(internal.gmailSync.getEmailForSync, {
+      emailId: args.emailId,
+    });
+
+    if (!email) {
+      throw new Error("Email not found");
+    }
+
+    // Get Gmail account for this email
+    const gmailAccount = email.gmailAccountId
+      ? await ctx.runMutation(internal.gmailAccountHelpers.decryptGmailAccountTokens, {
+          accountId: email.gmailAccountId,
+        })
+      : null;
+
+    if (!gmailAccount?.accessToken) {
+      throw new Error("No Gmail account found for this email");
+    }
+
+    // Fetch the raw email from Gmail
+    const response = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${email.externalId}?format=full`,
+      { headers: { Authorization: `Bearer ${gmailAccount.accessToken}` } }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch email: ${response.status}`);
+    }
+
+    const msgData = await response.json();
+
+    // Extract body parts structure for debugging
+    function extractPartsStructure(payload: any, depth = 0): any {
+      const result: any = {
+        mimeType: payload.mimeType,
+        hasBody: !!payload.body?.data,
+        bodySize: payload.body?.size || 0,
+      };
+
+      if (payload.parts) {
+        result.parts = payload.parts.map((p: any) => extractPartsStructure(p, depth + 1));
+      }
+
+      if (payload.filename) {
+        result.filename = payload.filename;
+      }
+
+      return result;
+    }
+
+    // Extract actual body content
+    const { extractBody, decodeBase64Url } = await import("./gmailHelpers");
+    const extractedBody = extractBody(msgData.payload);
+
+    return {
+      externalId: email.externalId,
+      snippet: msgData.snippet,
+      payloadStructure: extractPartsStructure(msgData.payload),
+      extractedHtmlLength: extractedBody.html.length,
+      extractedPlainLength: extractedBody.plain.length,
+      extractedHtmlPreview: extractedBody.html.substring(0, 500),
+      extractedPlainPreview: extractedBody.plain.substring(0, 500),
     };
   },
 });

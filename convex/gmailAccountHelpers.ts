@@ -18,6 +18,23 @@ export const getGmailAccountsForSync = internalQuery({
   },
 });
 
+// Debug: Get token status for all Gmail accounts (shows if tokens exist, not values)
+export const debugGmailAccountTokens = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const accounts = await ctx.db.query("gmailAccounts").collect();
+    return accounts.map((acc) => ({
+      email: acc.email,
+      authSource: acc.authSource,
+      hasAccessToken: !!acc.accessToken,
+      hasRefreshToken: !!acc.refreshToken,
+      hasWorkosRefreshToken: !!acc.workosRefreshToken,
+      tokenExpiresAt: acc.tokenExpiresAt ? new Date(acc.tokenExpiresAt).toISOString() : null,
+      lastSyncAt: acc.lastSyncAt ? new Date(acc.lastSyncAt).toISOString() : null,
+    }));
+  },
+});
+
 // Decrypt Gmail account tokens for API use
 export const decryptGmailAccountTokens = internalMutation({
   args: {

@@ -174,6 +174,56 @@ export const getEmailById = internalQuery({
   },
 });
 
+// Debug: Find emails by sender email address
+export const debugFindEmailsBySender = internalQuery({
+  args: {
+    senderEmail: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // First find contact(s) with this email
+    const contacts = await ctx.db
+      .query("contacts")
+      .filter((q) => q.eq(q.field("email"), args.senderEmail))
+      .collect();
+
+    if (contacts.length === 0) {
+      return { error: `No contact found with email ${args.senderEmail}` };
+    }
+
+    // Find emails from these contacts
+    const allEmails = [];
+    for (const contact of contacts) {
+      const emails = await ctx.db
+        .query("emails")
+        .withIndex("by_from", (q) => q.eq("from", contact._id))
+        .order("desc")
+        .take(args.limit ?? 10);
+      allEmails.push(...emails);
+    }
+
+    // Get attachment counts for each email
+    const results = await Promise.all(
+      allEmails.map(async (e) => {
+        const attachments = await ctx.db
+          .query("attachments")
+          .withIndex("by_email", (q) => q.eq("emailId", e._id))
+          .collect();
+        return {
+          _id: e._id,
+          externalId: e.externalId,
+          fromContactId: e.from,
+          userId: e.userId,
+          receivedAt: e.receivedAt ? new Date(e.receivedAt).toISOString() : null,
+          attachmentCount: attachments.length,
+        };
+      })
+    );
+
+    return results;
+  },
+});
+
 // Get email body from the separate emailBodies table (with decryption)
 export const getEmailBodyById = internalQuery({
   args: {

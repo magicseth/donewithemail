@@ -29,39 +29,96 @@ export function decodeBase64Url(data: string): string {
 /**
  * Extract email body from Gmail payload.
  * Handles multipart messages recursively.
+ *
+ * Handles Apple Mail's non-standard MIME structure where attachments are nested
+ * inside multipart/alternative instead of at the top level:
+ * - Standard: multipart/mixed → multipart/alternative → text/plain + text/html → attachment
+ * - Apple Mail: multipart/alternative → text/plain → multipart/mixed → text/html + attachment
+ *
+ * See: https://bugzilla.mozilla.org/show_bug.cgi?id=1362539
+ * See: https://github.com/mikel/mail/issues/590
  */
 export function extractBody(payload: any): { html: string; plain: string } {
-  let html = "";
+  const htmlParts: string[] = [];
   let plain = "";
+  let hasAppleMailStructure = false;
 
-  // Check if body is directly in payload
-  if (payload.body?.data) {
-    const decoded = decodeBase64Url(payload.body.data);
-    if (payload.mimeType === "text/html") {
-      html = decoded;
-    } else {
-      plain = decoded;
+  // Detect Apple Mail's unusual structure: multipart/alternative containing multipart/mixed
+  if (payload.mimeType === "multipart/alternative" && payload.parts) {
+    for (const part of payload.parts) {
+      if (part.mimeType === "multipart/mixed") {
+        hasAppleMailStructure = true;
+        break;
+      }
     }
   }
 
-  // Check parts for multipart messages
-  if (payload.parts) {
-    for (const part of payload.parts) {
-      if (part.mimeType === "text/html" && part.body?.data) {
-        html = decodeBase64Url(part.body.data);
-      } else if (part.mimeType === "text/plain" && part.body?.data) {
-        plain = decodeBase64Url(part.body.data);
+  function extractRecursive(part: any) {
+    // Check if body is directly in this part
+    if (part.body?.data) {
+      const decoded = decodeBase64Url(part.body.data);
+      if (part.mimeType === "text/html") {
+        htmlParts.push(decoded);
+      } else if (part.mimeType === "text/plain") {
+        // Keep the longest plain text part
+        if (decoded.length > plain.length) {
+          plain = decoded;
+        }
       }
-      // Recursively check nested parts
-      if (part.parts) {
-        const nested = extractBody(part);
-        if (nested.html) html = nested.html;
-        if (nested.plain && !plain) plain = nested.plain;
+    }
+
+    // Recursively check nested parts
+    if (part.parts) {
+      for (const subpart of part.parts) {
+        extractRecursive(subpart);
       }
+    }
+  }
+
+  extractRecursive(payload);
+
+  // Choose the best HTML part - prefer the longest one
+  let html = "";
+  if (htmlParts.length > 0) {
+    htmlParts.sort((a, b) => b.length - a.length);
+    html = htmlParts[0];
+  }
+
+  // For Apple Mail structure OR when plain text has content not in HTML,
+  // check if we should prefer plain text
+  if (plain.length > 100 && html.length > 0) {
+    // Get first line of plain text (the actual message, before quoted content)
+    const plainLines = plain.split(/\r?\n/);
+    const plainFirstLine = plainLines[0].trim();
+
+    // Strip HTML tags for comparison
+    const htmlText = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // Use plain text if:
+    // 1. It's Apple Mail's non-standard structure, OR
+    // 2. Plain text starts with substantial content (>20 chars) not found in HTML
+    const plainHasUniqueContent = plainFirstLine.length > 20 &&
+      !htmlText.toLowerCase().includes(plainFirstLine.substring(0, 50).toLowerCase());
+
+    if (hasAppleMailStructure || plainHasUniqueContent) {
+      // Convert plain text to basic HTML for display
+      html = `<pre style="white-space: pre-wrap; font-family: inherit;">${escapeHtml(plain)}</pre>`;
     }
   }
 
   return { html, plain };
+}
+
+/**
+ * Escape HTML special characters for safe display.
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 /**

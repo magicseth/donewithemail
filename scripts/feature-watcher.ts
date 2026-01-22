@@ -131,11 +131,8 @@ async function processFeatureRequest(request: {
     }
     execSync(`git clone ${REPO_URL} ${workDir}`, { stdio: "inherit" });
 
-    // Install dependencies
-    console.log(`\n📦 Installing dependencies...`);
-    execSync(`npm install`, { cwd: workDir, stdio: "inherit" });
-
     // Start from preview merged with main (so Claude sees all previous voice features + latest main)
+    // NOTE: We switch branches BEFORE npm install to avoid package-lock.json conflicts
     console.log(`\n🔀 Preparing base: merging main and preview...`);
     execSync(`git fetch origin preview`, { cwd: workDir, stdio: "inherit" });
     execSync(`git checkout preview`, { cwd: workDir, stdio: "inherit" });
@@ -143,6 +140,10 @@ async function processFeatureRequest(request: {
       cwd: workDir,
       stdio: "inherit"
     });
+
+    // Install dependencies (after branch switch to avoid package-lock.json conflicts)
+    console.log(`\n📦 Installing dependencies...`);
+    execSync(`npm install`, { cwd: workDir, stdio: "inherit" });
 
     // Create a branch for this feature (from the merged state)
     const branchName = `feature/req-${request._id.slice(-8)}`;
