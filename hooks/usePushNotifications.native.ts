@@ -31,6 +31,8 @@ export function usePushNotifications() {
   const [pendingNavigation, setPendingNavigation] = useState<{ type: string; emailId?: string } | null>(null);
   const notificationListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
+  // Track the last processed notification to prevent duplicate handling
+  const lastProcessedNotificationId = useRef<string | null>(null);
 
   const router = useRouter();
   const { isAuthenticated, isLoading } = useConvexAuth();
@@ -134,8 +136,16 @@ export function usePushNotifications() {
     const subscription = AppState.addEventListener("change", handleAppStateChange);
 
     // Check if app was launched from a notification (app was closed)
-    Notifications.getLastNotificationResponseAsync().then((response) => {
+    Notifications.getLastNotificationResponseAsync().then(async (response) => {
       if (response) {
+        const notificationId = response.notification.request.identifier;
+        // Skip if we've already processed this notification
+        if (lastProcessedNotificationId.current === notificationId) {
+          console.log("[Push] Skipping already processed notification:", notificationId);
+          return;
+        }
+        lastProcessedNotificationId.current = notificationId;
+
         const data = response.notification.request.content.data as NotificationData;
         console.log("[Push] App launched from notification:", data);
         // Store for later - will be processed once auth is ready
@@ -143,6 +153,9 @@ export function usePushNotifications() {
           type: data?.type || "email",
           emailId: data?.emailId,
         });
+        // Clear the last notification response to prevent re-processing on re-renders
+        // This fixes the bug where stale notification responses caused unwanted navigation
+        await Notifications.clearLastNotificationResponseAsync();
       }
     });
 
@@ -156,6 +169,14 @@ export function usePushNotifications() {
     // Listen for user interactions with notifications (app in background or foreground)
     responseListener.current = Notifications.addNotificationResponseReceivedListener(
       (response) => {
+        const notificationId = response.notification.request.identifier;
+        // Skip if we've already processed this notification
+        if (lastProcessedNotificationId.current === notificationId) {
+          console.log("[Push] Skipping already processed notification from listener:", notificationId);
+          return;
+        }
+        lastProcessedNotificationId.current = notificationId;
+
         const data = response.notification.request.content.data as NotificationData;
         console.log("[Push] Notification tapped:", data);
 
