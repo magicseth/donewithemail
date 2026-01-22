@@ -342,6 +342,29 @@ export const BatchEmailRow = memo(function BatchEmailRow({
         </View>
       )}
 
+      {/* Primary action links - show prominently outside reply options */}
+      {!expandReplyByDefault && Array.isArray(email.actionableItems) && email.actionableItems.length > 0 && (
+        <View style={styles.actionLinksContainer}>
+          {email.actionableItems.slice(0, 1).map((item, idx) => (
+            <TouchableOpacity
+              key={`action-link-${idx}`}
+              style={styles.primaryActionChip}
+              onPress={() => {
+                if (item.type === 'link' && item.url) {
+                  Linking.openURL(item.url);
+                } else if (item.type === 'attachment') {
+                  router.push(`/email/${email._id}`);
+                }
+              }}
+            >
+              <Text style={styles.primaryActionText} numberOfLines={1}>
+                {item.type === 'link' ? '🔗' : '📎'} {item.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
       {/* Calendar event details with add button */}
       {hasCalendar && email.calendarEvent && (
         <View style={styles.calendarEventContainer}>
@@ -804,6 +827,28 @@ const styles = StyleSheet.create({
   },
   actionableItemText: {
     fontSize: 12,
+    color: "#92400E",
+    fontWeight: "600",
+  },
+  actionLinksContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+  },
+  primaryActionChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "#FEF3C7",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F59E0B",
+    flexShrink: 1,
+    maxWidth: "90%",
+  },
+  primaryActionText: {
+    fontSize: 13,
     color: "#92400E",
     fontWeight: "600",
   },
