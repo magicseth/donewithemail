@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
 } from "react-native";
 import { router, Stack, useFocusEffect } from "expo-router";
+import { getInboxTabPressSignal } from "./_layout";
 import { useAction } from "convex/react";
 import { useAuth } from "../../lib/authContext";
 import { useDemoMode } from "../../lib/demoModeContext";
@@ -109,10 +110,18 @@ export default function InboxScreen() {
   const { playStopSound } = useMicSounds();
   const sendEmailAction = useAction(api.gmailSend.sendReply);
 
-  // Close any open category when tab is focused (e.g., user taps inbox tab while category is open)
+  // Track the last processed tab press signal to detect explicit tab taps
+  const lastTabPressSignal = useRef(getInboxTabPressSignal());
+
+  // Close category only when user explicitly taps inbox tab (not on back navigation from email detail)
   useFocusEffect(
     useCallback(() => {
-      batchTriageRef.current?.closeCategory();
+      const currentSignal = getInboxTabPressSignal();
+      if (currentSignal > lastTabPressSignal.current) {
+        // This is an explicit tab press - close the category
+        lastTabPressSignal.current = currentSignal;
+        batchTriageRef.current?.closeCategory();
+      }
     }, [])
   );
 

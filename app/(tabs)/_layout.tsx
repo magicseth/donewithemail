@@ -6,6 +6,13 @@ import { useTheme } from "../../lib/themeContext";
 import { SignInScreen } from "../../components/SignInScreen";
 import { AddFeatureButton } from "../../components/AddFeatureButton";
 
+// Signal for inbox tab press - used to close category only on explicit tab tap
+// Module-level to avoid re-render coordination issues
+let inboxTabPressSignal = 0;
+export function getInboxTabPressSignal() {
+  return inboxTabPressSignal;
+}
+
 // Simple icon components (replace with proper icons later)
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
   const iconMap: Record<string, string> = {
@@ -53,6 +60,12 @@ export default function TabsLayout() {
         options={{
           title: "Inbox",
           tabBarIcon: ({ focused }) => <TabIcon name="inbox" focused={focused} />,
+        }}
+        listeners={{
+          tabPress: () => {
+            // Increment the signal so inbox screen can detect explicit tab taps
+            inboxTabPressSignal++;
+          },
         }}
       />
       <Tabs.Screen
