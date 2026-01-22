@@ -1094,6 +1094,12 @@ export declare const internal: {
     >;
   };
   emails: {
+    debugFindEmailsBySender: FunctionReference<
+      "query",
+      "internal",
+      { limit?: number; senderEmail: string },
+      any
+    >;
     getEmailBodyById: FunctionReference<
       "query",
       "internal",
@@ -1225,6 +1231,7 @@ export declare const internal: {
     >;
   };
   gmailAccountHelpers: {
+    debugGmailAccountTokens: FunctionReference<"query", "internal", {}, any>;
     decryptGmailAccountTokens: FunctionReference<
       "mutation",
       "internal",
@@ -1308,6 +1315,12 @@ export declare const internal: {
     >;
   };
   gmailSync: {
+    debugFetchRawEmail: FunctionReference<
+      "action",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
     fetchAndStoreEmailsByIds: FunctionReference<
       "action",
       "internal",
@@ -1330,10 +1343,28 @@ export declare const internal: {
       { externalIds: Array<string>; userId?: Id<"users"> },
       any
     >;
+    getEmailForSync: FunctionReference<
+      "query",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
     getUserByEmail: FunctionReference<
       "query",
       "internal",
       { email: string },
+      any
+    >;
+    refetchEmailBody: FunctionReference<
+      "action",
+      "internal",
+      { emailId: Id<"emails"> },
+      any
+    >;
+    refetchUpdateEmailBody: FunctionReference<
+      "mutation",
+      "internal",
+      { bodyFull: string; emailId: Id<"emails"> },
       any
     >;
     storeAttachment: FunctionReference<
