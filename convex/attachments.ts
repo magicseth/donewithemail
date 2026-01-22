@@ -34,8 +34,12 @@ export const getEmailAttachments = query({
       .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
       .collect();
 
-    // Get PII helper for decrypting filenames
-    const pii = await encryptedPii.forUser(ctx, email.userId);
+    // Get PII helper for decrypting filenames (read-only query context)
+    const pii = await encryptedPii.forUserQuery(ctx, email.userId);
+    if (!pii) {
+      // User has no encryption key yet - return empty array
+      return [];
+    }
 
     // Decrypt filenames and generate storage URLs
     const decryptedAttachments = await Promise.all(
@@ -190,7 +194,7 @@ export const getAttachmentById = internalMutation({
       return null;
     }
 
-    // Get PII helper for decrypting filename
+    // Get PII helper for decrypting filename (mutation context allows read/write)
     const pii = await encryptedPii.forUser(ctx, attachment.userId);
     const filename = await pii.decrypt(attachment.filename);
 
