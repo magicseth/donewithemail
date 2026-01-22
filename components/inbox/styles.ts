@@ -228,6 +228,7 @@ export const inboxStyles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5,
+    zIndex: 9999,
   },
   toastSuccess: {
     backgroundColor: "#10B981",

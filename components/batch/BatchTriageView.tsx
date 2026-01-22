@@ -10,7 +10,6 @@ import {
   LayoutChangeEvent,
   Platform,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BatchCategoryCard } from "./BatchCategoryCard";
 import { QuickReplyOption } from "./BatchEmailRow";
 import { CelebrationOverlay } from "./CelebrationOverlay";
@@ -116,8 +115,6 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
   },
   ref
 ) => {
-  // Get safe area insets for toast positioning
-  const insets = useSafeAreaInsets();
 
   // Disable scrolling while recording to prevent accidental release
   const isRecording = !!recordingForId;
@@ -641,7 +638,6 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
       {toast && (
         <View style={[
           styles.toast,
-          { top: insets.top + 10 },
           toast.type === "success" && styles.toastSuccess,
           toast.type === "error" && styles.toastError,
         ]}>
@@ -751,6 +747,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5,
+    zIndex: 9999,
   },
   toastSuccess: {
     backgroundColor: "#10B981",
