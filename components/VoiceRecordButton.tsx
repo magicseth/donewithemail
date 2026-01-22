@@ -119,13 +119,7 @@ export function VoiceRecordButton({
     hasStoppedRef.current = false;
   }, [cancelRecording]);
 
-  // Auto-stop when recording reaches 10 seconds (triggered by hook's timer)
-  React.useEffect(() => {
-    if (recordingDuration >= 10 && isRecording && !hasStoppedRef.current) {
-      console.log("[VoiceRecordButton] Auto-stopping after 10 seconds");
-      handlePressOut();
-    }
-  }, [recordingDuration, isRecording, handlePressOut]);
+  // No auto-stop - user can record as long as needed
 
   const sizeStyles = {
     small: { width: 36, height: 36, borderRadius: 18, fontSize: 14 },
@@ -134,9 +128,6 @@ export function VoiceRecordButton({
   };
 
   const currentSize = sizeStyles[size];
-
-  // Calculate remaining time (10 seconds max)
-  const remainingTime = Math.max(0, 10 - recordingDuration);
 
   return (
     <TouchableOpacity
@@ -160,7 +151,7 @@ export function VoiceRecordButton({
         <ActivityIndicator size="small" color="#fff" />
       ) : isRecording ? (
         <Text style={[styles.buttonText, { fontSize: currentSize.fontSize }]}>
-          {remainingTime}
+          {recordingDuration}s
         </Text>
       ) : (
         <Text style={[styles.buttonText, { fontSize: currentSize.fontSize }]}>

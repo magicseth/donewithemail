@@ -45,7 +45,7 @@ interface UseVoiceResult {
   recordingDuration: number; // Current recording duration in seconds
 }
 
-const MAX_RECORDING_DURATION_MS = 10000; // 10 seconds
+// No max recording duration - user can record as long as needed
 
 // Native implementation using react-native-live-audio-stream + Deepgram WebSocket
 function useDeepgramNative(): UseVoiceResult {
@@ -182,14 +182,6 @@ function useDeepgramNative(): UseVoiceResult {
         const elapsed = Date.now() - recordingStartTimeRef.current;
         setRecordingDuration(Math.floor(elapsed / 1000));
       }, 100);
-
-      // Set up auto-stop timer (10 seconds)
-      recordingTimerRef.current = setTimeout(() => {
-        console.log("[Voice] Auto-stopping recording after 10 seconds");
-        stopRecording().catch(err => {
-          console.error("[Voice] Error auto-stopping recording:", err);
-        });
-      }, MAX_RECORDING_DURATION_MS);
 
       // Get Deepgram API key from backend (in parallel with audio capture)
       const { apiKey } = await getDeepgramKey();
@@ -485,14 +477,6 @@ function useDeepgramWeb(): UseVoiceResult {
           const elapsed = Date.now() - recordingStartTimeRef.current;
           setRecordingDuration(Math.floor(elapsed / 1000));
         }, 100);
-
-        // Set up auto-stop timer (10 seconds)
-        recordingTimerRef.current = setTimeout(() => {
-          console.log("[Voice] Auto-stopping recording after 10 seconds");
-          stopRecording().catch(err => {
-            console.error("[Voice] Error auto-stopping recording:", err);
-          });
-        }, MAX_RECORDING_DURATION_MS);
       };
 
       ws.onmessage = (event) => {
