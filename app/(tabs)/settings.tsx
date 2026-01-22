@@ -24,6 +24,7 @@ import Constants from "expo-constants";
 import { api } from "../../convex/_generated/api";
 import { useAppLogs, appLogger } from "../../lib/appLogger";
 import { VoiceRecordButton } from "../../components/VoiceRecordButton";
+import { ChangelogModal, ChangelogEntry } from "../../components/ChangelogModal";
 
 export default function SettingsScreen() {
   const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
@@ -83,6 +84,10 @@ export default function SettingsScreen() {
   const retryFeatureRequest = useMutation(api.featureRequests.retryOne);
   const myFeatureRequests = useQuery(api.featureRequests.getMine);
   const myCosts = useQuery(api.costs.getMyTotalCosts);
+
+  // Changelog
+  const [showChangelogModal, setShowChangelogModal] = useState(false);
+  const allChangelogs = useQuery(api.changelog.getAllChangelogs);
 
   const checkForUpdates = async () => {
     if (Platform.OS === "web") return;
@@ -1143,6 +1148,14 @@ export default function SettingsScreen() {
           <View style={styles.divider} />
           <TouchableOpacity
             style={styles.aboutRow}
+            onPress={() => setShowChangelogModal(true)}
+          >
+            <Text style={styles.aboutLabel}>What's New</Text>
+            <Text style={styles.aboutArrow}>→</Text>
+          </TouchableOpacity>
+          <View style={styles.divider} />
+          <TouchableOpacity
+            style={styles.aboutRow}
             onPress={checkForUpdates}
             disabled={isCheckingUpdate || Platform.OS === "web"}
           >
@@ -1535,6 +1548,13 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Changelog Modal */}
+      <ChangelogModal
+        visible={showChangelogModal}
+        changelogs={(allChangelogs ?? []) as ChangelogEntry[]}
+        onClose={() => setShowChangelogModal(false)}
+      />
     </ScrollView>
   );
 }

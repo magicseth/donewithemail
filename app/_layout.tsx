@@ -13,6 +13,9 @@ import { DemoModeProvider } from "../lib/demoModeContext";
 import { usePushNotifications } from "../hooks/usePushNotifications";
 import { getLastAuthRefreshSignal } from "../lib/authSignal";
 import * as SecureStore from "expo-secure-store";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../convex/_generated/api";
+import { ChangelogModal, ChangelogEntry } from "../components/ChangelogModal";
 
 const AUTH_STORAGE_KEY = "donewith_auth";
 
@@ -195,10 +198,62 @@ function useAuthAdapter() {
   return result;
 }
 
-// Component that registers push notifications
+// Component that registers push notifications and handles changelog display
 function PushNotificationHandler({ children }: { children: React.ReactNode }) {
   usePushNotifications();
-  return <>{children}</>;
+
+  // Changelog tracking
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [newChangelogs, setNewChangelogs] = useState<ChangelogEntry[]>([]);
+  const hasCheckedChangelog = useRef(false);
+
+  const { isAuthenticated } = useAuth();
+  const lastOpenedAt = useQuery(api.changelog.getLastOpened, isAuthenticated ? {} : "skip");
+  const updateLastOpened = useMutation(api.changelog.updateLastOpened);
+  const changelogsSince = useQuery(
+    api.changelog.getChangelogsSince,
+    isAuthenticated && lastOpenedAt !== undefined
+      ? { since: lastOpenedAt ?? undefined }
+      : "skip"
+  );
+
+  // Check for new changelogs when user is authenticated and data is loaded
+  useEffect(() => {
+    if (
+      isAuthenticated &&
+      !hasCheckedChangelog.current &&
+      changelogsSince !== undefined &&
+      lastOpenedAt !== undefined
+    ) {
+      hasCheckedChangelog.current = true;
+
+      if (changelogsSince.length > 0) {
+        // Show changelog modal with new entries
+        setNewChangelogs(changelogsSince as ChangelogEntry[]);
+        setShowChangelog(true);
+      }
+
+      // Update last opened timestamp
+      updateLastOpened().catch((error) => {
+        console.error("[Changelog] Failed to update lastOpenedAt:", error);
+      });
+    }
+  }, [isAuthenticated, changelogsSince, lastOpenedAt, updateLastOpened]);
+
+  const handleCloseChangelog = useCallback(() => {
+    setShowChangelog(false);
+  }, []);
+
+  return (
+    <>
+      {children}
+      <ChangelogModal
+        visible={showChangelog}
+        changelogs={newChangelogs}
+        onClose={handleCloseChangelog}
+      />
+    </>
+  );
 }
 
 // Wrapper that provides auth error handling connected to the auth context

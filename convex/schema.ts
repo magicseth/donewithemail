@@ -190,6 +190,9 @@ export default defineSchema({
     // Last sync timestamp for detecting new emails (used by cron job)
     lastEmailSyncAt: v.optional(v.number()),
 
+    // Track last app open for changelog display
+    lastOpenedAt: v.optional(v.number()),
+
     createdAt: v.optional(v.number()),
   })
     .index("by_workos_id", ["workosId"])
@@ -286,6 +289,22 @@ export default defineSchema({
   })
     .index("by_status", ["status", "createdAt"])
     .index("by_user", ["userId", "createdAt"]),
+
+  // Changelog entries - new features and updates shown to users
+  changelogs: defineTable({
+    version: v.string(),              // App version (e.g., "1.1.0")
+    title: v.string(),                // Short title (e.g., "Email Attachments")
+    description: v.string(),          // Full description of the change
+    type: v.union(
+      v.literal("feature"),           // New feature
+      v.literal("improvement"),       // Enhancement to existing feature
+      v.literal("bugfix"),            // Bug fix
+      v.literal("other")              // Other changes
+    ),
+    createdAt: v.number(),            // When this changelog entry was added
+    publishedAt: v.number(),          // When to show this to users (allows scheduling)
+  })
+    .index("by_published", ["publishedAt"]),
 });
 
 // Type helpers for encrypted JSON fields
