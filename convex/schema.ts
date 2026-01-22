@@ -93,6 +93,9 @@ export default defineSchema({
     // Quick reply options - encrypted as JSON string
     quickReplies: v.optional(piiField()), // JSON: Array<{label: string, body: string}>
 
+    // Actionable items (links, attachments) that require user action - encrypted as JSON string
+    actionableItems: v.optional(piiField()), // JSON: Array<{type: 'link' | 'attachment', label: string, url?: string, attachmentId?: string}>
+
     // Calendar event suggestion - encrypted as JSON string
     calendarEvent: v.optional(piiField()), // JSON: {title, startTime, endTime, location, description, recurrence, recurrenceDescription}
 
@@ -284,6 +287,13 @@ export default defineSchema({
 export type QuickReply = {
   label: string;
   body: string;
+};
+
+export type ActionableItem = {
+  type: 'link' | 'attachment';
+  label: string;
+  url?: string;
+  attachmentId?: string;
 };
 
 export type CalendarEvent = {

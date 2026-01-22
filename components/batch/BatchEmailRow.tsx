@@ -11,13 +11,14 @@ import {
   ScrollView,
   Dimensions,
   Platform,
+  Linking,
 } from "react-native";
 import Animated, { FadeOut, SlideOutLeft, Layout } from "react-native-reanimated";
 import { router } from "expo-router";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
-import type { BatchEmailPreview } from "../../hooks/useBatchTriage";
+import type { BatchEmailPreview, ActionableItem } from "../../hooks/useBatchTriage";
 import { replaceDatePlaceholders } from "../../lib/datePlaceholders";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -402,18 +403,40 @@ export const BatchEmailRow = memo(function BatchEmailRow({
                 </Text>
               </View>
             ) : (
-              /* Quick reply chips - limit to 2 to fit on one line */
-              (Array.isArray(email.quickReplies) ? email.quickReplies.slice(0, 2) : []).map((reply, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  style={styles.quickReplyChip}
-                  onPress={() => onQuickReply?.(reply)}
-                >
-                  <Text style={styles.quickReplyText} numberOfLines={1}>
-                    {reply.label}
-                  </Text>
-                </TouchableOpacity>
-              ))
+              <>
+                {/* Actionable items (links/attachments) - show before quick replies */}
+                {(Array.isArray(email.actionableItems) ? email.actionableItems.slice(0, 2) : []).map((item, idx) => (
+                  <TouchableOpacity
+                    key={`action-${idx}`}
+                    style={styles.actionableItemChip}
+                    onPress={() => {
+                      if (item.type === 'link' && item.url) {
+                        Linking.openURL(item.url);
+                      } else if (item.type === 'attachment') {
+                        // For attachments, navigate to email detail which has attachment viewing
+                        router.push(`/email/${email._id}`);
+                      }
+                    }}
+                  >
+                    <Text style={styles.actionableItemText} numberOfLines={1}>
+                      {item.type === 'link' ? '🔗' : '📎'} {item.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+
+                {/* Quick reply chips - show remaining space */}
+                {(Array.isArray(email.quickReplies) ? email.quickReplies.slice(0, 2) : []).map((reply, idx) => (
+                  <TouchableOpacity
+                    key={`reply-${idx}`}
+                    style={styles.quickReplyChip}
+                    onPress={() => onQuickReply?.(reply)}
+                  >
+                    <Text style={styles.quickReplyText} numberOfLines={1}>
+                      {reply.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </>
             )}
 
             {/* Mic button - always rightmost, press and hold to talk */}
@@ -768,6 +791,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#6366F1",
     fontWeight: "500",
+  },
+  actionableItemChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: "#FEF3C7",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#F59E0B",
+    flexShrink: 1,
+    maxWidth: 150,
+  },
+  actionableItemText: {
+    fontSize: 12,
+    color: "#92400E",
+    fontWeight: "600",
   },
   transcriptContainer: {
     flex: 1,
