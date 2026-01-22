@@ -154,7 +154,7 @@ export default function SettingsScreen() {
       "2. Go to the 'Extensions' tab at the bottom\n" +
       "3. Log in to your Expo account if needed\n" +
       "4. Tap the branch/update you want to load\n\n" +
-      "Available channels:\n• development\n• preview\n• voice-preview\n\n" +
+      "Available channels:\n• development\n• preview\n• production\n\n" +
       "Or scan a QR code from the EAS dashboard.",
       [{ text: "OK" }]
     );
@@ -1448,7 +1448,7 @@ export default function SettingsScreen() {
                         )}
                         {req.status === "completed" && req.easDashboardUrl && (
                           <Text style={styles.featureRequestReady}>
-                            Ready to test in voice-preview • Tap for details
+                            Ready to test in preview • Tap for details
                           </Text>
                         )}
                         {req.status === "failed" && req.error && (

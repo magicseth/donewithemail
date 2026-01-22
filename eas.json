@@ -12,13 +12,13 @@
       },
       "channel": "development"
     },
-    "development-voice": {
+    "development-preview": {
       "developmentClient": true,
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_CONVEX_URL": "https://cool-kingfisher-293.convex.cloud"
       },
-      "channel": "voice-preview"
+      "channel": "preview"
     },
     "preview": {
       "distribution": "internal",

@@ -153,11 +153,11 @@ async function processFeatureRequest(request: {
     console.log(`\n📦 Installing dependencies...`);
     execSync(`npm install`, { cwd: workDir, stdio: "inherit" });
 
-    // Start from voice-preview merged with main (so Claude sees all previous voice features + latest main)
-    console.log(`\n🔀 Preparing base: merging main and voice-preview...`);
-    execSync(`git fetch origin voice-preview`, { cwd: workDir, stdio: "inherit" });
-    execSync(`git checkout voice-preview`, { cwd: workDir, stdio: "inherit" });
-    execSync(`git merge origin/main -m "Merge main into voice-preview (pre-feature)"`, {
+    // Start from preview merged with main (so Claude sees all previous voice features + latest main)
+    console.log(`\n🔀 Preparing base: merging main and preview...`);
+    execSync(`git fetch origin preview`, { cwd: workDir, stdio: "inherit" });
+    execSync(`git checkout preview`, { cwd: workDir, stdio: "inherit" });
+    execSync(`git merge origin/main -m "Merge main into preview (pre-feature)"`, {
       cwd: workDir,
       stdio: "inherit"
     });
@@ -349,15 +349,15 @@ ONLY fix the exact errors listed above.`;
     await updateProgress("pushing", "Pushing feature branch...", { commitHash });
     execSync(`git push -u origin ${branchName}`, { cwd: workDir, stdio: "inherit" });
 
-    // Merge into voice-preview branch (first merge main to get latest features)
-    console.log(`\n🔀 Merging into voice-preview...`);
-    await updateProgress("merging", "Merging main into voice-preview...");
-    execSync(`git fetch origin voice-preview main`, { cwd: workDir, stdio: "inherit" });
-    execSync(`git checkout voice-preview`, { cwd: workDir, stdio: "inherit" });
+    // Merge into preview branch (first merge main to get latest features)
+    console.log(`\n🔀 Merging into preview...`);
+    await updateProgress("merging", "Merging main into preview...");
+    execSync(`git fetch origin preview main`, { cwd: workDir, stdio: "inherit" });
+    execSync(`git checkout preview`, { cwd: workDir, stdio: "inherit" });
 
-    // First merge main into voice-preview to get latest features
-    console.log(`   Merging main into voice-preview first...`);
-    execSync(`git merge origin/main -m "Merge main into voice-preview"`, {
+    // First merge main into preview to get latest features
+    console.log(`   Merging main into preview first...`);
+    execSync(`git merge origin/main -m "Merge main into preview"`, {
       cwd: workDir,
       stdio: "inherit"
     });
@@ -369,7 +369,7 @@ ONLY fix the exact errors listed above.`;
       cwd: workDir,
       stdio: "inherit"
     });
-    execSync(`git push origin voice-preview`, { cwd: workDir, stdio: "inherit" });
+    execSync(`git push origin preview`, { cwd: workDir, stdio: "inherit" });
 
     // Deploy Convex changes
     console.log(`\n☁️ Deploying Convex...`);

@@ -295,7 +295,7 @@ export default defineSchema({
       v.literal("cloning"),           // Cloning repo
       v.literal("implementing"),      // Claude Code working
       v.literal("pushing"),           // Pushing feature branch
-      v.literal("merging"),           // Merging to voice-preview
+      v.literal("merging"),           // Merging to preview
       v.literal("deploying_backend"), // Running convex dev --once
       v.literal("uploading"),         // Running EAS update
       v.literal("ready")              // Ready for testing
