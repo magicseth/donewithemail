@@ -19,6 +19,7 @@ import {
 import { router } from "expo-router";
 import { useAuth } from "../../lib/authContext";
 import { useDemoMode } from "../../lib/demoModeContext";
+import { useTheme, ThemeName, themeDisplayNames } from "../../lib/themeContext";
 import { useQuery, useAction, useMutation } from "convex/react";
 import * as Updates from "expo-updates";
 import Constants from "expo-constants";
@@ -30,6 +31,7 @@ import { ChangelogModal, ChangelogEntry } from "../../components/ChangelogModal"
 export default function SettingsScreen() {
   const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
   const { isDemoMode, enterDemoMode, exitDemoMode } = useDemoMode();
+  const { themeName, setTheme, colors } = useTheme();
   const [autoProcess, setAutoProcess] = useState(true);
   const [urgencyThreshold, setUrgencyThreshold] = useState(80);
   const [isResummarizing, setIsResummarizing] = useState(false);
@@ -803,6 +805,26 @@ export default function SettingsScreen() {
     }
   }, [isAuthenticated]);
 
+  // Helper function for theme preview colors
+  const getThemePreviewStyle = (theme: ThemeName) => {
+    switch (theme) {
+      case "system":
+        return { backgroundColor: "#F5F5F5", borderColor: "#1a1a1a" };
+      case "light":
+        return { backgroundColor: "#FFFFFF", borderColor: "#6366F1" };
+      case "dark":
+        return { backgroundColor: "#1E1E1E", borderColor: "#818CF8" };
+      case "midnight":
+        return { backgroundColor: "#0F0F23", borderColor: "#A78BFA" };
+      case "ocean":
+        return { backgroundColor: "#F0F7FF", borderColor: "#0EA5E9" };
+      case "forest":
+        return { backgroundColor: "#F0FDF4", borderColor: "#22C55E" };
+      default:
+        return { backgroundColor: "#FFFFFF", borderColor: "#6366F1" };
+    }
+  };
+
   if (!isAuthenticated && !isDemoMode) {
     const { width, height } = Dimensions.get("window");
 
@@ -901,17 +923,17 @@ export default function SettingsScreen() {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Demo Mode Banner */}
       {isDemoMode && (
         <View style={styles.section}>
-          <View style={styles.demoBanner}>
-            <Text style={styles.demoBannerTitle}>🎭 Demo Mode</Text>
-            <Text style={styles.demoBannerText}>
+          <View style={[styles.demoBanner, { backgroundColor: colors.card }]}>
+            <Text style={[styles.demoBannerTitle, { color: colors.text }]}>Demo Mode</Text>
+            <Text style={[styles.demoBannerText, { color: colors.textSecondary }]}>
               You're exploring with sample data. Sign in to use your real Gmail account.
             </Text>
             <TouchableOpacity
-              style={styles.exitDemoButton}
+              style={[styles.exitDemoButton, { backgroundColor: colors.primary }]}
               onPress={() => {
                 exitDemoMode();
                 router.replace("/(tabs)/settings");
@@ -926,21 +948,21 @@ export default function SettingsScreen() {
       {/* Account Section */}
       {!isDemoMode && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <View style={styles.card}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Account</Text>
+          <View style={[styles.card, { backgroundColor: colors.card }]}>
             <View style={styles.profileRow}>
-              <View style={styles.avatar}>
+              <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
                 <Text style={styles.avatarText}>
                   {user?.firstName?.[0] || user?.email?.[0]?.toUpperCase() || "?"}
                 </Text>
               </View>
               <View style={styles.profileInfo}>
-                <Text style={styles.profileName}>
+                <Text style={[styles.profileName, { color: colors.text }]}>
                   {user?.firstName && user?.lastName
                     ? `${user.firstName} ${user.lastName}`
                     : user?.email || "User"}
                 </Text>
-                <Text style={styles.profileEmail}>{user?.email || ""}</Text>
+                <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>{user?.email || ""}</Text>
               </View>
             </View>
           </View>
@@ -950,16 +972,16 @@ export default function SettingsScreen() {
       {/* Connected Accounts Section */}
       {!isDemoMode && (
         <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Email Accounts</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Email Accounts</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
           {/* Gmail Accounts */}
           {gmailAccounts && gmailAccounts.length > 0 ? (
             <>
               {gmailAccounts.map((account: any, index: number) => (
                 <View key={account._id}>
-                  {index > 0 && <View style={styles.divider} />}
+                  {index > 0 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
                   <View style={styles.providerRow}>
-                    <View style={styles.providerIcon}>
+                    <View style={[styles.providerIcon, { backgroundColor: colors.borderLight }]}>
                       {account.avatarUrl ? (
                         <Image
                           source={{ uri: account.avatarUrl }}
@@ -971,20 +993,20 @@ export default function SettingsScreen() {
                     </View>
                     <View style={styles.providerInfo}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={styles.providerName}>
+                        <Text style={[styles.providerName, { color: colors.text }]}>
                           {account.displayName || account.email}
                         </Text>
                         {account.isPrimary && (
-                          <View style={styles.primaryBadge}>
+                          <View style={[styles.primaryBadge, { backgroundColor: colors.success }]}>
                             <Text style={styles.primaryBadgeText}>Primary</Text>
                           </View>
                         )}
                       </View>
-                      <Text style={styles.providerEmail}>
+                      <Text style={[styles.providerEmail, { color: colors.textSecondary }]}>
                         {account.email}
                       </Text>
                       {account.lastSyncAt && (
-                        <Text style={styles.providerDetail}>
+                        <Text style={[styles.providerDetail, { color: colors.textTertiary }]}>
                           Last synced: {new Date(account.lastSyncAt).toLocaleString()}
                         </Text>
                       )}
@@ -1075,19 +1097,19 @@ export default function SettingsScreen() {
       {/* Subscriptions Section */}
       {!isDemoMode && (
         <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Email Management</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Email Management</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
           <TouchableOpacity
             style={styles.aboutRow}
             onPress={() => router.push("/subscriptions")}
           >
             <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Manage Subscriptions</Text>
-              <Text style={styles.settingDescription}>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>Manage Subscriptions</Text>
+              <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
                 Unsubscribe from newsletters and mailing lists
               </Text>
             </View>
-            <Text style={styles.aboutArrow}>→</Text>
+            <Text style={[styles.aboutArrow, { color: colors.textTertiary }]}>→</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1096,33 +1118,33 @@ export default function SettingsScreen() {
       {/* AI Usage & Costs Section */}
       {!isDemoMode && myCosts && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>AI Usage</Text>
-          <View style={styles.card}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>AI Usage</Text>
+          <View style={[styles.card, { backgroundColor: colors.card }]}>
             <View style={styles.costRow}>
               <View style={styles.costItem}>
-                <Text style={styles.costLabel}>AI Models</Text>
-                <Text style={styles.costValue}>
+                <Text style={[styles.costLabel, { color: colors.textSecondary }]}>AI Models</Text>
+                <Text style={[styles.costValue, { color: colors.text }]}>
                   {myCosts.aiCosts?.totalAmount != null ? `$${myCosts.aiCosts.totalAmount.toFixed(4)}` : "$0.00"}
                 </Text>
-                <Text style={styles.costCount}>
+                <Text style={[styles.costCount, { color: colors.textTertiary }]}>
                   {myCosts.aiCosts?.count ?? 0} calls
                 </Text>
               </View>
-              <View style={styles.costDivider} />
+              <View style={[styles.costDivider, { backgroundColor: colors.border }]} />
               <View style={styles.costItem}>
-                <Text style={styles.costLabel}>Tools</Text>
-                <Text style={styles.costValue}>
+                <Text style={[styles.costLabel, { color: colors.textSecondary }]}>Tools</Text>
+                <Text style={[styles.costValue, { color: colors.text }]}>
                   {myCosts.toolCosts?.totalAmount != null ? `$${myCosts.toolCosts.totalAmount.toFixed(4)}` : "$0.00"}
                 </Text>
-                <Text style={styles.costCount}>
+                <Text style={[styles.costCount, { color: colors.textTertiary }]}>
                   {myCosts.toolCosts?.count ?? 0} calls
                 </Text>
               </View>
             </View>
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
             <View style={styles.totalCostRow}>
-              <Text style={styles.totalCostLabel}>Total AI Cost</Text>
-              <Text style={styles.totalCostValue}>
+              <Text style={[styles.totalCostLabel, { color: colors.text }]}>Total AI Cost</Text>
+              <Text style={[styles.totalCostValue, { color: colors.primary }]}>
                 ${myCosts.totalCost != null ? myCosts.totalCost.toFixed(4) : "0.0000"}
               </Text>
             </View>
@@ -1130,38 +1152,77 @@ export default function SettingsScreen() {
         </View>
       )}
 
+      {/* Appearance Section */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Appearance</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>Theme</Text>
+              <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
+                Choose your preferred color theme
+              </Text>
+            </View>
+          </View>
+          <View style={styles.themeGrid}>
+            {(["system", "light", "dark", "midnight", "ocean", "forest"] as ThemeName[]).map((theme) => (
+              <TouchableOpacity
+                key={theme}
+                style={[
+                  styles.themeOption,
+                  { borderColor: colors.border },
+                  themeName === theme && { borderColor: colors.primary, borderWidth: 2 },
+                ]}
+                onPress={() => setTheme(theme)}
+              >
+                <View style={[styles.themePreview, getThemePreviewStyle(theme)]} />
+                <Text
+                  style={[
+                    styles.themeOptionText,
+                    { color: colors.text },
+                    themeName === theme && { color: colors.primary, fontWeight: "600" },
+                  ]}
+                >
+                  {themeDisplayNames[theme]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </View>
+
       {/* AI Settings Section */}
       {!isDemoMode && (
         <View style={styles.section}>
-        <Text style={styles.sectionTitle}>AI Settings</Text>
-        <View style={styles.card}>
+        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>AI Settings</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Auto-process emails</Text>
-              <Text style={styles.settingDescription}>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>Auto-process emails</Text>
+              <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
                 Automatically summarize and score new emails
               </Text>
             </View>
             <Switch
               value={autoProcess}
               onValueChange={setAutoProcess}
-              trackColor={{ true: "#6366F1" }}
+              trackColor={{ true: colors.primary }}
             />
           </View>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>
                 Urgency notification threshold
               </Text>
-              <Text style={styles.settingDescription}>
+              <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
                 Get notified for emails with urgency score above{" "}
                 {urgencyThreshold}
               </Text>
             </View>
-            <Text style={styles.thresholdValue}>{urgencyThreshold}</Text>
+            <Text style={[styles.thresholdValue, { color: colors.primary }]}>{urgencyThreshold}</Text>
           </View>
 
           <View style={styles.thresholdButtons}>
@@ -1170,15 +1231,16 @@ export default function SettingsScreen() {
                 key={value}
                 style={[
                   styles.thresholdButton,
-                  urgencyThreshold === value && styles.thresholdButtonActive,
+                  { backgroundColor: colors.borderLight },
+                  urgencyThreshold === value && { backgroundColor: colors.primary },
                 ]}
                 onPress={() => setUrgencyThreshold(value)}
               >
                 <Text
                   style={[
                     styles.thresholdButtonText,
-                    urgencyThreshold === value &&
-                      styles.thresholdButtonTextActive,
+                    { color: colors.textSecondary },
+                    urgencyThreshold === value && { color: "#fff" },
                   ]}
                 >
                   {value}
@@ -2180,6 +2242,32 @@ const styles = StyleSheet.create({
   },
   thresholdButtonTextActive: {
     color: "#fff",
+  },
+  themeGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    padding: 12,
+    paddingTop: 0,
+    gap: 10,
+  },
+  themeOption: {
+    width: "30%",
+    alignItems: "center",
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    backgroundColor: "transparent",
+  },
+  themePreview: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 3,
+    marginBottom: 6,
+  },
+  themeOptionText: {
+    fontSize: 12,
+    textAlign: "center",
   },
   aboutRow: {
     flexDirection: "row",

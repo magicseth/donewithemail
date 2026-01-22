@@ -10,6 +10,7 @@ import * as Updates from "expo-updates";
 import { AuthProvider, useAuth } from "../lib/authContext";
 import { AuthErrorProvider } from "../lib/AuthErrorBoundary";
 import { DemoModeProvider } from "../lib/demoModeContext";
+import { ThemeProvider } from "../lib/themeContext";
 import { usePushNotifications } from "../hooks/usePushNotifications";
 import { getLastAuthRefreshSignal } from "../lib/authSignal";
 import * as SecureStore from "expo-secure-store";
@@ -326,7 +327,8 @@ export default function RootLayout() {
       <ConvexProviderWithAuth client={convex} useAuth={useAuthAdapter}>
         <AuthProvider>
           <DemoModeProvider>
-            <AuthErrorHandler>
+            <ThemeProvider>
+              <AuthErrorHandler>
               <AuthenticatedFeaturesWrapper>
                 <Stack
                   screenOptions={{
@@ -363,7 +365,8 @@ export default function RootLayout() {
                   />
                 </Stack>
               </AuthenticatedFeaturesWrapper>
-            </AuthErrorHandler>
+              </AuthErrorHandler>
+            </ThemeProvider>
           </DemoModeProvider>
         </AuthProvider>
       </ConvexProviderWithAuth>

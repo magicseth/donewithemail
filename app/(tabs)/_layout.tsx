@@ -2,6 +2,7 @@ import { Tabs } from "expo-router";
 import { View, Text, StyleSheet } from "react-native";
 import { useAuth } from "../../lib/authContext";
 import { useDemoMode } from "../../lib/demoModeContext";
+import { useTheme } from "../../lib/themeContext";
 import { SignInScreen } from "../../components/SignInScreen";
 import { AddFeatureButton } from "../../components/AddFeatureButton";
 
@@ -27,6 +28,7 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
 export default function TabsLayout() {
   const { isAuthenticated, isLoading } = useAuth();
   const { isDemoMode } = useDemoMode();
+  const { colors } = useTheme();
 
   // Show sign-in screen when not authenticated and not in demo mode
   if (!isLoading && !isAuthenticated && !isDemoMode) {
@@ -36,13 +38,13 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: "#6366F1",
-        tabBarInactiveTintColor: "#999",
-        tabBarStyle: styles.tabBar,
+        tabBarActiveTintColor: colors.tabBarActive,
+        tabBarInactiveTintColor: colors.tabBarInactive,
+        tabBarStyle: [styles.tabBar, { backgroundColor: colors.tabBar, borderTopColor: colors.tabBarBorder }],
         tabBarLabelStyle: styles.tabLabel,
         headerShown: true,
-        headerStyle: styles.header,
-        headerTitleStyle: styles.headerTitle,
+        headerStyle: [styles.header, { backgroundColor: colors.headerBackground, borderBottomColor: colors.border }],
+        headerTitleStyle: [styles.headerTitle, { color: colors.headerText }],
         headerRight: () => <AddFeatureButton />,
       }}
     >
