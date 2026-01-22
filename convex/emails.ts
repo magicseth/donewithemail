@@ -1719,6 +1719,46 @@ export const untriagedMyEmail = authedMutation({
 });
 
 /**
+ * Batch untriage multiple emails (undo batch triage action)
+ */
+export const batchUntriagedMyEmails = authedMutation({
+  args: {
+    emailIds: v.array(v.id("emails")),
+  },
+  handler: async (ctx, args): Promise<{ untriaged: number; errors: string[] }> => {
+    const errors: string[] = [];
+    let untriaged = 0;
+
+    for (const emailId of args.emailIds) {
+      try {
+        const email = await ctx.db.get(emailId);
+        if (!email) {
+          errors.push(`Email ${emailId} not found`);
+          continue;
+        }
+        if (email.userId !== ctx.userId) {
+          errors.push(`Email ${emailId} does not belong to you`);
+          continue;
+        }
+
+        await ctx.db.patch(emailId, {
+          isTriaged: false,
+          triageAction: undefined,
+          triagedAt: undefined,
+          isPunted: undefined,
+        });
+
+        untriaged++;
+      } catch (err) {
+        errors.push(`Failed to untriage ${emailId}: ${err instanceof Error ? err.message : "Unknown error"}`);
+      }
+    }
+
+    return { untriaged, errors };
+  },
+});
+
+/**
  * Toggle punt state for an email during batch triage
  * Punted emails will be marked as reply_needed when category is marked done
  */

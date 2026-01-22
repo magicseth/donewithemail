@@ -422,6 +422,12 @@ export declare const api: {
       { senderEmail: string },
       any
     >;
+    batchUntriagedMyEmails: FunctionReference<
+      "mutation",
+      "public",
+      { emailIds: Id<"emails">[] },
+      any
+    >;
     untriagedMyEmail: FunctionReference<
       "mutation",
       "public",

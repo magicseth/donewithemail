@@ -121,6 +121,7 @@ export function BatchTriageView({
     acceptCalendar,
     unsubscribe,
     untriage,
+    batchUntriage,
     clearSenderCache,
     processingCategory,
     acceptingIds,
@@ -192,32 +193,38 @@ export function BatchTriageView({
     message: string;
     type: "success" | "error" | "info";
     undoEmailId?: string;
+    undoEmailIds?: string[];
   } | null>(null);
   const toastTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info", undoEmailId?: string) => {
+  const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info", undoEmailId?: string, undoEmailIds?: string[]) => {
     // Clear existing timeout
     if (toastTimeoutRef.current) {
       clearTimeout(toastTimeoutRef.current);
     }
-    setToast({ message, type, undoEmailId });
+    setToast({ message, type, undoEmailId, undoEmailIds });
     toastTimeoutRef.current = setTimeout(() => setToast(null), 4000);
   }, []);
 
   const handleUndo = useCallback(async () => {
-    if (toast?.undoEmailId) {
-      // Clear timeout and toast immediately
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current);
-      }
-      setToast(null);
-      try {
-        await untriage(toast.undoEmailId);
-      } catch (err) {
-        showToast("Failed to undo", "error");
-      }
+    // Clear timeout and toast immediately
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
     }
-  }, [toast?.undoEmailId, untriage, showToast]);
+    setToast(null);
+
+    try {
+      if (toast?.undoEmailIds && toast.undoEmailIds.length > 0) {
+        // Batch undo
+        await batchUntriage(toast.undoEmailIds);
+      } else if (toast?.undoEmailId) {
+        // Single undo
+        await untriage(toast.undoEmailId);
+      }
+    } catch (err) {
+      showToast("Failed to undo", "error");
+    }
+  }, [toast?.undoEmailId, toast?.undoEmailIds, untriage, batchUntriage, showToast]);
 
   // Handle mark category done
   const handleMarkCategoryDone = useCallback(async (category: BatchCategory) => {
@@ -227,8 +234,15 @@ export function BatchTriageView({
       console.error("Batch triage errors:", result.errors);
       showToast(`${result.triaged} processed, ${result.errors.length} errors`, "error");
     } else if (result.triaged > 0) {
-      // Show celebration animation
+      // Show celebration animation with undo option
       setCelebration({ visible: true, count: result.triaged });
+      // Show toast with undo button
+      showToast(
+        `${result.triaged} email${result.triaged !== 1 ? "s" : ""} marked as done`,
+        "success",
+        undefined,
+        result.emailIds
+      );
     }
   }, [markCategoryDone, showToast]);
 
@@ -611,7 +625,7 @@ export function BatchTriageView({
           toast.type === "error" && styles.toastError,
         ]}>
           <Text style={styles.toastText}>{toast.message}</Text>
-          {toast.undoEmailId && (
+          {(toast.undoEmailId || (toast.undoEmailIds && toast.undoEmailIds.length > 0)) && (
             <TouchableOpacity style={styles.undoButton} onPress={handleUndo}>
               <Text style={styles.undoButtonText}>Undo</Text>
             </TouchableOpacity>

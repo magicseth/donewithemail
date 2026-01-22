@@ -79,11 +79,12 @@ export interface BatchTriageResult {
 
   // Actions
   togglePuntEmail: (emailId: string) => void;
-  markCategoryDone: (category: BatchCategory) => Promise<{ triaged: number; errors: string[] }>;
+  markCategoryDone: (category: BatchCategory) => Promise<{ triaged: number; errors: string[]; emailIds: string[] }>;
   markEmailDone: (emailId: string) => Promise<void>;
   acceptCalendar: (emailId: string) => Promise<void>;
   unsubscribe: (emailId: string) => Promise<void>;
   untriage: (emailId: string) => Promise<void>;
+  batchUntriage: (emailIds: string[]) => Promise<void>;
   /** Clear the sender timestamp cache - call when leaving the view */
   clearSenderCache: () => void;
 
@@ -105,6 +106,7 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
   // Mutations and actions
   const batchTriageMutation = useMutation(api.emails.batchTriageMyEmails);
   const untriageMutation = useMutation(api.emails.untriagedMyEmail);
+  const batchUntriageMutation = useMutation(api.emails.batchUntriagedMyEmails);
   const batchCalendarAction = useAction(api.calendar.batchAddToCalendar);
 
   // Local state
@@ -316,14 +318,16 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
   const markCategoryDone = useCallback(async (category: BatchCategory): Promise<{
     triaged: number;
     errors: string[];
+    emailIds: string[];
   }> => {
     if (!userEmail) {
-      return { triaged: 0, errors: ["Not signed in"] };
+      return { triaged: 0, errors: ["Not signed in"], emailIds: [] };
     }
 
     setProcessingCategory(category);
     const errors: string[] = [];
     let triaged = 0;
+    const triagedEmailIds: string[] = [];
 
     try {
       // Get emails in this category
@@ -384,6 +388,8 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
         try {
           const triageResult = await batchTriageMutation({ triageActions });
           triaged = triageResult.triaged;
+          // Store the email IDs that were successfully triaged
+          triagedEmailIds.push(...triageActions.map(a => a.emailId));
           if (triageResult.errors.length > 0) {
             errors.push(...triageResult.errors);
           }
@@ -405,7 +411,7 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
       setProcessingCategory(null);
     }
 
-    return { triaged, errors };
+    return { triaged, errors, emailIds: triagedEmailIds };
   }, [userEmail, categoriesData, puntedEmails, batchCalendarAction, batchTriageMutation]);
 
   // Accept a single calendar event
@@ -478,6 +484,11 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
     await untriageMutation({ emailId: emailId as Id<"emails"> });
   }, [untriageMutation]);
 
+  // Batch untriage multiple emails (undo batch triage action)
+  const batchUntriage = useCallback(async (emailIds: string[]) => {
+    await batchUntriageMutation({ emailIds: emailIds.map(id => id as Id<"emails">) });
+  }, [batchUntriageMutation]);
+
   return {
     categories: categoriesData,
     total: batchPreview?.total ?? 0,
@@ -490,6 +501,7 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
     acceptCalendar,
     unsubscribe,
     untriage,
+    batchUntriage,
     clearSenderCache,
     processingCategory,
     acceptingIds,

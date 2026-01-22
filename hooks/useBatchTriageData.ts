@@ -109,7 +109,7 @@ export function useBatchTriageData(userEmail: string | undefined, sessionStart?:
   const markCategoryDone = useCallback(
     async (category: BatchCategory) => {
       if (!isDemoMode) {
-        return { triaged: 0, errors: [] };
+        return { triaged: 0, errors: [], emailIds: [] };
       }
 
       setProcessingCategory(category);
@@ -119,14 +119,16 @@ export function useBatchTriageData(userEmail: string | undefined, sessionStart?:
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       let triagedCount = 0;
+      const triagedEmailIds: string[] = [];
       categoryEmails.forEach((email) => {
         const action = puntedEmails.has(email._id) ? "reply_needed" : "done";
         triageEmail(email._id, action);
         triagedCount++;
+        triagedEmailIds.push(email._id);
       });
 
       setProcessingCategory(null);
-      return { triaged: triagedCount, errors: [] };
+      return { triaged: triagedCount, errors: [], emailIds: triagedEmailIds };
     },
     [isDemoMode, demoCategories, puntedEmails, triageEmail]
   );
@@ -200,6 +202,16 @@ export function useBatchTriageData(userEmail: string | undefined, sessionStart?:
     // No-op in demo mode
   }, []);
 
+  const batchUntriage = useCallback(
+    async (emailIds: string[]) => {
+      // In demo mode, we don't have proper untriage - just no-op
+      if (isDemoMode) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+    },
+    [isDemoMode]
+  );
+
   if (isDemoMode) {
     const total = Object.values(demoCategories).reduce((sum, arr) => sum + arr.length, 0);
 
@@ -214,6 +226,7 @@ export function useBatchTriageData(userEmail: string | undefined, sessionStart?:
       acceptCalendar,
       unsubscribe,
       untriage,
+      batchUntriage,
       clearSenderCache,
       processingCategory,
       acceptingIds,
