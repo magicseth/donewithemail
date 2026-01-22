@@ -31,12 +31,12 @@ export const inboxStyles = StyleSheet.create({
     backgroundColor: "#6366F1",
     borderColor: "#6366F1",
   },
-  modeToggleText: {
+  modeToggleButtonText: {
     fontSize: 13,
     fontWeight: "500",
     color: "#666",
   },
-  modeToggleTextActive: {
+  modeToggleButtonTextActive: {
     color: "#fff",
   },
   swipeHintContainer: {
@@ -88,6 +88,17 @@ export const inboxStyles = StyleSheet.create({
   headerRefreshButtonText: {
     color: "#6366F1",
     fontSize: 15,
+    fontWeight: "600",
+  },
+  headerModeToggle: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#EEF2FF",
+  },
+  headerModeToggleText: {
+    color: "#6366F1",
+    fontSize: 14,
     fontWeight: "600",
   },
   loadingContainer: {
