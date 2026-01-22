@@ -193,6 +193,12 @@ export declare const api: {
       any
     >;
     getMyVIPContacts: FunctionReference<"query", "public", {}, any>;
+    searchMyContacts: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; query: string },
+      any
+    >;
     updateFact: FunctionReference<
       "mutation",
       "public",

@@ -44,10 +44,26 @@ export default function ComposeScreen() {
   const [isSending, setIsSending] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [showAccountPicker, setShowAccountPicker] = useState(false);
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [autocompleteQuery, setAutocompleteQuery] = useState("");
 
   const isReply = Boolean(replyTo);
   const hasAutoFilledRef = useRef(false);
   const hasAutoSelectedAccountRef = useRef(false);
+
+  // Get the current word being typed for autocomplete
+  // For comma-separated emails, get the last part after the last comma
+  const currentEmailInput = useMemo(() => {
+    const parts = to.split(",");
+    const lastPart = parts[parts.length - 1].trim();
+    return lastPart;
+  }, [to]);
+
+  // Search contacts for autocomplete
+  const contactSuggestions = useQuery(
+    api.contacts.searchMyContacts,
+    currentEmailInput.length >= 1 ? { query: currentEmailInput, limit: 5 } : "skip"
+  );
 
   // Query linked gmail accounts
   const linkedGmailAccounts = useQuery(api.gmailAccounts.getMyGmailAccounts) as GmailAccount[] | undefined;
@@ -206,6 +222,27 @@ export default function ComposeScreen() {
     }
   }, [originalEmail?.suggestedReply]);
 
+  // Handle selecting an autocomplete suggestion
+  const handleSelectContact = useCallback((email: string) => {
+    // Replace the current word (last part after comma) with the selected email
+    const parts = to.split(",").map((p) => p.trim()).filter(Boolean);
+    if (parts.length > 0) {
+      parts[parts.length - 1] = email;
+    } else {
+      parts.push(email);
+    }
+    setTo(parts.join(", ") + ", ");
+    setShowAutocomplete(false);
+  }, [to]);
+
+  // Handle To field changes
+  const handleToChange = useCallback((text: string) => {
+    setTo(text);
+    // Show autocomplete if typing (not just selecting)
+    const lastPart = text.split(",").pop()?.trim() || "";
+    setShowAutocomplete(lastPart.length >= 1);
+  }, []);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <Stack.Screen options={screenOptions} />
@@ -263,19 +300,54 @@ export default function ComposeScreen() {
             </>
           )}
 
-          {/* To field */}
+          {/* To field with autocomplete */}
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>To:</Text>
             <TextInput
               style={styles.fieldInput}
               value={to}
-              onChangeText={setTo}
+              onChangeText={handleToChange}
+              onFocus={() => setShowAutocomplete(currentEmailInput.length >= 1)}
+              onBlur={() => setTimeout(() => setShowAutocomplete(false), 200)}
               placeholder="recipient@example.com"
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
             />
           </View>
+
+          {/* Autocomplete suggestions */}
+          {showAutocomplete && contactSuggestions && contactSuggestions.length > 0 && (
+            <View style={styles.autocompleteContainer}>
+              {contactSuggestions.map((contact: { email: string; name?: string; avatarUrl?: string }, index: number) => (
+                <TouchableOpacity
+                  key={contact.email + index}
+                  style={styles.autocompleteItem}
+                  onPress={() => handleSelectContact(contact.email)}
+                >
+                  {contact.avatarUrl ? (
+                    <Image source={{ uri: contact.avatarUrl }} style={styles.autocompleteAvatar} />
+                  ) : (
+                    <View style={styles.autocompleteAvatarPlaceholder}>
+                      <Text style={styles.autocompleteAvatarText}>
+                        {contact.email.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.autocompleteTextContainer}>
+                    {contact.name && (
+                      <Text style={styles.autocompleteName} numberOfLines={1}>
+                        {contact.name}
+                      </Text>
+                    )}
+                    <Text style={styles.autocompleteEmail} numberOfLines={1}>
+                      {contact.email}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           <View style={styles.divider} />
 
@@ -553,5 +625,58 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#6366F1",
     fontWeight: "600",
+  },
+  autocompleteContainer: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  autocompleteItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  autocompleteAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 10,
+  },
+  autocompleteAvatarPlaceholder: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#6366F1",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 10,
+  },
+  autocompleteAvatarText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  autocompleteTextContainer: {
+    flex: 1,
+  },
+  autocompleteName: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#1a1a1a",
+  },
+  autocompleteEmail: {
+    fontSize: 13,
+    color: "#666",
   },
 });
