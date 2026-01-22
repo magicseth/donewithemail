@@ -69,7 +69,11 @@ export function ChangelogModal({ visible, changelogs, onClose }: ChangelogModalP
             Here's what changed since you last opened the app
           </Text>
 
-          <ScrollView style={styles.changelogList} showsVerticalScrollIndicator={true}>
+          <ScrollView
+            style={styles.changelogList}
+            contentContainerStyle={styles.changelogListContent}
+            showsVerticalScrollIndicator={true}
+          >
             {changelogs.map((changelog) => (
               <View key={changelog._id} style={styles.changelogItem}>
                 <View style={styles.changelogHeader}>
@@ -119,6 +123,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 5,
+    // Ensure flexbox layout works on iOS
+    flexDirection: "column",
   },
   modalTitle: {
     fontSize: 24,
@@ -132,8 +138,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   changelogList: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
     marginBottom: 20,
+    minHeight: 100,
+  },
+  changelogListContent: {
+    flexGrow: 1,
   },
   changelogItem: {
     marginBottom: 20,
