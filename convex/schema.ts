@@ -172,11 +172,19 @@ export default defineSchema({
 
     // OAuth tokens (ENCRYPTED)
     accessToken: piiField(),
-    refreshToken: v.optional(piiField()), // Optional if using WorkOS refresh
+    refreshToken: v.optional(piiField()), // Google refresh token (for gmail_oauth accounts)
     tokenExpiresAt: v.number(),
 
     // WorkOS session refresh token (if this account was linked via WorkOS)
     workosRefreshToken: v.optional(piiField()),
+
+    // Authentication source - determines how to refresh tokens
+    // workos: Refresh via WorkOS API (primary account from WorkOS OAuth)
+    // gmail_oauth: Refresh via Google API directly (linked additional accounts)
+    authSource: v.optional(v.union(
+      v.literal("workos"),
+      v.literal("gmail_oauth")
+    )),
 
     // Account metadata
     isPrimary: v.boolean(), // Primary account (first one connected)

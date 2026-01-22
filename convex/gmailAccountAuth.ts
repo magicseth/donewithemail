@@ -137,6 +137,10 @@ export const storeGmailAccount = mutation({
     expiresIn: v.number(),
     displayName: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),
+    // Authentication source - determines how to refresh tokens
+    authSource: v.optional(v.union(v.literal("workos"), v.literal("gmail_oauth"))),
+    // WorkOS refresh token (only for authSource: "workos")
+    workosRefreshToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -164,6 +168,8 @@ export const storeGmailAccount = mutation({
       throw new Error("User not found");
     }
 
+    const pii = await encryptedPii.forUser(ctx, user._id);
+
     // Check if this Gmail account is already linked
     const existing = await ctx.db
       .query("gmailAccounts")
@@ -174,18 +180,27 @@ export const storeGmailAccount = mutation({
 
     if (existing) {
       // Update existing account with new tokens
-      const pii = await encryptedPii.forUser(ctx, user._id);
-      await ctx.db.patch(existing._id, {
+      const updates: Record<string, any> = {
         accessToken: await pii.encrypt(args.accessToken),
-        refreshToken: args.refreshToken
-          ? await pii.encrypt(args.refreshToken)
-          : undefined,
         tokenExpiresAt: Date.now() + args.expiresIn * 1000,
         displayName: args.displayName
           ? await pii.encrypt(args.displayName)
           : undefined,
         avatarUrl: args.avatarUrl,
-      });
+      };
+
+      // Update auth source and related tokens if provided
+      if (args.authSource) {
+        updates.authSource = args.authSource;
+      }
+      if (args.refreshToken) {
+        updates.refreshToken = await pii.encrypt(args.refreshToken);
+      }
+      if (args.workosRefreshToken) {
+        updates.workosRefreshToken = await pii.encrypt(args.workosRefreshToken);
+      }
+
+      await ctx.db.patch(existing._id, updates);
       return existing._id;
     }
 
@@ -198,7 +213,6 @@ export const storeGmailAccount = mutation({
     const isPrimary = existingAccounts.length === 0;
 
     // Create new Gmail account
-    const pii = await encryptedPii.forUser(ctx, user._id);
     const accountId = await ctx.db.insert("gmailAccounts", {
       userId: user._id,
       email: args.email,
@@ -212,6 +226,10 @@ export const storeGmailAccount = mutation({
         ? await pii.encrypt(args.displayName)
         : undefined,
       avatarUrl: args.avatarUrl,
+      authSource: args.authSource ?? "gmail_oauth", // Default to gmail_oauth for linked accounts
+      workosRefreshToken: args.workosRefreshToken
+        ? await pii.encrypt(args.workosRefreshToken)
+        : undefined,
       createdAt: Date.now(),
     });
 
@@ -220,6 +238,7 @@ export const storeGmailAccount = mutation({
 });
 
 // Internal mutation for storing Gmail account (called from action with userId)
+// This is used for linking additional Gmail accounts via direct Google OAuth
 export const storeGmailAccountInternal = internalMutation({
   args: {
     userId: v.id("users"),
@@ -231,6 +250,8 @@ export const storeGmailAccountInternal = internalMutation({
     avatarUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+
     // Check if this Gmail account is already linked
     const existing = await ctx.db
       .query("gmailAccounts")
@@ -241,7 +262,6 @@ export const storeGmailAccountInternal = internalMutation({
 
     if (existing) {
       // Update existing account with new tokens
-      const pii = await encryptedPii.forUser(ctx, args.userId);
       await ctx.db.patch(existing._id, {
         accessToken: await pii.encrypt(args.accessToken),
         refreshToken: args.refreshToken
@@ -252,6 +272,8 @@ export const storeGmailAccountInternal = internalMutation({
           ? await pii.encrypt(args.displayName)
           : undefined,
         avatarUrl: args.avatarUrl,
+        // This is always gmail_oauth since it's linked via direct Google OAuth
+        authSource: "gmail_oauth",
       });
       return existing._id;
     }
@@ -264,8 +286,7 @@ export const storeGmailAccountInternal = internalMutation({
 
     const isPrimary = existingAccounts.length === 0;
 
-    // Create new Gmail account
-    const pii = await encryptedPii.forUser(ctx, args.userId);
+    // Create new Gmail account - authSource is gmail_oauth since linked via direct Google OAuth
     const accountId = await ctx.db.insert("gmailAccounts", {
       userId: args.userId,
       email: args.email,
@@ -279,6 +300,7 @@ export const storeGmailAccountInternal = internalMutation({
         ? await pii.encrypt(args.displayName)
         : undefined,
       avatarUrl: args.avatarUrl,
+      authSource: "gmail_oauth",
       createdAt: Date.now(),
     });
 

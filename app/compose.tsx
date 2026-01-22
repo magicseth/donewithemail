@@ -65,27 +65,8 @@ export default function ComposeScreen() {
     currentEmailInput.length >= 1 ? { query: currentEmailInput, limit: 5 } : "skip"
   );
 
-  // Query linked gmail accounts
-  const linkedGmailAccounts = useQuery(api.gmailAccounts.getMyGmailAccounts) as GmailAccount[] | undefined;
-
-  // Combine main user account with linked accounts
-  // The main WorkOS account can also send emails
-  const gmailAccounts = useMemo(() => {
-    if (!user?.email) return linkedGmailAccounts;
-
-    const mainAccount: GmailAccount = {
-      _id: "main" as Id<"gmailAccounts">,
-      email: user.email,
-      isPrimary: true,
-      avatarUrl: user.avatarUrl,
-    };
-
-    if (!linkedGmailAccounts) return [mainAccount];
-
-    // Filter out the main account if it's already in linked accounts (shouldn't happen but be safe)
-    const filtered = linkedGmailAccounts.filter(a => a.email !== user.email);
-    return [mainAccount, ...filtered];
-  }, [linkedGmailAccounts, user?.email]);
+  // Query Gmail accounts - all accounts now stored in gmailAccounts table
+  const gmailAccounts = useQuery(api.gmailAccounts.getMyGmailAccounts) as GmailAccount[] | undefined;
 
   // Get AI suggested reply if available (only if no body was passed)
   const originalEmail = useQuery(

@@ -591,11 +591,13 @@ export declare const api: {
       "public",
       {
         accessToken: string;
+        authSource?: "workos" | "gmail_oauth";
         avatarUrl?: string;
         displayName?: string;
         email: string;
         expiresIn: number;
         refreshToken?: string;
+        workosRefreshToken?: string;
       },
       any
     >;
@@ -1242,6 +1244,12 @@ export declare const internal: {
       { accountId: Id<"gmailAccounts"> },
       any
     >;
+    updateGmailAccountAuthSource: FunctionReference<
+      "mutation",
+      "internal",
+      { accountId: Id<"gmailAccounts">; authSource: "workos" | "gmail_oauth" },
+      any
+    >;
     updateGmailAccountLastSync: FunctionReference<
       "mutation",
       "internal",
@@ -1256,6 +1264,17 @@ export declare const internal: {
         accountId: Id<"gmailAccounts">;
         refreshToken?: string;
         tokenExpiresAt: number;
+      },
+      any
+    >;
+    updateGmailAccountWorkOSTokens: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        accessToken: string;
+        accountId: Id<"gmailAccounts">;
+        tokenExpiresAt: number;
+        workosRefreshToken?: string;
       },
       any
     >;
@@ -1506,6 +1525,44 @@ export declare const internal: {
       },
       any
     >;
+    populateAuthSource: {
+      migrateUserTokensToGmailAccounts: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun?: boolean;
+          fn?: string;
+          next?: Array<string>;
+        },
+        any
+      >;
+      populateGmailAccountAuthSource: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun?: boolean;
+          fn?: string;
+          next?: Array<string>;
+        },
+        any
+      >;
+      run: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          batchSize?: number;
+          cursor?: string | null;
+          dryRun?: boolean;
+          fn?: string;
+          next?: Array<string>;
+        },
+        any
+      >;
+    };
     run: FunctionReference<
       "mutation",
       "internal",

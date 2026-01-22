@@ -645,6 +645,7 @@ export type DataModel = {
         k: string;
         v: number;
       };
+      authSource?: "workos" | "gmail_oauth";
       avatarUrl?: string;
       createdAt: number;
       displayName?: {
@@ -685,6 +686,7 @@ export type DataModel = {
       | "accessToken.i"
       | "accessToken.k"
       | "accessToken.v"
+      | "authSource"
       | "avatarUrl"
       | "createdAt"
       | "displayName"

@@ -50,6 +50,7 @@ export const decryptGmailAccountTokens = internalMutation({
       accessToken,
       refreshToken,
       workosRefreshToken,
+      authSource: account.authSource,
       tokenExpiresAt: account.tokenExpiresAt,
       lastSyncAt: account.lastSyncAt,
     };
@@ -106,6 +107,48 @@ export const getUserIdFromAccount = internalQuery({
   handler: async (ctx, args) => {
     const account = await ctx.db.get(args.accountId);
     return account?.userId ?? null;
+  },
+});
+
+// Update Gmail account tokens after WorkOS refresh (includes new WorkOS refresh token)
+export const updateGmailAccountWorkOSTokens = internalMutation({
+  args: {
+    accountId: v.id("gmailAccounts"),
+    accessToken: v.string(),
+    tokenExpiresAt: v.number(),
+    workosRefreshToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const account = await ctx.db.get(args.accountId);
+    if (!account) {
+      throw new Error("Account not found");
+    }
+
+    const pii = await encryptedPii.forUser(ctx, account.userId);
+
+    const updates: Record<string, any> = {
+      accessToken: await pii.encrypt(args.accessToken),
+      tokenExpiresAt: args.tokenExpiresAt,
+    };
+
+    if (args.workosRefreshToken) {
+      updates.workosRefreshToken = await pii.encrypt(args.workosRefreshToken);
+    }
+
+    await ctx.db.patch(args.accountId, updates);
+  },
+});
+
+// Update authSource for a Gmail account (for fixing migration issues)
+export const updateGmailAccountAuthSource = internalMutation({
+  args: {
+    accountId: v.id("gmailAccounts"),
+    authSource: v.union(v.literal("workos"), v.literal("gmail_oauth")),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.accountId, {
+      authSource: args.authSource,
+    });
   },
 });
 
