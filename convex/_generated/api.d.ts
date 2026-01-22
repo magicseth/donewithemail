@@ -576,6 +576,15 @@ export declare const api: {
       any
     >;
   };
+  gmailAccounts: {
+    getGmailAccountByEmail: FunctionReference<
+      "query",
+      "public",
+      { email: string },
+      any
+    >;
+    getMyGmailAccounts: FunctionReference<"query", "public", {}, any>;
+  };
   gmailAuth: {
     exchangeCodeForTokens: FunctionReference<
       "action",
@@ -644,6 +653,7 @@ export declare const api: {
       "public",
       {
         body: string;
+        gmailAccountId?: Id<"gmailAccounts">;
         replyToMessageId?: string;
         subject: string;
         to: string;
@@ -656,6 +666,7 @@ export declare const api: {
       "public",
       {
         body: string;
+        gmailAccountId?: Id<"gmailAccounts">;
         inReplyTo?: string;
         subject: string;
         to: string;
@@ -1175,6 +1186,12 @@ export declare const internal: {
   };
   gmailAccountHelpers: {
     decryptGmailAccountTokens: FunctionReference<
+      "mutation",
+      "internal",
+      { accountId: Id<"gmailAccounts"> },
+      any
+    >;
+    getGmailAccountById: FunctionReference<
       "mutation",
       "internal",
       { accountId: Id<"gmailAccounts"> },
