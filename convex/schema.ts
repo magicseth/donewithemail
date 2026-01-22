@@ -10,6 +10,9 @@ export default defineSchema({
     provider: v.union(v.literal("gmail"), v.literal("outlook"), v.literal("imap")),
     userId: v.id("users"),
 
+    // Gmail account reference (for multiple Gmail accounts support)
+    gmailAccountId: v.optional(v.id("gmailAccounts")),
+
     // Email metadata (ENCRYPTED)
     from: v.id("contacts"),
     fromName: v.optional(piiField()), // Sender name as it appeared in this email's From header
@@ -162,6 +165,33 @@ export default defineSchema({
     .index("by_user_email", ["userId", "email"])
     .index("by_user_last_email", ["userId", "lastEmailAt"]),
 
+  // Gmail accounts - support multiple Gmail accounts per user
+  gmailAccounts: defineTable({
+    userId: v.id("users"),
+    email: v.string(), // Gmail address (keep unencrypted for display)
+
+    // OAuth tokens (ENCRYPTED)
+    accessToken: piiField(),
+    refreshToken: v.optional(piiField()), // Optional if using WorkOS refresh
+    tokenExpiresAt: v.number(),
+
+    // WorkOS session refresh token (if this account was linked via WorkOS)
+    workosRefreshToken: v.optional(piiField()),
+
+    // Account metadata
+    isPrimary: v.boolean(), // Primary account (first one connected)
+    displayName: v.optional(piiField()), // User's name from Google
+    avatarUrl: v.optional(v.string()),
+
+    // Last sync timestamp for this account
+    lastSyncAt: v.optional(v.number()),
+
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_email", ["userId", "email"])
+    .index("by_email", ["email"]),
+
   users: defineTable({
     // WorkOS user ID (optional for Gmail-only auth)
     workosId: v.optional(v.string()),
@@ -173,7 +203,8 @@ export default defineSchema({
     // These are sensitive but needed for auth operations - encrypt them
     workosRefreshToken: v.optional(piiField()),
 
-    // Direct Gmail OAuth tokens (obtained from WorkOS oauth_tokens)
+    // DEPRECATED: Legacy Gmail tokens (use gmailAccounts table instead)
+    // Kept for backward compatibility during migration
     gmailAccessToken: v.optional(piiField()),
     gmailRefreshToken: v.optional(piiField()), // Legacy - now using WorkOS refresh
     gmailTokenExpiresAt: v.optional(v.number()),

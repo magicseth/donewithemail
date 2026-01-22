@@ -165,6 +165,12 @@ export default function SettingsScreen() {
     user?.email ? { email: user.email } : "skip"
   );
 
+  // Gmail accounts
+  const gmailAccounts = useQuery(api.gmailAccountAuth.listGmailAccounts);
+  const removeGmailAccountMutation = useMutation(api.gmailAccountAuth.removeGmailAccount);
+  const setPrimaryAccountMutation = useMutation(api.gmailAccountAuth.setPrimaryAccount);
+  const [removingGmailAccountId, setRemovingGmailAccountId] = useState<string | null>(null);
+
   // IMAP accounts
   const [imapAccounts, setImapAccounts] = useState<Array<{ email: string; host?: string; port?: number }>>([]);
   const [isLoadingImapAccounts, setIsLoadingImapAccounts] = useState(false);
@@ -185,6 +191,60 @@ export default function SettingsScreen() {
         .finally(() => setIsLoadingImapAccounts(false));
     }
   }, [isDemoMode, user, hasLoadedImapAccounts]);
+
+  const handleRemoveGmailAccount = async (accountId: string, email: string) => {
+    const doRemove = async () => {
+      setRemovingGmailAccountId(accountId);
+      try {
+        await removeGmailAccountMutation({ accountId: accountId as any });
+      } catch (error: any) {
+        console.error("Remove Gmail account error:", error);
+        const errorMsg = error.message || "Failed to remove account";
+        if (Platform.OS === "web") {
+          window.alert(`Error: ${errorMsg}`);
+        } else {
+          Alert.alert("Error", errorMsg);
+        }
+      } finally {
+        setRemovingGmailAccountId(null);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm(`Remove Gmail account ${email}?`);
+      if (confirmed) {
+        await doRemove();
+      }
+    } else {
+      Alert.alert(
+        "Remove Gmail Account",
+        `Remove ${email}?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Remove", style: "destructive", onPress: doRemove },
+        ]
+      );
+    }
+  };
+
+  const handleSetPrimaryAccount = async (accountId: string, email: string) => {
+    try {
+      await setPrimaryAccountMutation({ accountId: accountId as any });
+      if (Platform.OS === "web") {
+        window.alert(`${email} is now your primary account`);
+      } else {
+        Alert.alert("Primary Account", `${email} is now your primary account`);
+      }
+    } catch (error: any) {
+      console.error("Set primary account error:", error);
+      const errorMsg = error.message || "Failed to set primary account";
+      if (Platform.OS === "web") {
+        window.alert(`Error: ${errorMsg}`);
+      } else {
+        Alert.alert("Error", errorMsg);
+      }
+    }
+  };
 
   const handleRemoveImap = async (email: string) => {
     const doRemove = async () => {
@@ -775,42 +835,96 @@ export default function SettingsScreen() {
       {/* Connected Accounts Section */}
       {!isDemoMode && (
         <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Email Access</Text>
+        <Text style={styles.sectionTitle}>Email Accounts</Text>
         <View style={styles.card}>
-          <View style={styles.providerRow}>
-            <View style={styles.providerIcon}>
-              <Text style={styles.providerIconText}>📧</Text>
-            </View>
-            <View style={styles.providerInfo}>
-              <Text style={styles.providerName}>Gmail</Text>
-              <Text style={styles.providerEmail}>
-                {isGmailConnected === undefined
-                  ? "Checking connection..."
-                  : isGmailConnected
-                    ? user?.email
-                    : "Not connected"}
-              </Text>
-            </View>
-            {isGmailConnected === undefined ? (
+          {/* Gmail Accounts */}
+          {gmailAccounts && gmailAccounts.length > 0 ? (
+            <>
+              {gmailAccounts.map((account, index) => (
+                <View key={account._id}>
+                  {index > 0 && <View style={styles.divider} />}
+                  <View style={styles.providerRow}>
+                    <View style={styles.providerIcon}>
+                      {account.avatarUrl ? (
+                        <img
+                          src={account.avatarUrl}
+                          style={{ width: 40, height: 40, borderRadius: 20 }}
+                          alt="avatar"
+                        />
+                      ) : (
+                        <Text style={styles.providerIconText}>📧</Text>
+                      )}
+                    </View>
+                    <View style={styles.providerInfo}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={styles.providerName}>
+                          {account.displayName || account.email}
+                        </Text>
+                        {account.isPrimary && (
+                          <View style={styles.primaryBadge}>
+                            <Text style={styles.primaryBadgeText}>Primary</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.providerEmail}>
+                        {account.email}
+                      </Text>
+                      {account.lastSyncAt && (
+                        <Text style={styles.providerDetail}>
+                          Last synced: {new Date(account.lastSyncAt).toLocaleString()}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={{ gap: 8 }}>
+                      {!account.isPrimary && (
+                        <TouchableOpacity
+                          style={styles.smallButton}
+                          onPress={() => handleSetPrimaryAccount(account._id, account.email)}
+                        >
+                          <Text style={styles.smallButtonText}>Make Primary</Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity
+                        style={styles.removeButton}
+                        onPress={() => handleRemoveGmailAccount(account._id, account.email)}
+                        disabled={removingGmailAccountId === account._id}
+                      >
+                        {removingGmailAccountId === account._id ? (
+                          <ActivityIndicator size="small" color="#EF4444" />
+                        ) : (
+                          <Text style={styles.removeButtonText}>Remove</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </>
+          ) : gmailAccounts === undefined ? (
+            <View style={styles.providerRow}>
               <ActivityIndicator size="small" color="#6366F1" />
-            ) : isGmailConnected ? (
-              <View style={styles.connectedBadge}>
-                <Text style={styles.connectedText}>Connected</Text>
+              <Text style={{ marginLeft: 12, color: "#666" }}>Loading Gmail accounts...</Text>
+            </View>
+          ) : (
+            <View style={styles.providerRow}>
+              <View style={styles.providerIcon}>
+                <Text style={styles.providerIconText}>📧</Text>
               </View>
-            ) : (
-              <View style={styles.notConnectedBadge}>
-                <Text style={styles.notConnectedText}>Not Connected</Text>
+              <View style={styles.providerInfo}>
+                <Text style={styles.providerName}>Gmail</Text>
+                <Text style={styles.providerEmail}>No accounts connected</Text>
               </View>
-            )}
-          </View>
-          {isGmailConnected === false && (
-            <View style={styles.helpText}>
-              <Text style={styles.helpTextContent}>
-                Gmail access is granted during sign-in. Sign out and sign in
-                again, making sure to accept all Gmail permissions when prompted.
-              </Text>
             </View>
           )}
+
+          {/* Add Gmail Account Button */}
+          {gmailAccounts && gmailAccounts.length > 0 && <View style={styles.divider} />}
+          <TouchableOpacity
+            style={styles.addAccountButton}
+            onPress={() => router.push("/link-gmail")}
+          >
+            <Text style={styles.addAccountButtonText}>+ Add Gmail Account</Text>
+          </TouchableOpacity>
 
           {/* IMAP Accounts */}
           {imapAccounts.map((account, index) => (
@@ -1689,6 +1803,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: "#EF4444",
+  },
+  smallButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "#F0F1FF",
+    borderWidth: 1,
+    borderColor: "#6366F1",
+  },
+  smallButtonText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#6366F1",
+  },
+  primaryBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: "#10B981",
+  },
+  primaryBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#fff",
   },
   addAccountButton: {
     padding: 16,
