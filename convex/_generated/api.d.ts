@@ -337,7 +337,7 @@ export declare const api: {
       "public",
       {
         triageActions: Array<{
-          action: "done" | "reply_needed" | "delegated";
+          action: "done" | "reply_needed";
           emailId: Id<"emails">;
         }>;
       },
