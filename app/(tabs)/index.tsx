@@ -12,7 +12,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
 } from "react-native";
-import { router, Stack } from "expo-router";
+import { router, Stack, useFocusEffect } from "expo-router";
 import { useAction } from "convex/react";
 import { useAuth } from "../../lib/authContext";
 import { useDemoMode } from "../../lib/demoModeContext";
@@ -23,7 +23,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { api } from "../../convex/_generated/api";
 import { useGmail } from "../../hooks/useGmail";
 import { useVoiceRecording } from "../../hooks/useDailyVoice";
-import { BatchTriageView, VoiceEmailData } from "../../components/batch";
+import { BatchTriageView, VoiceEmailData, BatchTriageViewRef } from "../../components/batch";
 
 import {
   ReplyDraft,
@@ -89,6 +89,7 @@ export default function InboxScreen() {
   // Store the email being recorded so we don't lose it if it gets triaged during recording
   const [pendingTranscriptEmail, setPendingTranscriptEmail] = useState<VoiceEmailData | null>(null);
   const [replyDraft, setReplyDraft] = useState<ReplyDraft | null>(null);
+  const batchTriageRef = useRef<BatchTriageViewRef>(null);
 
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
@@ -107,6 +108,13 @@ export default function InboxScreen() {
 
   const { playStopSound } = useMicSounds();
   const sendEmailAction = useAction(api.gmailSend.sendReply);
+
+  // Close any open category when tab is focused (e.g., user taps inbox tab while category is open)
+  useFocusEffect(
+    useCallback(() => {
+      batchTriageRef.current?.closeCategory();
+    }, [])
+  );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -283,6 +291,7 @@ export default function InboxScreen() {
         )}
 
         <BatchTriageView
+          ref={batchTriageRef}
           userEmail={userEmail}
           sessionStart={sessionStart}
           onRefresh={handleRefresh}

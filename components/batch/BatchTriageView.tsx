@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useRef, forwardRef } from "react";
+import React, { useCallback, useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import {
   View,
   Text,
@@ -95,20 +95,27 @@ interface BatchTriageViewProps {
   transcript?: string;
 }
 
-export function BatchTriageView({
-  userEmail,
-  sessionStart,
-  onRefresh,
-  refreshing = false,
-  onQuickReply,
-  onMicPressIn,
-  onMicPressOut,
-  onSendTranscript,
-  recordingForId,
-  isRecordingConnected = false,
-  pendingTranscriptForId,
-  transcript,
-}: BatchTriageViewProps) {
+export interface BatchTriageViewRef {
+  closeCategory: () => void;
+}
+
+export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewProps>((
+  {
+    userEmail,
+    sessionStart,
+    onRefresh,
+    refreshing = false,
+    onQuickReply,
+    onMicPressIn,
+    onMicPressOut,
+    onSendTranscript,
+    recordingForId,
+    isRecordingConnected = false,
+    pendingTranscriptForId,
+    transcript,
+  },
+  ref
+) => {
   // Get safe area insets for toast positioning
   const insets = useSafeAreaInsets();
 
@@ -142,6 +149,13 @@ export function BatchTriageView({
     visible: false,
     count: 0,
   });
+
+  // Expose closeCategory method to parent via ref
+  useImperativeHandle(ref, () => ({
+    closeCategory: () => {
+      setExpandedCategory(null);
+    },
+  }), []);
 
   // Handle category expand/collapse - only one at a time
   const handleToggleExpand = useCallback((category: BatchCategory) => {
@@ -648,7 +662,7 @@ export function BatchTriageView({
       />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
