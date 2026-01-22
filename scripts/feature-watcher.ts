@@ -90,7 +90,7 @@ if (!EXPO_PUBLIC_CONVEX_URL) {
   console.error("Warning: EXPO_PUBLIC_CONVEX_URL not found. Convex deploy may fail.");
 }
 if (!ANTHROPIC_API_KEY) {
-  console.error("Warning: ANTHROPIC_API_KEY not found. Claude Code may not work.");
+  console.log("Note: ANTHROPIC_API_KEY not set. Feature combining will be skipped.");
 }
 
 // Set env var so AI SDK can find it, then create client
@@ -101,7 +101,8 @@ console.log("🔄 Feature Request Watcher starting...");
 console.log(`   Convex URL: ${convexUrl}`);
 console.log(`   Convex Deployment: ${CONVEX_DEPLOYMENT || "(not set)"}`);
 console.log(`   Expo Public Convex URL: ${EXPO_PUBLIC_CONVEX_URL || "(not set)"}`);
-console.log(`   Anthropic API Key: ${ANTHROPIC_API_KEY ? "✓ found" : "(not set)"}`);
+console.log(`   Anthropic API Key: ${ANTHROPIC_API_KEY ? "✓ found (for feature combining)" : "(not set - combining disabled)"}`);
+console.log(`   Claude Code: Using subscription (no API key passed)`);
 console.log(`   Repo: ${REPO_URL}`);
 console.log(`   Worktree base: ${WORKTREE_BASE}`);
 console.log("");
@@ -500,8 +501,8 @@ function runClaudeCode(cwd: string, prompt: string): Promise<ClaudeResult> {
         PATH: process.env.PATH,
         // Force color output
         FORCE_COLOR: "1",
-        // Pass Anthropic API key for Claude Code
-        ANTHROPIC_API_KEY: ANTHROPIC_API_KEY || "",
+        // Don't pass ANTHROPIC_API_KEY - let Claude Code use the subscription instead
+        // This avoids untracked API costs
       },
     });
 
