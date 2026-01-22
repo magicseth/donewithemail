@@ -20,15 +20,25 @@ export const storeImapCredentials = mutation({
   handler: async (ctx, args) => {
     // Get authenticated user ID
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity || !identity.email) {
+    if (!identity) {
       throw new Error("Not authenticated");
     }
 
-    // Find user by identity
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", identity.email!))
-      .first();
+    // Get user by workosId first, then fall back to email
+    const workosId = identity.subject;
+    let user = workosId
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+          .first()
+      : null;
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
 
     if (!user) {
       throw new Error("User not found");
@@ -89,15 +99,25 @@ export const removeImapAccount = mutation({
   handler: async (ctx, args) => {
     // Get authenticated user ID
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity || !identity.email) {
+    if (!identity) {
       throw new Error("Not authenticated");
     }
 
-    // Find user by identity
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", identity.email!))
-      .first();
+    // Get user by workosId first, then fall back to email
+    const workosId = identity.subject;
+    let user = workosId
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+          .first()
+      : null;
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
 
     if (!user) {
       throw new Error("User not found");
@@ -140,15 +160,25 @@ export const listImapAccounts = mutation({
   handler: async (ctx) => {
     // Get authenticated user ID
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity || !identity.email) {
+    if (!identity) {
       throw new Error("Not authenticated");
     }
 
-    // Find user by identity
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", identity.email!))
-      .first();
+    // Get user by workosId first, then fall back to email
+    const workosId = identity.subject;
+    let user = workosId
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+          .first()
+      : null;
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
 
     if (!user || !user.connectedProviders) {
       return [];

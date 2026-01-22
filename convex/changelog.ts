@@ -61,10 +61,21 @@ export const updateLastOpened = mutation({
       throw new Error("Not authenticated");
     }
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", identity.email!))
-      .unique();
+    // Get user by workosId first, then fall back to email
+    const workosId = identity.subject;
+    let user = workosId
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+          .first()
+      : null;
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
 
     if (!user) {
       throw new Error("User not found");
@@ -87,10 +98,21 @@ export const getLastOpened = query({
       return null;
     }
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", identity.email!))
-      .unique();
+    // Get user by workosId first, then fall back to email
+    const workosId = identity.subject;
+    let user = workosId
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+          .first()
+      : null;
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
 
     if (!user) {
       return null;

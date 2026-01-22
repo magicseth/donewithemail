@@ -35,7 +35,10 @@ export const getEmailAttachments = query({
       .collect();
 
     // Get PII helper for decrypting filenames
-    const pii = await encryptedPii.forUser(ctx, email.userId);
+    const pii = await encryptedPii.forUserQuery(ctx, email.userId);
+    if (!pii) {
+      throw new Error("Encryption key not found");
+    }
 
     // Decrypt filenames and generate storage URLs
     const decryptedAttachments = await Promise.all(

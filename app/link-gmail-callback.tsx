@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, Platform } from "react-native";
-import { useAction } from "convex/react";
+import { useAction, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { router, useLocalSearchParams } from "expo-router";
 
@@ -9,9 +9,30 @@ export default function LinkGmailCallbackScreen() {
   const [message, setMessage] = useState("Linking Gmail account...");
   const params = useLocalSearchParams();
   const linkGmailAccount = useAction(api.gmailAccountAuth.linkGmailAccount);
+  const processedRef = useRef(false);
+  const { isAuthenticated, isLoading } = useConvexAuth();
 
   useEffect(() => {
     const handleCallback = async () => {
+      // Wait for auth to be ready
+      if (isLoading) {
+        return;
+      }
+
+      // Prevent duplicate calls - OAuth codes are single-use
+      if (processedRef.current) {
+        return;
+      }
+
+      if (!isAuthenticated) {
+        setStatus("error");
+        setMessage("Not authenticated. Please sign in first.");
+        setTimeout(() => router.replace("/(tabs)/settings"), 3000);
+        return;
+      }
+
+      processedRef.current = true;
+
       try {
         const code = params.code as string;
         const error = params.error as string;
@@ -58,7 +79,7 @@ export default function LinkGmailCallbackScreen() {
     };
 
     handleCallback();
-  }, [params]);
+  }, [params, isLoading, isAuthenticated]);
 
   return (
     <View style={styles.container}>

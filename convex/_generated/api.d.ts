@@ -1173,6 +1173,22 @@ export declare const internal: {
       any
     >;
   };
+  gmailAccountAuth: {
+    storeGmailAccountInternal: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        accessToken: string;
+        avatarUrl?: string;
+        displayName?: string;
+        email: string;
+        expiresIn: number;
+        refreshToken?: string;
+        userId: Id<"users">;
+      },
+      any
+    >;
+  };
   gmailAccountHelpers: {
     decryptGmailAccountTokens: FunctionReference<
       "mutation",

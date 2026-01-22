@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { action, mutation, query } from "./_generated/server";
-import { api } from "./_generated/api";
+import { action, mutation, query, internalMutation } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import { encryptedPii } from "./pii";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
@@ -8,12 +8,14 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
 
 // Gmail scopes needed for the app
 const GMAIL_SCOPES = [
-  "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/gmail.send",
-  "https://www.googleapis.com/auth/gmail.modify",
-  "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
+  "https://www.googleapis.com/auth/calendar",
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/contacts.readonly",
+  "https://www.googleapis.com/auth/gmail.modify",
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
 ].join(" ");
 
 // Generate Google OAuth URL for linking additional Gmail accounts
@@ -40,6 +42,22 @@ export const linkGmailAccount = action({
     redirectUri: v.string(),
   },
   handler: async (ctx, args) => {
+    // First, get the currently logged-in user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get user from database
+    const user = await ctx.runQuery(internal.users.getUserForAuth, {
+      workosId: identity.subject,
+      email: identity.email,
+    });
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
     // Exchange code for tokens
     const response = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -68,7 +86,7 @@ export const linkGmailAccount = action({
       throw new Error("No access token in response");
     }
 
-    // Get user info from Google
+    // Get user info from Google (for the NEW Gmail account being linked)
     const userInfoResponse = await fetch(
       "https://www.googleapis.com/oauth2/v2/userinfo",
       {
@@ -89,8 +107,9 @@ export const linkGmailAccount = action({
       throw new Error("No email in user info");
     }
 
-    // Store the Gmail account
-    const accountId = await ctx.runMutation(api.gmailAccountAuth.storeGmailAccount, {
+    // Store the Gmail account linked to the CURRENT user (not the Gmail account's email)
+    const accountId = await ctx.runMutation(internal.gmailAccountAuth.storeGmailAccountInternal, {
+      userId: user._id,
       email: gmailEmail,
       accessToken,
       refreshToken,
@@ -125,11 +144,21 @@ export const storeGmailAccount = mutation({
       throw new Error("Not authenticated");
     }
 
-    // Get user by email
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", identity.email!))
-      .first();
+    // Get user by workosId first, then fall back to email
+    const workosId = identity.subject;
+    let user = workosId
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+          .first()
+      : null;
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
 
     if (!user) {
       throw new Error("User not found");
@@ -190,6 +219,73 @@ export const storeGmailAccount = mutation({
   },
 });
 
+// Internal mutation for storing Gmail account (called from action with userId)
+export const storeGmailAccountInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    email: v.string(),
+    accessToken: v.string(),
+    refreshToken: v.optional(v.string()),
+    expiresIn: v.number(),
+    displayName: v.optional(v.string()),
+    avatarUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Check if this Gmail account is already linked
+    const existing = await ctx.db
+      .query("gmailAccounts")
+      .withIndex("by_user_email", (q) =>
+        q.eq("userId", args.userId).eq("email", args.email)
+      )
+      .first();
+
+    if (existing) {
+      // Update existing account with new tokens
+      const pii = await encryptedPii.forUser(ctx, args.userId);
+      await ctx.db.patch(existing._id, {
+        accessToken: await pii.encrypt(args.accessToken),
+        refreshToken: args.refreshToken
+          ? await pii.encrypt(args.refreshToken)
+          : undefined,
+        tokenExpiresAt: Date.now() + args.expiresIn * 1000,
+        displayName: args.displayName
+          ? await pii.encrypt(args.displayName)
+          : undefined,
+        avatarUrl: args.avatarUrl,
+      });
+      return existing._id;
+    }
+
+    // Check if this is the first Gmail account
+    const existingAccounts = await ctx.db
+      .query("gmailAccounts")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    const isPrimary = existingAccounts.length === 0;
+
+    // Create new Gmail account
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+    const accountId = await ctx.db.insert("gmailAccounts", {
+      userId: args.userId,
+      email: args.email,
+      accessToken: await pii.encrypt(args.accessToken),
+      refreshToken: args.refreshToken
+        ? await pii.encrypt(args.refreshToken)
+        : undefined,
+      tokenExpiresAt: Date.now() + args.expiresIn * 1000,
+      isPrimary,
+      displayName: args.displayName
+        ? await pii.encrypt(args.displayName)
+        : undefined,
+      avatarUrl: args.avatarUrl,
+      createdAt: Date.now(),
+    });
+
+    return accountId;
+  },
+});
+
 // List all Gmail accounts for the current user
 export const listGmailAccounts = query({
   args: {},
@@ -199,10 +295,21 @@ export const listGmailAccounts = query({
       return [];
     }
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", identity.email!))
-      .first();
+    // Get user by workosId first, then fall back to email
+    const workosId = identity.subject;
+    let user = workosId
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+          .first()
+      : null;
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
 
     if (!user) {
       return [];
@@ -214,7 +321,10 @@ export const listGmailAccounts = query({
       .collect();
 
     // Decrypt display names for UI
-    const pii = await encryptedPii.forUser(ctx, user._id);
+    const pii = await encryptedPii.forUserQuery(ctx, user._id);
+    if (!pii) {
+      return [];
+    }
     const decrypted = await Promise.all(
       accounts.map(async (acc) => {
         let displayName: string | undefined;
