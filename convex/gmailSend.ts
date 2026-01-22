@@ -85,40 +85,87 @@ export const sendEmail = action({
     subject: v.string(),
     body: v.string(),
     replyToMessageId: v.optional(v.string()),
+    gmailAccountId: v.optional(v.id("gmailAccounts")), // Which Gmail account to send from
   },
   handler: async (ctx, args): Promise<{ messageId: string; threadId: string }> => {
-    // Get user's Gmail tokens
-    type UserWithGmail = {
-      _id: any;
-      gmailAccessToken?: string;
-      gmailRefreshToken?: string;
-      gmailTokenExpiresAt?: number;
-    };
-    const user: UserWithGmail | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
-      email: args.userEmail,
-    });
+    // Get Gmail account tokens (either from specified account or fall back to legacy user tokens)
+    let accessToken: string;
+    let refreshToken: string | undefined;
+    let tokenExpiresAt: number | undefined;
+    let fromEmail: string;
 
-    if (!user?.gmailAccessToken) {
-      throw new Error("Gmail not connected");
+    if (args.gmailAccountId) {
+      // Use specified Gmail account
+      const account = await ctx.runMutation((internal.gmailAccountHelpers as any).getGmailAccountById, {
+        accountId: args.gmailAccountId,
+      });
+
+      if (!account?.accessToken) {
+        throw new Error("Gmail account not found or not connected");
+      }
+
+      accessToken = account.accessToken;
+      refreshToken = account.refreshToken ?? undefined;
+      tokenExpiresAt = account.tokenExpiresAt;
+      fromEmail = account.email;
+    } else {
+      // Fall back to legacy user tokens
+      type UserWithGmail = {
+        _id: any;
+        gmailAccessToken?: string;
+        gmailRefreshToken?: string;
+        gmailTokenExpiresAt?: number;
+      };
+      const user: UserWithGmail | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+        email: args.userEmail,
+      });
+
+      if (!user?.gmailAccessToken) {
+        throw new Error("Gmail not connected");
+      }
+
+      accessToken = user.gmailAccessToken;
+      refreshToken = user.gmailRefreshToken;
+      tokenExpiresAt = user.gmailTokenExpiresAt;
+      fromEmail = args.userEmail;
     }
 
     // Refresh token if needed
-    let accessToken: string = user.gmailAccessToken;
-    if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
+    if (refreshToken && tokenExpiresAt) {
       const refreshed = await refreshTokenIfNeeded(
-        user.gmailAccessToken,
-        user.gmailRefreshToken,
-        user.gmailTokenExpiresAt
+        accessToken,
+        refreshToken,
+        tokenExpiresAt
       );
       accessToken = refreshed.accessToken;
 
       // Save refreshed token to database
       if (refreshed.refreshed) {
-        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
-          userId: user._id,
-          accessToken: refreshed.accessToken,
-          expiresAt: refreshed.expiresAt,
-        });
+        if (args.gmailAccountId) {
+          await ctx.runMutation(internal.gmailAccountHelpers.updateGmailAccountTokens, {
+            accountId: args.gmailAccountId,
+            accessToken: refreshed.accessToken,
+            tokenExpiresAt: refreshed.expiresAt,
+          });
+        } else {
+          // Legacy user tokens - need to get user._id again
+          type UserWithGmail = {
+            _id: any;
+            gmailAccessToken?: string;
+            gmailRefreshToken?: string;
+            gmailTokenExpiresAt?: number;
+          };
+          const user: UserWithGmail | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+            email: args.userEmail,
+          });
+          if (user) {
+            await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+              userId: user._id,
+              accessToken: refreshed.accessToken,
+              expiresAt: refreshed.expiresAt,
+            });
+          }
+        }
       }
     }
 
@@ -146,7 +193,7 @@ export const sendEmail = action({
 
     // Build email message
     const rawMessage = buildEmailMessage(
-      args.userEmail,
+      fromEmail,
       args.to,
       args.subject,
       args.body,
@@ -188,40 +235,87 @@ export const sendReply = action({
     subject: v.string(),
     body: v.string(),
     inReplyTo: v.optional(v.string()), // Convex ID of the email being replied to
+    gmailAccountId: v.optional(v.id("gmailAccounts")), // Which Gmail account to send from
   },
   handler: async (ctx, args): Promise<{ messageId: string; threadId: string }> => {
-    // Get user's Gmail tokens
-    type UserWithGmail = {
-      _id: any;
-      gmailAccessToken?: string;
-      gmailRefreshToken?: string;
-      gmailTokenExpiresAt?: number;
-    };
-    const user: UserWithGmail | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
-      email: args.userEmail,
-    });
+    // Get Gmail account tokens (either from specified account or fall back to legacy user tokens)
+    let accessToken: string;
+    let refreshToken: string | undefined;
+    let tokenExpiresAt: number | undefined;
+    let fromEmail: string;
 
-    if (!user?.gmailAccessToken) {
-      throw new Error("Gmail not connected");
+    if (args.gmailAccountId) {
+      // Use specified Gmail account
+      const account = await ctx.runMutation((internal.gmailAccountHelpers as any).getGmailAccountById, {
+        accountId: args.gmailAccountId,
+      });
+
+      if (!account?.accessToken) {
+        throw new Error("Gmail account not found or not connected");
+      }
+
+      accessToken = account.accessToken;
+      refreshToken = account.refreshToken ?? undefined;
+      tokenExpiresAt = account.tokenExpiresAt;
+      fromEmail = account.email;
+    } else {
+      // Fall back to legacy user tokens
+      type UserWithGmail = {
+        _id: any;
+        gmailAccessToken?: string;
+        gmailRefreshToken?: string;
+        gmailTokenExpiresAt?: number;
+      };
+      const user: UserWithGmail | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+        email: args.userEmail,
+      });
+
+      if (!user?.gmailAccessToken) {
+        throw new Error("Gmail not connected");
+      }
+
+      accessToken = user.gmailAccessToken;
+      refreshToken = user.gmailRefreshToken;
+      tokenExpiresAt = user.gmailTokenExpiresAt;
+      fromEmail = args.userEmail;
     }
 
     // Refresh token if needed
-    let accessToken: string = user.gmailAccessToken;
-    if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
+    if (refreshToken && tokenExpiresAt) {
       const refreshed = await refreshTokenIfNeeded(
-        user.gmailAccessToken,
-        user.gmailRefreshToken,
-        user.gmailTokenExpiresAt
+        accessToken,
+        refreshToken,
+        tokenExpiresAt
       );
       accessToken = refreshed.accessToken;
 
       // Save refreshed token to database
       if (refreshed.refreshed) {
-        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
-          userId: user._id,
-          accessToken: refreshed.accessToken,
-          expiresAt: refreshed.expiresAt,
-        });
+        if (args.gmailAccountId) {
+          await ctx.runMutation(internal.gmailAccountHelpers.updateGmailAccountTokens, {
+            accountId: args.gmailAccountId,
+            accessToken: refreshed.accessToken,
+            tokenExpiresAt: refreshed.expiresAt,
+          });
+        } else {
+          // Legacy user tokens - need to get user._id again
+          type UserWithGmail = {
+            _id: any;
+            gmailAccessToken?: string;
+            gmailRefreshToken?: string;
+            gmailTokenExpiresAt?: number;
+          };
+          const user: UserWithGmail | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+            email: args.userEmail,
+          });
+          if (user) {
+            await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+              userId: user._id,
+              accessToken: refreshed.accessToken,
+              expiresAt: refreshed.expiresAt,
+            });
+          }
+        }
       }
     }
 
@@ -256,7 +350,7 @@ export const sendReply = action({
 
     // Build email message
     const rawMessage = buildEmailMessage(
-      args.userEmail,
+      fromEmail,
       args.to,
       args.subject,
       args.body,

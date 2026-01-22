@@ -108,3 +108,35 @@ export const getUserIdFromAccount = internalQuery({
     return account?.userId ?? null;
   },
 });
+
+// Get Gmail account by ID (for sending emails)
+export const getGmailAccountById = internalMutation({
+  args: {
+    accountId: v.id("gmailAccounts"),
+  },
+  handler: async (ctx, args) => {
+    const account = await ctx.db.get(args.accountId);
+    if (!account) return null;
+
+    const pii = await encryptedPii.forUser(ctx, account.userId);
+
+    let accessToken: string | null = null;
+    let refreshToken: string | null = null;
+
+    if (account.accessToken) {
+      accessToken = await pii.decrypt(account.accessToken);
+    }
+    if (account.refreshToken) {
+      refreshToken = await pii.decrypt(account.refreshToken);
+    }
+
+    return {
+      _id: account._id,
+      userId: account.userId,
+      email: account.email,
+      accessToken,
+      refreshToken,
+      tokenExpiresAt: account.tokenExpiresAt,
+    };
+  },
+});

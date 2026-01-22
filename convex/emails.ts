@@ -679,6 +679,19 @@ export const getMyEmail = authedQuery({
     );
     const summaryData = await getSummaryForEmail(ctx.db, email._id);
 
+    // Get Gmail account info if this email has one
+    let gmailAccount: { _id: string; email: string; displayName?: string } | undefined;
+    if (email.gmailAccountId) {
+      const account = await ctx.db.get(email.gmailAccountId);
+      if (account) {
+        gmailAccount = {
+          _id: account._id,
+          email: account.email,
+          displayName: account.displayName ? await encryptedPii.forUserQuery(ctx, ctx.userId).then(pii => pii?.decrypt(account.displayName!)) ?? undefined : undefined,
+        };
+      }
+    }
+
     // Get PII helper for decryption
     const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
 
@@ -789,6 +802,8 @@ export const getMyEmail = authedQuery({
       calendarEventId: summaryData?.calendarEventId,
       calendarEventLink: summaryData?.calendarEventLink,
       aiProcessedAt: summaryData?.createdAt,
+      gmailAccountId: email.gmailAccountId,
+      gmailAccount,
     };
   },
 });

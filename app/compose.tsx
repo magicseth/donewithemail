@@ -20,11 +20,12 @@ import { useAuth } from "../lib/authContext";
 import { Id } from "../convex/_generated/dataModel";
 
 export default function ComposeScreen() {
-  const { replyTo, subject: initialSubject, emailId, body: initialBody } = useLocalSearchParams<{
+  const { replyTo, subject: initialSubject, emailId, body: initialBody, gmailAccountId } = useLocalSearchParams<{
     replyTo?: string;
     subject?: string;
     emailId?: string;
     body?: string;
+    gmailAccountId?: string;
   }>();
   const { user } = useAuth();
 
@@ -32,8 +33,13 @@ export default function ComposeScreen() {
   const [subject, setSubject] = useState(initialSubject || "");
   const [body, setBody] = useState(initialBody || "");
   const [isSending, setIsSending] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | undefined>(gmailAccountId);
+  const [showAccountPicker, setShowAccountPicker] = useState(false);
 
   const isReply = Boolean(replyTo);
+
+  // Get user's Gmail accounts
+  const gmailAccounts = useQuery((api as any).gmailAccounts?.getMyGmailAccounts, user ? {} : "skip");
 
   // Get AI suggested reply if available (only if no body was passed)
   const originalEmail = useQuery(
@@ -70,12 +76,13 @@ export default function ComposeScreen() {
     setIsSending(true);
 
     try {
-      await sendEmailAction({
+      await (sendEmailAction as any)({
         userEmail: user.email,
         to: to.trim(),
         subject: subject.trim(),
         body: body.trim(),
         replyToMessageId: emailId,
+        gmailAccountId: selectedAccountId,
       });
 
       Alert.alert("Success", "Email sent!", [
@@ -177,6 +184,50 @@ export default function ComposeScreen() {
           </View>
 
           <View style={styles.divider} />
+
+          {/* From field - show only if multiple accounts */}
+          {gmailAccounts && gmailAccounts.length > 1 && (
+            <>
+              <View style={styles.fieldRow}>
+                <Text style={styles.fieldLabel}>From:</Text>
+                <TouchableOpacity
+                  style={styles.accountSelector}
+                  onPress={() => setShowAccountPicker(!showAccountPicker)}
+                >
+                  <Text style={styles.accountSelectorText}>
+                    {selectedAccountId
+                      ? gmailAccounts.find((a: any) => a._id === selectedAccountId)?.email || user?.email
+                      : user?.email}
+                  </Text>
+                  <Text style={styles.accountSelectorArrow}>▼</Text>
+                </TouchableOpacity>
+              </View>
+              {showAccountPicker && (
+                <View style={styles.accountPickerContainer}>
+                  {gmailAccounts.map((account: any) => (
+                    <TouchableOpacity
+                      key={account._id}
+                      style={[
+                        styles.accountOption,
+                        selectedAccountId === account._id && styles.accountOptionSelected,
+                      ]}
+                      onPress={() => {
+                        setSelectedAccountId(account._id);
+                        setShowAccountPicker(false);
+                      }}
+                    >
+                      <Text style={styles.accountOptionText}>{account.email}</Text>
+                      {account.isPrimary && (
+                        <Text style={styles.primaryBadge}>Primary</Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              <View style={styles.divider} />
+            </>
+          )}
+
 
           {/* Body */}
           <TextInput
@@ -314,5 +365,49 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6366F1",
     fontWeight: "500",
+  },
+  accountSelector: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  accountSelectorText: {
+    fontSize: 16,
+    color: "#1a1a1a",
+  },
+  accountSelectorArrow: {
+    fontSize: 12,
+    color: "#666",
+    marginLeft: 8,
+  },
+  accountPickerContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#F8F9FA",
+  },
+  accountOption: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  accountOptionSelected: {
+    backgroundColor: "#E8EAFF",
+    borderWidth: 1,
+    borderColor: "#6366F1",
+  },
+  accountOptionText: {
+    fontSize: 16,
+    color: "#1a1a1a",
+  },
+  primaryBadge: {
+    fontSize: 12,
+    color: "#6366F1",
+    fontWeight: "600",
   },
 });
