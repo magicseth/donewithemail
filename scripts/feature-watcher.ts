@@ -383,43 +383,79 @@ ONLY fix the exact errors listed above.`;
       },
     });
 
-    // Run EAS update on production channel
-    console.log(`\n📱 Running EAS update for production...`);
+    // Run EAS update in background (don't block next feature)
+    console.log(`\n📱 Starting EAS update for production (background)...`);
     await updateProgress("uploading", "Uploading to Expo (EAS Update)...");
-    const easOutput = execSync(
-      `npx eas update --branch production --message "Feature: ${request.transcript.slice(0, 50)}..."`,
-      { cwd: workDir, encoding: "utf-8" }
-    );
 
-    // Extract update ID and dashboard URL from output
-    const updateGroupMatch = easOutput.match(/Update group ID\s+(\S+)/);
-    const easUpdateId = updateGroupMatch ? updateGroupMatch[1] : undefined;
-    const dashboardMatch = easOutput.match(/EAS Dashboard\s+(https:\/\/\S+)/);
-    const easDashboardUrl = dashboardMatch ? dashboardMatch[1] : undefined;
-
-    // Mark as completed
-    await client.mutation(api.featureRequests.markCompleted, {
-      id: request._id as any,
-      commitHash,
-      branchName,
-      easUpdateId,
-      easUpdateMessage: `Feature: ${request.transcript.slice(0, 50)}...`,
-      easDashboardUrl,
+    // Spawn EAS update in background - completion handled asynchronously
+    const easMessage = `Feature: ${request.transcript.slice(0, 50)}...`;
+    const easProcess = spawn("npx", ["eas", "update", "--branch", "production", "--message", easMessage], {
+      cwd: workDir,
+      stdio: ["inherit", "pipe", "pipe"],
+      env: process.env,
     });
 
-    console.log(`\n🎉 Feature request completed!`);
+    let easOutput = "";
+    easProcess.stdout?.on("data", (data) => {
+      const text = data.toString();
+      easOutput += text;
+      process.stdout.write(text);
+    });
+    easProcess.stderr?.on("data", (data) => {
+      const text = data.toString();
+      easOutput += text;
+      process.stderr.write(text);
+    });
+
+    // Handle completion in background
+    easProcess.on("close", async (code) => {
+      if (code === 0) {
+        // Extract update ID and dashboard URL from output
+        const updateGroupMatch = easOutput.match(/Update group ID\s+(\S+)/);
+        const easUpdateId = updateGroupMatch ? updateGroupMatch[1] : undefined;
+        const dashboardMatch = easOutput.match(/EAS Dashboard\s+(https:\/\/\S+)/);
+        const easDashboardUrl = dashboardMatch ? dashboardMatch[1] : undefined;
+
+        // Mark as completed
+        await client.mutation(api.featureRequests.markCompleted, {
+          id: request._id as any,
+          commitHash,
+          branchName,
+          easUpdateId,
+          easUpdateMessage: easMessage,
+          easDashboardUrl,
+        });
+
+        console.log(`\n🎉 Feature request ${request._id} completed!`);
+        console.log(`   Commit: ${commitHash}`);
+        console.log(`   Branch: ${branchName}`);
+        if (easUpdateId) {
+          console.log(`   EAS Update: ${easUpdateId}`);
+        }
+        if (easDashboardUrl) {
+          console.log(`   Dashboard: ${easDashboardUrl}`);
+        }
+      } else {
+        console.error(`\n❌ EAS update failed for ${request._id} with code ${code}`);
+        await client.mutation(api.featureRequests.markFailed, {
+          id: request._id as any,
+          error: `EAS update failed with code ${code}`,
+        });
+      }
+
+      // Cleanup after EAS completes
+      console.log(`\n🧹 Cleaning up ${request._id}...`);
+      try {
+        fs.rmSync(workDir, { recursive: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    });
+
+    console.log(`\n✅ Feature ${request._id} handed off to EAS (running in background)`);
     console.log(`   Commit: ${commitHash}`);
     console.log(`   Branch: ${branchName}`);
-    if (easUpdateId) {
-      console.log(`   EAS Update: ${easUpdateId}`);
-    }
-    if (easDashboardUrl) {
-      console.log(`   Dashboard: ${easDashboardUrl}`);
-    }
-
-    // Cleanup
-    console.log(`\n🧹 Cleaning up...`);
-    fs.rmSync(workDir, { recursive: true });
+    // Don't cleanup here - let the background process do it
 
   } catch (error) {
     console.error(`\n❌ Error processing feature request:`, error);
