@@ -86,6 +86,73 @@ interface DecryptedContact {
 }
 
 /**
+ * Search contacts for autocomplete (lightweight version)
+ * Returns email, name, and avatarUrl only
+ */
+export const searchMyContacts = authedQuery({
+  args: {
+    query: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<Array<{ email: string; name?: string; avatarUrl?: string }>> => {
+    const limit = args.limit ?? 10;
+    const queryLower = args.query.toLowerCase();
+
+    // If query is empty, return recent contacts
+    if (!queryLower) {
+      const recentContacts = await ctx.db
+        .query("contacts")
+        .withIndex("by_user_last_email", (q) => q.eq("userId", ctx.userId))
+        .order("desc")
+        .take(limit);
+
+      const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+      return Promise.all(
+        recentContacts.map(async (contact) => {
+          let name: string | undefined;
+          if (pii && contact.name) {
+            name = await pii.decrypt(contact.name) ?? undefined;
+          }
+          return {
+            email: contact.email,
+            name,
+            avatarUrl: contact.avatarUrl,
+          };
+        })
+      );
+    }
+
+    // Get contacts and filter by email prefix (email is unencrypted)
+    const contacts = await ctx.db
+      .query("contacts")
+      .withIndex("by_user", (q) => q.eq("userId", ctx.userId))
+      .collect();
+
+    // Filter by email containing the query
+    const matchingContacts = contacts
+      .filter((c) => c.email.toLowerCase().includes(queryLower))
+      .slice(0, limit);
+
+    const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+
+    return Promise.all(
+      matchingContacts.map(async (contact) => {
+        let name: string | undefined;
+        if (pii && contact.name) {
+          name = await pii.decrypt(contact.name) ?? undefined;
+        }
+        return {
+          email: contact.email,
+          name,
+          avatarUrl: contact.avatarUrl,
+        };
+      })
+    );
+  },
+});
+
+/**
  * Get a contact by ID for the current user (with ownership check)
  */
 export const getMyContact = authedQuery({
