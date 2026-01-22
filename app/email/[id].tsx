@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Linking,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { useAction, useQuery } from "convex/react";
@@ -63,6 +64,7 @@ export default function EmailDetailScreen() {
       htmlLink: string;
     }>;
   }> | undefined>();
+  const [downloadingAttachments, setDownloadingAttachments] = useState<Set<string>>(new Set());
 
   const { user } = useAuth();
   const fetchEmailBody = useAction(api.gmailSync.fetchEmailBody);
@@ -70,6 +72,7 @@ export default function EmailDetailScreen() {
   const checkExistingCalendarEvents = useAction(api.calendar.checkExistingCalendarEvents);
   const checkMeetingAvailability = useAction((api.calendar as any).checkMeetingAvailability);
   const reprocessEmail = useAction(api.summarizeActions.reprocessEmail);
+  const downloadAttachment = useAction((api as any).attachments.downloadAttachment);
 
   // Look up email by Convex ID (authenticated)
   const isConvex = id ? isConvexId(id) : false;
@@ -82,9 +85,9 @@ export default function EmailDetailScreen() {
   // Use the Convex _id from the email object for mutations
   const convexId = email?._id;
 
-  // Fetch attachments for the current email
+  // Fetch attachments for this email
   const attachments = useQuery(
-    api.gmailSync.getEmailAttachments,
+    (api as any).attachments?.getEmailAttachments,
     convexId ? { emailId: convexId } : "skip"
   );
 
@@ -354,6 +357,58 @@ export default function EmailDetailScreen() {
     }
   }, [convexId, user?.email, reprocessEmail]);
 
+  const handleAttachmentPress = useCallback(async (attachmentId: string, attachmentUrl: string | null, filename: string) => {
+    if (!convexId || !user?.email) {
+      showAlert("Error", "Cannot download attachment");
+      return;
+    }
+
+    // If already have URL, just open it
+    if (attachmentUrl) {
+      try {
+        const supported = await Linking.canOpenURL(attachmentUrl);
+        if (supported) {
+          await Linking.openURL(attachmentUrl);
+        } else {
+          showAlert("Error", "Cannot open this attachment type");
+        }
+      } catch (err) {
+        console.error("Failed to open attachment:", err);
+        showAlert("Error", "Failed to open attachment");
+      }
+      return;
+    }
+
+    // Download and open
+    setDownloadingAttachments(prev => new Set(prev).add(attachmentId));
+    try {
+      const result = await downloadAttachment({
+        userEmail: user.email,
+        emailId: convexId,
+        attachmentDbId: attachmentId as Id<"attachments">,
+      });
+
+      if (result.url) {
+        const supported = await Linking.canOpenURL(result.url);
+        if (supported) {
+          await Linking.openURL(result.url);
+        } else {
+          showAlert("Downloaded", `${filename} has been downloaded`);
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to download";
+      showAlert("Error", message);
+      console.error("Failed to download attachment:", err);
+    } finally {
+      setDownloadingAttachments(prev => {
+        const next = new Set(prev);
+        next.delete(attachmentId);
+        return next;
+      });
+    }
+  }, [convexId, user?.email, downloadAttachment]);
+
   // Mock data for development
   const mockEmail: EmailCardData = {
     _id: id || "1",
@@ -541,16 +596,61 @@ export default function EmailDetailScreen() {
             );
           })
         ) : (
-          <EmailCard
-            email={displayEmail}
-            onContactPress={handleContactPress}
-            onUseReply={handleReply}
-            onAddToCalendar={handleAddToCalendar}
-            onSelectMeetingTime={handleSelectMeetingTime}
-            meetingAvailability={meetingAvailability}
-            isAddingToCalendar={isAddingToCalendar}
-            showFullContent
-          />
+          <>
+            <EmailCard
+              email={displayEmail}
+              onContactPress={handleContactPress}
+              onUseReply={handleReply}
+              onAddToCalendar={handleAddToCalendar}
+              onSelectMeetingTime={handleSelectMeetingTime}
+              meetingAvailability={meetingAvailability}
+              isAddingToCalendar={isAddingToCalendar}
+              showFullContent
+            />
+
+            {/* Attachments section */}
+            {attachments && attachments.length > 0 && (
+              <View style={styles.attachmentsSection}>
+                <Text style={styles.attachmentsSectionTitle}>
+                  Attachments ({attachments.length})
+                </Text>
+                {attachments.map((attachment: any) => {
+                  const isDownloading = downloadingAttachments.has(attachment._id);
+                  const sizeKB = Math.round(attachment.size / 1024);
+                  const sizeMB = sizeKB > 1024 ? (sizeKB / 1024).toFixed(1) : null;
+                  const sizeDisplay = sizeMB ? `${sizeMB} MB` : `${sizeKB} KB`;
+
+                  return (
+                    <TouchableOpacity
+                      key={attachment._id}
+                      style={styles.attachmentItem}
+                      onPress={() => handleAttachmentPress(attachment._id, attachment.url, attachment.filename)}
+                      disabled={isDownloading}
+                    >
+                      <View style={styles.attachmentIcon}>
+                        <Text style={styles.attachmentIconText}>📎</Text>
+                      </View>
+                      <View style={styles.attachmentInfo}>
+                        <Text style={styles.attachmentName} numberOfLines={1}>
+                          {attachment.filename}
+                        </Text>
+                        <Text style={styles.attachmentMeta}>
+                          {sizeDisplay} • {attachment.mimeType.split("/")[0]}
+                        </Text>
+                      </View>
+                      {isDownloading ? (
+                        <ActivityIndicator size="small" color="#6366F1" />
+                      ) : (
+                        <Text style={styles.attachmentDownloadIcon}>
+                          {attachment.url ? "↗️" : "⬇️"}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -686,5 +786,56 @@ const styles = StyleSheet.create({
   },
   currentEmailHighlight: {
     backgroundColor: "#F8F9FF",
+  },
+  // Attachments styles
+  attachmentsSection: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  attachmentsSectionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 12,
+  },
+  attachmentItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8F9FF",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#E8EAFF",
+  },
+  attachmentIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  attachmentIconText: {
+    fontSize: 20,
+  },
+  attachmentInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  attachmentName: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#333",
+    marginBottom: 2,
+  },
+  attachmentMeta: {
+    fontSize: 12,
+    color: "#666",
+  },
+  attachmentDownloadIcon: {
+    fontSize: 18,
   },
 });

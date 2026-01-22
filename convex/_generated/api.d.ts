@@ -20,6 +20,24 @@ import type { GenericId as Id } from "convex/values";
  * ```
  */
 export declare const api: {
+  attachments: {
+    downloadAttachment: FunctionReference<
+      "action",
+      "public",
+      {
+        attachmentDbId: Id<"attachments">;
+        emailId: Id<"emails">;
+        userEmail: string;
+      },
+      any
+    >;
+    getEmailAttachments: FunctionReference<
+      "query",
+      "public",
+      { emailId: Id<"emails"> },
+      any
+    >;
+  };
   auth: {
     authenticate: FunctionReference<"action", "public", { code: string }, any>;
     getAuthUrl: FunctionReference<
@@ -386,6 +404,12 @@ export declare const api: {
       },
       any
     >;
+    togglePuntEmail: FunctionReference<
+      "mutation",
+      "public",
+      { emailId: Id<"emails"> },
+      any
+    >;
     triageMyEmail: FunctionReference<
       "mutation",
       "public",
@@ -399,12 +423,6 @@ export declare const api: {
       any
     >;
     untriagedMyEmail: FunctionReference<
-      "mutation",
-      "public",
-      { emailId: Id<"emails"> },
-      any
-    >;
-    togglePuntEmail: FunctionReference<
       "mutation",
       "public",
       { emailId: Id<"emails"> },
@@ -871,6 +889,14 @@ export declare const api: {
  * ```
  */
 export declare const internal: {
+  attachments: {
+    getAttachmentById: FunctionReference<
+      "mutation",
+      "internal",
+      { attachmentDbId: Id<"attachments"> },
+      any
+    >;
+  };
   auth: {
     getUserIdByWorkosId: FunctionReference<
       "query",
@@ -1117,19 +1143,17 @@ export declare const internal: {
       { email: string },
       any
     >;
-    storeEmailAttachments: FunctionReference<
+    storeAttachment: FunctionReference<
       "mutation",
       "internal",
       {
-        attachments: Array<{
-          attachmentId: string;
-          contentId?: string;
-          filename: string;
-          isInline: boolean;
-          mimeType: string;
-          size: number;
-        }>;
+        attachmentId: string;
+        contentId?: string;
         emailId: Id<"emails">;
+        filename: string;
+        mimeType: string;
+        size: number;
+        storageId?: Id<"_storage">;
         userId: Id<"users">;
       },
       any
@@ -1695,6 +1719,12 @@ export declare const internal: {
       {
         actionDescription?: string;
         actionRequired?: "reply" | "action" | "fyi" | "none";
+        actionableItems?: Array<{
+          attachmentId?: string;
+          label: string;
+          type: "link" | "attachment";
+          url?: string;
+        }>;
         calendarEvent?: {
           description?: string;
           endTime?: string;
@@ -1707,7 +1737,7 @@ export declare const internal: {
         deadline?: string;
         deadlineDescription?: string;
         emailId: Id<"emails">;
-        importantAttachmentIds?: Array<Id<"emailAttachments">>;
+        importantAttachmentIds?: Array<Id<"attachments">>;
         meetingRequest?: {
           isMeetingRequest: boolean;
           proposedTimes?: Array<{ endTime: string; startTime: string }>;

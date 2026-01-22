@@ -63,17 +63,20 @@ export default defineSchema({
   })
     .index("by_email", ["emailId"]),
 
-  // Email attachments stored separately for efficient querying
-  emailAttachments: defineTable({
+  // Email attachments stored separately with files in Convex storage
+  attachments: defineTable({
     emailId: v.id("emails"),
-    filename: piiField(),
-    mimeType: v.string(),
+    userId: v.id("users"),
+    filename: piiField(), // Original filename (ENCRYPTED)
+    mimeType: v.string(), // e.g., "application/pdf", "image/png"
     size: v.number(), // Size in bytes
-    attachmentId: v.string(), // Gmail attachment ID for downloading
-    contentId: v.optional(v.string()), // For inline images (e.g., cid:xxx)
-    isInline: v.boolean(), // Whether this is an inline attachment (image in HTML)
+    storageId: v.optional(v.id("_storage")), // Reference to file in Convex storage
+    attachmentId: v.string(), // Gmail attachment ID for fetching
+    contentId: v.optional(v.string()), // For inline images (Content-ID header)
+    createdAt: v.number(),
   })
-    .index("by_email", ["emailId"]),
+    .index("by_email", ["emailId"])
+    .index("by_user", ["userId"]),
 
   // AI-generated email summaries (separate table for cleaner data model)
   emailSummaries: defineTable({
@@ -124,7 +127,7 @@ export default defineSchema({
     embedding: v.optional(v.array(v.float64())),
 
     // Important attachments (AI-identified subset of attachments worth highlighting)
-    importantAttachmentIds: v.optional(v.array(v.id("emailAttachments"))),
+    importantAttachmentIds: v.optional(v.array(v.id("attachments"))),
   })
     .index("by_email", ["emailId"])
     .index("by_deadline", ["deadline"])

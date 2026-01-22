@@ -13,7 +13,7 @@ import { Id } from "./_generated/dataModel";
 import { encryptedPii } from "./pii";
 
 // Import from extracted modules
-import { extractBody, extractAttachments } from "./gmailHelpers";
+import { extractBody, extractAttachments, type AttachmentInfo } from "./gmailHelpers";
 import {
   refreshTokenIfNeeded,
   fetchProfilePhotoUrl,
@@ -163,52 +163,6 @@ export const storeEmailInternal = internalMutation({
   },
 });
 
-// Internal mutation to store email attachments
-export const storeEmailAttachments = internalMutation({
-  args: {
-    emailId: v.id("emails"),
-    userId: v.id("users"),
-    attachments: v.array(
-      v.object({
-        filename: v.string(),
-        mimeType: v.string(),
-        size: v.number(),
-        attachmentId: v.string(),
-        contentId: v.optional(v.string()),
-        isInline: v.boolean(),
-      })
-    ),
-  },
-  handler: async (ctx, args) => {
-    // Get PII helper for encrypting filenames
-    const pii = await encryptedPii.forUser(ctx, args.userId);
-
-    // Delete any existing attachments for this email (in case of reprocessing)
-    const existingAttachments = await ctx.db
-      .query("emailAttachments")
-      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
-      .collect();
-
-    for (const attachment of existingAttachments) {
-      await ctx.db.delete(attachment._id);
-    }
-
-    // Store new attachments
-    for (const attachment of args.attachments) {
-      const encryptedFilename = await pii.encrypt(attachment.filename);
-      await ctx.db.insert("emailAttachments", {
-        emailId: args.emailId,
-        filename: encryptedFilename,
-        mimeType: attachment.mimeType,
-        size: attachment.size,
-        attachmentId: attachment.attachmentId,
-        contentId: attachment.contentId,
-        isInline: attachment.isInline,
-      });
-    }
-  },
-});
-
 // Fetch full email body on demand (for email detail view)
 export const fetchEmailBody = action({
   args: {
@@ -282,7 +236,7 @@ export const fetchEmailBody = action({
     const bodyFull = html || plain || email.bodyPreview || "";
     const isHtml = !!html;
 
-    // Extract attachments from the payload
+    // Extract attachment metadata from the payload
     const attachments = extractAttachments(data.payload);
 
     // Update the email with full body
@@ -291,12 +245,16 @@ export const fetchEmailBody = action({
       bodyFull,
     });
 
-    // Store attachments if any
-    if (attachments.length > 0) {
-      await ctx.runMutation(internal.gmailSync.storeEmailAttachments, {
+    // Store attachment metadata (without downloading the files yet)
+    for (const attachment of attachments) {
+      await ctx.runMutation(internal.gmailSync.storeAttachment, {
         emailId: args.emailId,
         userId: user._id,
-        attachments,
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        size: attachment.size,
+        attachmentId: attachment.attachmentId,
+        contentId: attachment.contentId,
       });
     }
 
@@ -335,6 +293,55 @@ export const updateEmailBody = internalMutation({
         bodyFull: encryptedBodyFull,
       });
     }
+  },
+});
+
+// Internal mutation to store attachment metadata (file data stored separately in Convex storage)
+export const storeAttachment = internalMutation({
+  args: {
+    emailId: v.id("emails"),
+    userId: v.id("users"),
+    filename: v.string(),
+    mimeType: v.string(),
+    size: v.number(),
+    attachmentId: v.string(),
+    contentId: v.optional(v.string()),
+    storageId: v.optional(v.id("_storage")),
+  },
+  handler: async (ctx, args) => {
+    // Check if attachment already exists
+    const existing = await ctx.db
+      .query("attachments")
+      .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
+      .filter((q) => q.eq(q.field("attachmentId"), args.attachmentId))
+      .first();
+
+    if (existing) {
+      // Update storageId if provided
+      if (args.storageId && !existing.storageId) {
+        await ctx.db.patch(existing._id, { storageId: args.storageId });
+      }
+      return existing._id;
+    }
+
+    // Get PII helper for encrypting filename
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+    const encryptedFilename = await pii.encrypt(args.filename);
+
+    // Insert new attachment
+    const attachmentId = await ctx.db.insert("attachments", {
+      emailId: args.emailId,
+      userId: args.userId,
+      filename: encryptedFilename,
+      mimeType: args.mimeType,
+      size: args.size,
+      attachmentId: args.attachmentId,
+      contentId: args.contentId,
+      storageId: args.storageId,
+      createdAt: Date.now(),
+    });
+
+    return attachmentId;
   },
 });
 
@@ -926,7 +933,7 @@ export const getEmailAttachments = query({
 
     // Get all attachments for this email
     const attachments = await ctx.db
-      .query("emailAttachments")
+      .query("attachments")
       .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
       .collect();
 
@@ -938,7 +945,7 @@ export const getEmailAttachments = query({
         mimeType: attachment.mimeType,
         size: attachment.size,
         attachmentId: attachment.attachmentId,
-        isInline: attachment.isInline,
+        contentId: attachment.contentId,
       }));
     }
 
@@ -950,7 +957,7 @@ export const getEmailAttachments = query({
         mimeType: attachment.mimeType,
         size: attachment.size,
         attachmentId: attachment.attachmentId,
-        isInline: attachment.isInline,
+        contentId: attachment.contentId,
       }))
     );
   },

@@ -82,7 +82,7 @@ export const getEmailForSummary = internalQuery({
 
     // Get attachments for this email
     const attachments = await ctx.db
-      .query("emailAttachments")
+      .query("attachments")
       .withIndex("by_email", (q) => q.eq("emailId", args.emailId))
       .collect();
 
@@ -148,7 +148,7 @@ export const getEmailForSummary = internalQuery({
         mimeType: att.mimeType,
         size: att.size,
         attachmentId: att.attachmentId,
-        isInline: att.isInline,
+        contentId: att.contentId,
       }))
     );
 
@@ -600,7 +600,7 @@ export const updateEmailSummary = internalMutation({
     })),
     deadline: v.optional(v.string()),
     deadlineDescription: v.optional(v.string()),
-    importantAttachmentIds: v.optional(v.array(v.id("emailAttachments"))),
+    importantAttachmentIds: v.optional(v.array(v.id("attachments"))),
   },
   handler: async (ctx, args) => {
     // Get the email to find the user for encryption

@@ -56,6 +56,52 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  attachments: {
+    document: {
+      attachmentId: string;
+      contentId?: string;
+      createdAt: number;
+      emailId: Id<"emails">;
+      filename: {
+        __encrypted: true;
+        c: string;
+        i: string;
+        k: string;
+        v: number;
+      };
+      mimeType: string;
+      size: number;
+      storageId?: Id<"_storage">;
+      userId: Id<"users">;
+      _id: Id<"attachments">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "attachmentId"
+      | "contentId"
+      | "createdAt"
+      | "emailId"
+      | "filename"
+      | "filename.__encrypted"
+      | "filename.c"
+      | "filename.i"
+      | "filename.k"
+      | "filename.v"
+      | "mimeType"
+      | "size"
+      | "storageId"
+      | "userId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_email: ["emailId", "_creationTime"];
+      by_user: ["userId", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   contacts: {
     document: {
       avatarStorageId?: Id<"_storage">;
@@ -125,47 +171,6 @@ export type DataModel = {
       by_user: ["userId", "_creationTime"];
       by_user_email: ["userId", "email", "_creationTime"];
       by_user_last_email: ["userId", "lastEmailAt", "_creationTime"];
-    };
-    searchIndexes: {};
-    vectorIndexes: {};
-  };
-  emailAttachments: {
-    document: {
-      attachmentId: string;
-      contentId?: string;
-      emailId: Id<"emails">;
-      filename: {
-        __encrypted: true;
-        c: string;
-        i: string;
-        k: string;
-        v: number;
-      };
-      isInline: boolean;
-      mimeType: string;
-      size: number;
-      _id: Id<"emailAttachments">;
-      _creationTime: number;
-    };
-    fieldPaths:
-      | "_creationTime"
-      | "_id"
-      | "attachmentId"
-      | "contentId"
-      | "emailId"
-      | "filename"
-      | "filename.__encrypted"
-      | "filename.c"
-      | "filename.i"
-      | "filename.k"
-      | "filename.v"
-      | "isInline"
-      | "mimeType"
-      | "size";
-    indexes: {
-      by_id: ["_id"];
-      by_creation_time: ["_creationTime"];
-      by_email: ["emailId", "_creationTime"];
     };
     searchIndexes: {};
     vectorIndexes: {};
@@ -247,10 +252,10 @@ export type DataModel = {
         k: string;
         v: number;
       };
+      isPunted?: boolean;
       isRead: boolean;
       isSubscription?: boolean;
       isTriaged: boolean;
-      isPunted?: boolean;
       lastReminderAt?: number;
       listUnsubscribe?: string;
       listUnsubscribePost?: boolean;
@@ -290,10 +295,10 @@ export type DataModel = {
       | "fromName.i"
       | "fromName.k"
       | "fromName.v"
+      | "isPunted"
       | "isRead"
       | "isSubscription"
       | "isTriaged"
-      | "isPunted"
       | "lastReminderAt"
       | "listUnsubscribe"
       | "listUnsubscribePost"
@@ -340,6 +345,13 @@ export type DataModel = {
         v: number;
       };
       actionRequired?: "reply" | "action" | "fyi" | "none";
+      actionableItems?: {
+        __encrypted: true;
+        c: string;
+        i: string;
+        k: string;
+        v: number;
+      };
       calendarEvent?: {
         __encrypted: true;
         c: string;
@@ -361,7 +373,7 @@ export type DataModel = {
       deadlineReminderSent?: boolean;
       emailId: Id<"emails">;
       embedding?: Array<number>;
-      importantAttachmentIds?: Array<Id<"emailAttachments">>;
+      importantAttachmentIds?: Array<Id<"attachments">>;
       meetingRequest?: {
         __encrypted: true;
         c: string;
@@ -405,6 +417,12 @@ export type DataModel = {
     fieldPaths:
       | "_creationTime"
       | "_id"
+      | "actionableItems"
+      | "actionableItems.__encrypted"
+      | "actionableItems.c"
+      | "actionableItems.i"
+      | "actionableItems.k"
+      | "actionableItems.v"
       | "actionDescription"
       | "actionDescription.__encrypted"
       | "actionDescription.c"
