@@ -167,19 +167,36 @@ async function processFeatureRequest(request: {
 
     // Run Claude Code with the feature description
     console.log(`\n🤖 Running Claude Code...`);
-    await updateProgress("implementing", "Claude is implementing your feature...", { branchName });
-    const prompt = `Implement this feature request from the user:
+    await updateProgress("implementing", "Claude is working on your request...", { branchName });
+    const prompt = `You are helping with a React Native Expo app. A user submitted this request via voice:
 
 "${request.transcript}"
 
-After implementing:
+IMPORTANT: First, determine what type of request this is:
+
+1. **Bug fix / Investigation**: If the request mentions "fix", "bug", "issue", "problem", "not working", "broken", "investigate", "check logs", or describes unexpected behavior:
+   - First, search the codebase to understand the relevant code
+   - Look for the actual bug or issue described
+   - Fix the ROOT CAUSE, don't add new features
+   - If you can't find the bug, explain what you checked and why
+
+2. **Feature request**: If the request asks to "add", "create", "implement", "build" something NEW:
+   - Implement the requested feature
+   - Follow existing patterns in the codebase
+
+3. **Improvement**: If the request asks to "improve", "enhance", "make better" existing functionality:
+   - Find the existing code
+   - Improve it as requested
+
+DO NOT misinterpret bug reports as feature requests. If someone says "X is broken" or "fix X", find and fix X - don't build something new.
+
+After completing your work:
 1. Run \`npx convex dev --once\` to deploy Convex changes
 2. Run \`npx tsc --noEmit\` to check for TypeScript errors
 3. Fix any TypeScript errors you find
 4. Commit your changes with a descriptive message
 5. Do NOT push to remote - I will handle that
 
-Important: This is a React Native Expo app. Follow existing patterns in the codebase.
 Important: Do not consider the task complete until convex dev and tsc both pass without errors.`;
 
     let claudeResult = await runClaudeCode(workDir, prompt);
