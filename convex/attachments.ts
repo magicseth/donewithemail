@@ -57,6 +57,7 @@ export const getEmailAttachments = query({
           contentId: attachment.contentId,
           // Include attachmentId for downloading if not yet stored
           attachmentId: attachment.storageId ? undefined : attachment.attachmentId,
+          isInline: !!attachment.contentId,
         };
       })
     );
