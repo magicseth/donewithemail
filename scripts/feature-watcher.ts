@@ -299,6 +299,17 @@ ONLY fix the exact errors listed above.`;
 
     console.log(`\n✅ Claude completed successfully!`);
 
+    // Commit any changes to generated files from convex dev --once
+    const generatedStatus = execSync("git status --porcelain convex/_generated/", {
+      cwd: workDir,
+      encoding: "utf-8",
+    }).trim();
+    if (generatedStatus) {
+      console.log(`\n📝 Committing updated generated files...`);
+      execSync(`git add convex/_generated/`, { cwd: workDir, stdio: "inherit" });
+      execSync(`git commit -m "Update Convex generated files"`, { cwd: workDir, stdio: "inherit" });
+    }
+
     // Get the commit hash
     const commitHash = execSync("git rev-parse HEAD", {
       cwd: workDir,
@@ -315,8 +326,6 @@ ONLY fix the exact errors listed above.`;
     console.log(`\n🔀 Merging into voice-preview...`);
     await updateProgress("merging", "Merging main into voice-preview...");
     execSync(`git fetch origin voice-preview main`, { cwd: workDir, stdio: "inherit" });
-    // Discard any uncommitted changes to generated files (from convex dev --once during verification)
-    execSync(`git checkout -- convex/_generated/`, { cwd: workDir, stdio: "inherit" });
     execSync(`git checkout voice-preview`, { cwd: workDir, stdio: "inherit" });
 
     // First merge main into voice-preview to get latest features
