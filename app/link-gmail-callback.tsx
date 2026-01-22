@@ -33,7 +33,7 @@ export default function LinkGmailCallbackScreen() {
         // Exchange code for tokens and link account
         const redirectUri = Platform.OS === "web"
           ? `${window.location.origin}/link-gmail-callback`
-          : "myapp://link-gmail-callback";
+          : "donewith://link-gmail-callback";
 
         const result = await linkGmailAccount({
           code,

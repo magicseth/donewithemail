@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, Platform } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, Platform, Linking } from "react-native";
 import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { router } from "expo-router";
@@ -11,7 +11,7 @@ export default function LinkGmailScreen() {
   // Get the auth URL from Convex
   const redirectUri = Platform.OS === "web"
     ? `${window.location.origin}/link-gmail-callback`
-    : "myapp://link-gmail-callback"; // For mobile, you'll need to configure deep linking
+    : "donewith://link-gmail-callback";
 
   const authUrl = useQuery(
     api.gmailAccountAuth.getGmailAuthUrl,
@@ -25,9 +25,11 @@ export default function LinkGmailScreen() {
       if (Platform.OS === "web") {
         window.location.href = authUrl;
       } else {
-        // For mobile, you would use Linking.openURL(authUrl)
-        // But for now, just show an error
-        setError("Mobile linking not yet implemented");
+        // Open Google OAuth in browser, which will redirect back to the app
+        Linking.openURL(authUrl).catch((err) => {
+          console.error("Failed to open OAuth URL:", err);
+          setError("Failed to open authentication page");
+        });
       }
     }
   }, [authUrl]);
