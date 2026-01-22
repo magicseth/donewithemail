@@ -19,6 +19,7 @@ import { useAuth } from "../../lib/authContext";
 import { Id } from "../../convex/_generated/dataModel";
 import { AttachmentData } from "../../components/AttachmentList";
 import { VoiceRecordButton } from "../../components/VoiceRecordButton";
+import { decodeHtmlEntities } from "../../components/inbox/utils";
 
 function showAlert(title: string, message: string) {
   if (Platform.OS === "web") {
@@ -634,7 +635,7 @@ export default function EmailDetailScreen() {
                           : threadEmail.fromName || threadEmail.fromContact?.name || threadEmail.fromContact?.email || "Unknown"}
                       </Text>
                       <Text style={styles.collapsedPreview} numberOfLines={1}>
-                        {threadEmail.bodyPreview}
+                        {decodeHtmlEntities(threadEmail.bodyPreview || "")}
                       </Text>
                     </View>
                     <Text style={styles.collapsedTime}>
