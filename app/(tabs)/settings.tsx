@@ -840,7 +840,7 @@ export default function SettingsScreen() {
           {/* Gmail Accounts */}
           {gmailAccounts && gmailAccounts.length > 0 ? (
             <>
-              {gmailAccounts.map((account, index) => (
+              {gmailAccounts.map((account: any, index: number) => (
                 <View key={account._id}>
                   {index > 0 && <View style={styles.divider} />}
                   <View style={styles.providerRow}>

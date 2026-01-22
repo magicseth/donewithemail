@@ -219,7 +219,7 @@ export const listGmailAccounts = query({
       accounts.map(async (acc) => {
         let displayName: string | undefined;
         if (acc.displayName) {
-          displayName = await pii.decrypt(acc.displayName);
+          displayName = await pii.decrypt(acc.displayName) ?? undefined;
         }
         return {
           _id: acc._id,
