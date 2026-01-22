@@ -109,10 +109,11 @@ export default function ComposeScreen() {
       return; // Still loading, wait
     }
 
+    // Only mark as auto-selected after we've confirmed we have all the data we need
     hasAutoSelectedAccountRef.current = true;
 
     // If replying, try to use the account that received the email
-    if (originalEmail?.gmailAccount?.email) {
+    if (emailId && originalEmail?.gmailAccount?.email) {
       // Match by email since linked accounts have real IDs but main account uses "main"
       const matchingAccount = gmailAccounts.find(
         (a: GmailAccount) => a.email === originalEmail.gmailAccount?.email
@@ -125,7 +126,7 @@ export default function ComposeScreen() {
 
     // For old emails without gmailAccount, try to infer from recipients
     // Check if any of our accounts was in the To field
-    if (originalEmail?.toContacts && originalEmail.toContacts.length > 0) {
+    if (emailId && originalEmail?.toContacts && originalEmail.toContacts.length > 0) {
       const ourAccountEmails = new Set(gmailAccounts.map((a: GmailAccount) => a.email.toLowerCase()));
       for (const contact of originalEmail.toContacts) {
         if (contact?.email && ourAccountEmails.has(contact.email.toLowerCase())) {
