@@ -13,6 +13,13 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useAuth } from "../../lib/authContext";
 
+type ActionableItem = {
+  type: 'link' | 'attachment';
+  label: string;
+  url?: string;
+  attachmentId?: string;
+};
+
 type DebugEmail = {
   _id: string;
   externalId: string;
@@ -26,6 +33,10 @@ type DebugEmail = {
   isSubscription?: boolean;
   gmailAccountId?: string;
   fromEmail: string;
+  hasActionableItems?: boolean;
+  actionableItemsCount?: number;
+  actionableItems?: ActionableItem[] | null;
+  hasSummary?: boolean;
 };
 
 type SyncStat = {
@@ -102,7 +113,27 @@ function EmailRow({ email }: { email: DebugEmail }) {
         {email.isPunted && (
           <Text style={[styles.metaText, styles.metaTag]}>Punted</Text>
         )}
+        {email.hasSummary && (
+          <Text style={[styles.metaText, styles.metaTag, styles.summaryTag]}>AI Processed</Text>
+        )}
+        {email.hasActionableItems && (
+          <Text style={[styles.metaText, styles.metaTag, styles.actionTag]}>
+            {email.actionableItemsCount} Action{email.actionableItemsCount !== 1 ? 's' : ''}
+          </Text>
+        )}
       </View>
+      {/* Show actionable items if present */}
+      {email.actionableItems && email.actionableItems.length > 0 && (
+        <View style={styles.actionableSection}>
+          <Text style={styles.actionableLabel}>Actionable Items:</Text>
+          {email.actionableItems.map((item, idx) => (
+            <Text key={idx} style={styles.actionableItem}>
+              {item.type === 'link' ? '🔗' : '📎'} {item.label}
+              {item.url && <Text style={styles.actionableUrl}> ({item.url.slice(0, 50)}...)</Text>}
+            </Text>
+          ))}
+        </View>
+      )}
       <Text style={styles.emailId}>ID: {email.externalId?.slice(0, 16)}...</Text>
     </View>
   );
@@ -392,6 +423,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+  },
+  summaryTag: {
+    backgroundColor: "#DBEAFE",
+    color: "#1D4ED8",
+  },
+  actionTag: {
+    backgroundColor: "#FEF3C7",
+    color: "#92400E",
+  },
+  actionableSection: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: "#FEF9C3",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#FDE047",
+  },
+  actionableLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#92400E",
+    marginBottom: 4,
+  },
+  actionableItem: {
+    fontSize: 12,
+    color: "#78350F",
+    marginBottom: 2,
+  },
+  actionableUrl: {
+    fontSize: 10,
+    color: "#A16207",
+    fontFamily: "monospace",
   },
   emailId: {
     fontSize: 10,

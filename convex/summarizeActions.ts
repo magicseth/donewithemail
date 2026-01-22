@@ -695,6 +695,7 @@ Respond with only valid JSON, no markdown or explanation.`);
             actionRequired: result.actionRequired || undefined,
             actionDescription: result.actionDescription || undefined,
             quickReplies: result.quickReplies || undefined,
+            actionableItems: result.actionableItems || undefined,
             calendarEvent: sanitizedCalendarEvent,
             shouldAcceptCalendar: sanitizedCalendarEvent ? result.shouldAcceptCalendar : undefined,
             meetingRequest: result.meetingRequest || undefined,

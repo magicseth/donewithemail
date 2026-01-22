@@ -1895,17 +1895,44 @@ export const getMyAllEmailsDebug = authedQuery({
       contactIds.map((id, i) => [id, contactsArray[i]])
     );
 
+    // Batch fetch summaries for actionable items
+    const emailIds = pageEmails.map((e) => e._id);
+    const summariesArray = await Promise.all(
+      emailIds.map((id) =>
+        ctx.db
+          .query("emailSummaries")
+          .withIndex("by_email", (q) => q.eq("emailId", id))
+          .first()
+      )
+    );
+    const summariesMap = new Map(
+      emailIds.map((id, i) => [id, summariesArray[i]])
+    );
+
     // Build response with minimal decryption for performance
     const emails = await Promise.all(
       pageEmails.map(async (email) => {
         const contact = contactsMap.get(email.from);
+        const summaryData = summariesMap.get(email._id);
 
-        // Decrypt subject only
+        // Decrypt subject and actionable items
         let subject: string | null = null;
+        let actionableItems: ActionableItem[] | null = null;
+        let hasActionableItems = false;
+        let actionableItemsCount = 0;
         try {
           const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
           if (pii && email.subject) {
             subject = await pii.decrypt(email.subject);
+          }
+          // Decrypt actionable items
+          if (pii && summaryData?.actionableItems) {
+            const aiJson = await pii.decrypt(summaryData.actionableItems);
+            if (aiJson) {
+              actionableItems = JSON.parse(aiJson);
+              hasActionableItems = actionableItems !== null && actionableItems.length > 0;
+              actionableItemsCount = actionableItems?.length ?? 0;
+            }
           }
         } catch {
           subject = "[encrypted]";
@@ -1924,6 +1951,10 @@ export const getMyAllEmailsDebug = authedQuery({
           isSubscription: email.isSubscription,
           gmailAccountId: email.gmailAccountId,
           fromEmail: contact?.email ?? "unknown",
+          hasActionableItems,
+          actionableItemsCount,
+          actionableItems,
+          hasSummary: !!summaryData,
         };
       })
     );
