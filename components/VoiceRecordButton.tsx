@@ -39,6 +39,7 @@ export function VoiceRecordButton({
     transcript,
     isConnecting,
     isConnected,
+    recordingDuration,
   } = useVoiceRecording();
 
   const [isRecording, setIsRecording] = useState(false);
@@ -46,6 +47,9 @@ export function VoiceRecordButton({
 
   // Keep a ref to the transcript so we can capture it before stopping
   const transcriptRef = useRef<string>("");
+
+  // Track if we've already called handlePressOut to prevent duplicate calls
+  const hasStoppedRef = useRef(false);
 
   // Update ref whenever transcript changes and notify streaming callback
   React.useEffect(() => {
@@ -60,6 +64,7 @@ export function VoiceRecordButton({
 
     setIsRecording(true);
     transcriptRef.current = "";
+    hasStoppedRef.current = false;
     onRecordingStart?.();
 
     try {
@@ -72,8 +77,9 @@ export function VoiceRecordButton({
   }, [disabled, isRecording, isProcessing, startRecording, onRecordingStart, onError]);
 
   const handlePressOut = useCallback(async () => {
-    if (!isRecording) return;
+    if (!isRecording || hasStoppedRef.current) return;
 
+    hasStoppedRef.current = true;
     setIsRecording(false);
     setIsProcessing(true);
     onRecordingEnd?.();
@@ -110,7 +116,16 @@ export function VoiceRecordButton({
     cancelRecording();
     setIsRecording(false);
     setIsProcessing(false);
+    hasStoppedRef.current = false;
   }, [cancelRecording]);
+
+  // Auto-stop when recording reaches 10 seconds (triggered by hook's timer)
+  React.useEffect(() => {
+    if (recordingDuration >= 10 && isRecording && !hasStoppedRef.current) {
+      console.log("[VoiceRecordButton] Auto-stopping after 10 seconds");
+      handlePressOut();
+    }
+  }, [recordingDuration, isRecording, handlePressOut]);
 
   const sizeStyles = {
     small: { width: 36, height: 36, borderRadius: 18, fontSize: 14 },
@@ -119,6 +134,9 @@ export function VoiceRecordButton({
   };
 
   const currentSize = sizeStyles[size];
+
+  // Calculate remaining time (10 seconds max)
+  const remainingTime = Math.max(0, 10 - recordingDuration);
 
   return (
     <TouchableOpacity
@@ -140,9 +158,13 @@ export function VoiceRecordButton({
     >
       {isProcessing ? (
         <ActivityIndicator size="small" color="#fff" />
+      ) : isRecording ? (
+        <Text style={[styles.buttonText, { fontSize: currentSize.fontSize }]}>
+          {remainingTime}
+        </Text>
       ) : (
         <Text style={[styles.buttonText, { fontSize: currentSize.fontSize }]}>
-          {isRecording ? "🎙️" : "🎤"}
+          🎤
         </Text>
       )}
     </TouchableOpacity>
