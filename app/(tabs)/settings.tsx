@@ -97,6 +97,7 @@ export default function SettingsScreen() {
 
   // Changelog
   const [showChangelogModal, setShowChangelogModal] = useState(false);
+  const [showAddAccountModal, setShowAddAccountModal] = useState(false);
   const allChangelogs = useQuery(api.changelog.getAllChangelogs);
 
   const checkForUpdates = async () => {
@@ -1030,15 +1031,6 @@ export default function SettingsScreen() {
             </View>
           )}
 
-          {/* Add Gmail Account Button */}
-          {gmailAccounts && gmailAccounts.length > 0 && <View style={styles.divider} />}
-          <TouchableOpacity
-            style={styles.addAccountButton}
-            onPress={() => router.push("/link-gmail")}
-          >
-            <Text style={styles.addAccountButtonText}>+ Add Gmail Account</Text>
-          </TouchableOpacity>
-
           {/* IMAP Accounts */}
           {imapAccounts.map((account, index) => (
             <View key={account.email}>
@@ -1068,13 +1060,13 @@ export default function SettingsScreen() {
             </View>
           ))}
 
-          {/* Add IMAP Account Button */}
+          {/* Add Email Account Button */}
           <View style={styles.divider} />
           <TouchableOpacity
             style={styles.addAccountButton}
-            onPress={() => router.push("/add-imap")}
+            onPress={() => setShowAddAccountModal(true)}
           >
-            <Text style={styles.addAccountButtonText}>+ Add IMAP Account</Text>
+            <Text style={styles.addAccountButtonText}>+ Add Email Account</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1875,6 +1867,66 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Add Account Type Picker Modal */}
+      <Modal
+        visible={showAddAccountModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowAddAccountModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Add Email Account</Text>
+            <Text style={styles.modalMessage}>What type of email account do you want to add?</Text>
+
+            <View style={styles.accountTypeOptions}>
+              <TouchableOpacity
+                style={styles.accountTypeOption}
+                onPress={() => {
+                  setShowAddAccountModal(false);
+                  router.push("/link-gmail");
+                }}
+              >
+                <View style={styles.accountTypeIcon}>
+                  <Text style={styles.accountTypeIconText}>📧</Text>
+                </View>
+                <View style={styles.accountTypeInfo}>
+                  <Text style={styles.accountTypeName}>Gmail</Text>
+                  <Text style={styles.accountTypeDescription}>Connect your Google account</Text>
+                </View>
+                <Text style={styles.accountTypeArrow}>→</Text>
+              </TouchableOpacity>
+
+              <View style={styles.divider} />
+
+              <TouchableOpacity
+                style={styles.accountTypeOption}
+                onPress={() => {
+                  setShowAddAccountModal(false);
+                  router.push("/add-imap");
+                }}
+              >
+                <View style={styles.accountTypeIcon}>
+                  <Text style={styles.accountTypeIconText}>📨</Text>
+                </View>
+                <View style={styles.accountTypeInfo}>
+                  <Text style={styles.accountTypeName}>IMAP</Text>
+                  <Text style={styles.accountTypeDescription}>Other email providers</Text>
+                </View>
+                <Text style={styles.accountTypeArrow}>→</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonCancel, { marginTop: 20 }]}
+              onPress={() => setShowAddAccountModal(false)}
+            >
+              <Text style={styles.modalButtonCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -2632,5 +2684,47 @@ const styles = StyleSheet.create({
   },
   modalButtonDisabled: {
     opacity: 0.5,
+  },
+  accountTypeOptions: {
+    marginTop: 16,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  accountTypeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "#fff",
+  },
+  accountTypeIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#F0F0F0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  accountTypeIconText: {
+    fontSize: 22,
+  },
+  accountTypeInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  accountTypeName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1a1a1a",
+  },
+  accountTypeDescription: {
+    fontSize: 13,
+    color: "#666",
+    marginTop: 2,
+  },
+  accountTypeArrow: {
+    fontSize: 18,
+    color: "#999",
+    marginLeft: 8,
   },
 });
