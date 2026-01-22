@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { action, internalAction, ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 import { generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { costs } from "./costs";
@@ -459,6 +460,11 @@ export const summarizeByExternalIds = internalAction({
       success: boolean;
       result?: SummarizeResult;
       error?: string;
+      factsToSave?: {
+        contactId: Id<"contacts">;
+        emailId: Id<"emails">;
+        facts: string[];
+      };
     };
 
     // Process all emails in parallel
@@ -693,21 +699,17 @@ Respond with only valid JSON, no markdown or explanation.`);
             console.error("[Summarize] Failed to track AI cost:", e);
           }
 
-          // Save AI-suggested facts to contact's dossier
-          if (result.suggestedFacts && result.suggestedFacts.length > 0 && email.from) {
-            await ctx.runMutation(internal.summarize.saveAISuggestedFacts, {
-              contactId: email.from,
-              emailId: email._id,
-              facts: result.suggestedFacts,
-            });
-          }
+          // Collect facts to save (will be batched per contact after parallel processing)
+          const factsToSave = result.suggestedFacts && result.suggestedFacts.length > 0 && email.from
+            ? { contactId: email.from, emailId: email._id, facts: result.suggestedFacts }
+            : undefined;
 
           // Generate embedding for semantic search (async, don't block)
           ctx.scheduler.runAfter(0, internal.emailEmbeddings.generateEmbedding, {
             emailId: email._id,
           });
 
-          return { externalId, success: true, result };
+          return { externalId, success: true, result, factsToSave };
         } catch (error) {
           return {
             externalId,
@@ -717,6 +719,39 @@ Respond with only valid JSON, no markdown or explanation.`);
         }
       })
     );
+
+    // Batch facts by contact to avoid write conflicts
+    // Group all facts by contactId, then save once per contact
+    const factsByContact = new Map<string, { contactId: Id<"contacts">; emailIds: Id<"emails">[]; facts: string[] }>();
+    for (const r of results) {
+      if (r.factsToSave) {
+        const key = r.factsToSave.contactId;
+        const existing = factsByContact.get(key);
+        if (existing) {
+          existing.emailIds.push(r.factsToSave.emailId);
+          existing.facts.push(...r.factsToSave.facts);
+        } else {
+          factsByContact.set(key, {
+            contactId: r.factsToSave.contactId,
+            emailIds: [r.factsToSave.emailId],
+            facts: r.factsToSave.facts,
+          });
+        }
+      }
+    }
+
+    // Save batched facts sequentially (one mutation per contact, no conflicts)
+    for (const batch of factsByContact.values()) {
+      try {
+        await ctx.runMutation(internal.summarize.saveAISuggestedFacts, {
+          contactId: batch.contactId,
+          emailId: batch.emailIds[0], // Use first email as source
+          facts: batch.facts,
+        });
+      } catch (e) {
+        console.error("[Summarize] Failed to save facts for contact:", batch.contactId, e);
+      }
+    }
 
     return results;
   },
