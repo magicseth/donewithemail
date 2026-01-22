@@ -11,7 +11,7 @@ import {
   Linking,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { EmailCard, EmailCardData, CalendarEventData } from "../../components/EmailCard";
 import { useEmail, useEmailActions, useThreadEmails } from "../../hooks/useEmails";
@@ -73,6 +73,7 @@ export default function EmailDetailScreen() {
   const checkExistingCalendarEvents = useAction(api.calendar.checkExistingCalendarEvents);
   const checkMeetingAvailability = useAction((api.calendar as any).checkMeetingAvailability);
   const reprocessEmail = useAction(api.summarizeActions.reprocessEmail);
+  const togglePuntMutation = useMutation(api.emails.togglePuntEmail);
 
   // Look up email by Convex ID (authenticated)
   const isConvex = id ? isConvexId(id) : false;
@@ -449,6 +450,28 @@ export default function EmailDetailScreen() {
     }
   }, [convexId, user?.email, reprocessEmail]);
 
+  const handleToggleFlag = useCallback(async () => {
+    if (!convexId) {
+      showAlert("Error", "Cannot toggle flag - missing email");
+      return;
+    }
+
+    try {
+      await togglePuntMutation({ emailId: convexId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to toggle flag";
+      showAlert("Error", message);
+      console.error("Failed to toggle flag:", err);
+    }
+  }, [convexId, togglePuntMutation]);
+
+  const handleMarkAsDone = useCallback(async () => {
+    if (convexId) {
+      await archiveEmail(convexId);
+      router.back();
+    }
+  }, [convexId, archiveEmail]);
+
   // Mock data for development
   const mockEmail: EmailCardData = {
     _id: id || "1",
@@ -688,6 +711,14 @@ export default function EmailDetailScreen() {
 
       {/* Action buttons */}
       <View style={styles.actionBar}>
+        <TouchableOpacity
+          style={[styles.actionButton, email?.isPunted && styles.actionButtonActive]}
+          onPress={handleToggleFlag}
+        >
+          <Text style={styles.actionIcon}>{email?.isPunted ? "🚩" : "⚑"}</Text>
+          <Text style={styles.actionText}>{email?.isPunted ? "Unflag" : "Flag"}</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.actionButton} onPress={handleReply}>
           <Text style={styles.actionIcon}>↩️</Text>
           <Text style={styles.actionText}>Reply</Text>
@@ -705,7 +736,7 @@ export default function EmailDetailScreen() {
 
         <TouchableOpacity
           style={[styles.actionButton, styles.actionButtonPrimary]}
-          onPress={handleArchive}
+          onPress={handleMarkAsDone}
         >
           <Text style={styles.actionIcon}>✓</Text>
           <Text style={[styles.actionText, styles.actionTextPrimary]}>Done</Text>
@@ -761,6 +792,11 @@ const styles = StyleSheet.create({
   },
   actionButtonPrimary: {
     backgroundColor: "#6366F1",
+  },
+  actionButtonActive: {
+    backgroundColor: "#FFF4E6",
+    borderWidth: 1,
+    borderColor: "#FF9800",
   },
   actionIcon: {
     fontSize: 18,
