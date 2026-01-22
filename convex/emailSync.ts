@@ -6,8 +6,6 @@ import { internal } from "./_generated/api";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
-const WORKOS_CLIENT_ID = process.env.WORKOS_CLIENT_ID!;
-const WORKOS_API_KEY = process.env.WORKOS_API_KEY!;
 
 // Custom error for auth failures that need user re-authentication
 class GmailAuthError extends Error {
@@ -63,71 +61,6 @@ async function refreshGoogleToken(
   return {
     accessToken: data.access_token,
     expiresAt: Date.now() + data.expires_in * 1000,
-  };
-}
-
-// Refresh Google access token via WorkOS API (for workos auth source accounts)
-async function refreshWorkOSToken(
-  workosRefreshToken: string
-): Promise<{
-  accessToken: string;
-  expiresAt: number;
-  newWorkosRefreshToken?: string;
-}> {
-  const response = await fetch(
-    "https://api.workos.com/user_management/authenticate",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        client_id: WORKOS_CLIENT_ID,
-        client_secret: WORKOS_API_KEY,
-        grant_type: "refresh_token",
-        refresh_token: workosRefreshToken,
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("[EmailSync] WorkOS token refresh failed:", response.status, errorText);
-
-    if (response.status === 400 || response.status === 401) {
-      const errorLower = errorText.toLowerCase();
-      if (
-        errorLower.includes("invalid") ||
-        errorLower.includes("expired") ||
-        errorLower.includes("revoked")
-      ) {
-        throw new GmailAuthError(
-          "WorkOS refresh token is invalid or revoked. User needs to re-authenticate.",
-          true
-        );
-      }
-    }
-
-    throw new Error(`Failed to refresh WorkOS token: ${errorText}`);
-  }
-
-  const data = await response.json();
-
-  // Extract Google access token from oauth_tokens
-  const oauthTokens = data.oauth_tokens || data.oauthTokens;
-  const googleAccessToken = oauthTokens?.access_token || oauthTokens?.accessToken;
-
-  if (!googleAccessToken) {
-    throw new GmailAuthError(
-      "WorkOS refresh did not return Google access token. User may need to re-authenticate.",
-      true
-    );
-  }
-
-  return {
-    accessToken: googleAccessToken,
-    expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
-    newWorkosRefreshToken: data.refresh_token,
   };
 }
 
@@ -258,7 +191,7 @@ async function checkNewEmailsForGmailAccount(
   // Check if token is expired (with 5 minute buffer)
   const tokenExpired = Date.now() >= (account.tokenExpiresAt - 5 * 60 * 1000);
 
-  // Helper to save updated token (for gmail_oauth accounts)
+  // Helper to save updated token
   const saveGoogleToken = async (accessToken: string, expiresAt: number) => {
     await ctx.runMutation(internal.gmailAccountHelpers.updateGmailAccountTokens, {
       accountId: account._id,
@@ -267,44 +200,16 @@ async function checkNewEmailsForGmailAccount(
     });
   };
 
-  // Helper to save updated WorkOS token (for workos accounts)
-  const saveWorkOSToken = async (accessToken: string, expiresAt: number, newWorkosRefreshToken?: string) => {
-    await ctx.runMutation(internal.gmailAccountHelpers.updateGmailAccountWorkOSTokens, {
-      accountId: account._id,
-      accessToken,
-      tokenExpiresAt: expiresAt,
-      workosRefreshToken: newWorkosRefreshToken,
-    });
-  };
-
-  // Refresh token if needed using appropriate method based on authSource
+  // Refresh token if needed
+  // Always use Google's refresh token if available - it works regardless of authSource
+  // (WorkOS auth also provides Google's refresh token during initial sign-in)
   let accessToken = account.accessToken;
   if (tokenExpired) {
-    // Determine which refresh method to use based on authSource
-    const useWorkOS = account.authSource === "workos" && account.workosRefreshToken;
-    const useGoogle = (account.authSource === "gmail_oauth" || !account.authSource) && account.refreshToken;
-
-    if (useWorkOS) {
-      // Refresh via WorkOS API
-      try {
-        console.log(`[EmailSync] Refreshing token for ${account.email} via WorkOS...`);
-        const refreshed = await refreshWorkOSToken(account.workosRefreshToken!);
-        accessToken = refreshed.accessToken;
-        await saveWorkOSToken(refreshed.accessToken, refreshed.expiresAt, refreshed.newWorkosRefreshToken);
-        console.log(`[EmailSync] WorkOS token refreshed for ${account.email}, expires at ${new Date(refreshed.expiresAt).toISOString()}`);
-      } catch (error) {
-        if (error instanceof GmailAuthError && error.requiresReauth) {
-          console.error(`[EmailSync] Account ${account.email} needs to re-authenticate:`, error.message);
-        } else {
-          console.error(`[EmailSync] WorkOS token refresh failed for ${account.email}:`, error);
-        }
-        return; // Can't continue without valid token
-      }
-    } else if (useGoogle) {
-      // Refresh via Google API directly
+    if (account.refreshToken) {
+      // Refresh via Google API directly using Google's refresh token
       try {
         console.log(`[EmailSync] Refreshing Google token for ${account.email}...`);
-        const refreshed = await refreshGoogleToken(account.refreshToken!);
+        const refreshed = await refreshGoogleToken(account.refreshToken);
         accessToken = refreshed.accessToken;
         await saveGoogleToken(refreshed.accessToken, refreshed.expiresAt);
         console.log(`[EmailSync] Token refreshed for ${account.email}, expires at ${new Date(refreshed.expiresAt).toISOString()}`);
@@ -317,7 +222,7 @@ async function checkNewEmailsForGmailAccount(
         return; // Can't continue without valid token
       }
     } else {
-      console.log(`[EmailSync] Account ${account.email} token expired but no appropriate refresh token available (authSource: ${account.authSource})`);
+      console.log(`[EmailSync] Account ${account.email} token expired but no Google refresh token available`);
       return;
     }
   }
@@ -334,49 +239,25 @@ async function checkNewEmailsForGmailAccount(
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
-  // If we get 401, try to refresh and retry using appropriate method
-  if (response.status === 401) {
-    const useWorkOS = account.authSource === "workos" && account.workosRefreshToken;
-    const useGoogle = (account.authSource === "gmail_oauth" || !account.authSource) && account.refreshToken;
+  // If we get 401 and have a refresh token, try to refresh and retry
+  if (response.status === 401 && account.refreshToken) {
+    console.log(`[EmailSync] Got 401 for ${account.email}, attempting token refresh and retry...`);
+    try {
+      const refreshed = await refreshGoogleToken(account.refreshToken);
+      accessToken = refreshed.accessToken;
+      await saveGoogleToken(refreshed.accessToken, refreshed.expiresAt);
 
-    if (useWorkOS) {
-      console.log(`[EmailSync] Got 401 for ${account.email}, attempting WorkOS token refresh and retry...`);
-      try {
-        const refreshed = await refreshWorkOSToken(account.workosRefreshToken!);
-        accessToken = refreshed.accessToken;
-        await saveWorkOSToken(refreshed.accessToken, refreshed.expiresAt, refreshed.newWorkosRefreshToken);
-
-        // Retry the request
-        response = await fetch(url, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-      } catch (error) {
-        if (error instanceof GmailAuthError && error.requiresReauth) {
-          console.error(`[EmailSync] Account ${account.email} needs to re-authenticate:`, error.message);
-        } else {
-          console.error(`[EmailSync] WorkOS token refresh failed for ${account.email}:`, error);
-        }
-        return;
+      // Retry the request
+      response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+    } catch (error) {
+      if (error instanceof GmailAuthError && error.requiresReauth) {
+        console.error(`[EmailSync] Account ${account.email} needs to re-authenticate:`, error.message);
+      } else {
+        console.error(`[EmailSync] Token refresh failed for ${account.email}:`, error);
       }
-    } else if (useGoogle) {
-      console.log(`[EmailSync] Got 401 for ${account.email}, attempting Google token refresh and retry...`);
-      try {
-        const refreshed = await refreshGoogleToken(account.refreshToken!);
-        accessToken = refreshed.accessToken;
-        await saveGoogleToken(refreshed.accessToken, refreshed.expiresAt);
-
-        // Retry the request
-        response = await fetch(url, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-      } catch (error) {
-        if (error instanceof GmailAuthError && error.requiresReauth) {
-          console.error(`[EmailSync] Account ${account.email} needs to re-authenticate:`, error.message);
-        } else {
-          console.error(`[EmailSync] Token refresh failed for ${account.email}:`, error);
-        }
-        return;
-      }
+      return;
     }
   }
 
