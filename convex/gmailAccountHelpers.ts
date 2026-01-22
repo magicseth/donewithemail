@@ -131,6 +131,7 @@ export const getGmailAccountByEmail = internalQuery({
     }
 
     // Find Gmail account for this user with matching email
+    // Don't fall back to "any account" - we need exact email match for sending
     const account = await ctx.db
       .query("gmailAccounts")
       .withIndex("by_user_email", (q) =>
@@ -142,12 +143,7 @@ export const getGmailAccountByEmail = internalQuery({
       return { _id: account._id, userId: account.userId };
     }
 
-    // Fall back to any Gmail account for this user
-    const anyAccount = await ctx.db
-      .query("gmailAccounts")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
-
-    return anyAccount ? { _id: anyAccount._id, userId: anyAccount.userId } : null;
+    // No exact match found - return null so caller can fall back to legacy user tokens
+    return null;
   },
 });

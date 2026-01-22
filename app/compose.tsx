@@ -104,6 +104,23 @@ export default function ComposeScreen() {
       }
     }
 
+    // For old emails without gmailAccount, try to infer from recipients
+    // Check if any of our accounts was in the To field
+    if (originalEmail?.toContacts && originalEmail.toContacts.length > 0) {
+      const ourAccountEmails = new Set(gmailAccounts.map((a: GmailAccount) => a.email.toLowerCase()));
+      for (const contact of originalEmail.toContacts) {
+        if (contact?.email && ourAccountEmails.has(contact.email.toLowerCase())) {
+          const matchingAccount = gmailAccounts.find(
+            (a: GmailAccount) => a.email.toLowerCase() === contact.email.toLowerCase()
+          );
+          if (matchingAccount) {
+            setSelectedAccountId(matchingAccount._id);
+            return;
+          }
+        }
+      }
+    }
+
     // Otherwise use primary or first account
     const primary = gmailAccounts.find((a: GmailAccount) => a.isPrimary);
     setSelectedAccountId(primary?._id ?? gmailAccounts[0]._id);
