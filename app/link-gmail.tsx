@@ -1,81 +1,102 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, Platform } from "react-native";
-import { useQuery, useAction } from "convex/react";
+import { useQuery, useAction, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { router } from "expo-router";
-import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
+import Constants from "expo-constants";
 
 // Required for web browser redirect
 WebBrowser.maybeCompleteAuthSession();
 
-// Google OAuth discovery document
-const discovery = {
-  authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
-  tokenEndpoint: "https://oauth2.googleapis.com/token",
-};
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || "";
+
+const SCOPES = [
+  "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/userinfo.profile",
+  "https://www.googleapis.com/auth/calendar",
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/contacts.readonly",
+  "https://www.googleapis.com/auth/gmail.modify",
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.send",
+].join(" ");
 
 export default function LinkGmailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const linkGmailAccount = useAction(api.gmailAccountAuth.linkGmailAccount);
+  const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
 
-  // For web, use window.location.origin
-  // For mobile, use Expo Auth proxy (required for Google OAuth compliance)
-  const redirectUri = Platform.OS === "web"
+  // For web, use the callback page. For mobile, use Expo's auth proxy.
+  const webRedirectUri = Platform.OS === "web"
     ? `${window.location.origin}/link-gmail-callback`
-    : AuthSession.makeRedirectUri({
-        // Use Expo proxy for Google OAuth compliance
-        // @ts-ignore - useProxy is deprecated but still works and is required for Google
-        useProxy: true,
-      });
+    : null;
 
-  // Get auth URL from Convex (for web) or build it for mobile
+  // Construct Expo auth proxy URL for mobile
+  const expoOwner = Constants.expoConfig?.owner || "magicseth";
+  const expoSlug = Constants.expoConfig?.slug || "DoneWith";
+  const mobileRedirectUri = `https://auth.expo.io/@${expoOwner}/${expoSlug}`;
+
+  const redirectUri = Platform.OS === "web" ? webRedirectUri! : mobileRedirectUri;
+
+  // Get auth URL from Convex for web
   const authUrl = useQuery(
     api.gmailAccountAuth.getGmailAuthUrl,
     Platform.OS === "web" ? { redirectUri } : "skip"
   );
 
-  // For mobile, use AuthSession hook
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(
-    {
-      clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || "",
-      scopes: [
-        "https://www.googleapis.com/auth/userinfo.email",
-        "https://www.googleapis.com/auth/userinfo.profile",
-        "https://www.googleapis.com/auth/calendar",
-        "https://www.googleapis.com/auth/calendar.events",
-        "https://www.googleapis.com/auth/contacts.readonly",
-        "https://www.googleapis.com/auth/gmail.modify",
-        "https://www.googleapis.com/auth/gmail.readonly",
-        "https://www.googleapis.com/auth/gmail.send",
-      ],
-      redirectUri,
-      responseType: AuthSession.ResponseType.Code,
-      extraParams: {
-        access_type: "offline",
-        prompt: "consent",
-      },
-    },
-    discovery
-  );
+  // Build Google OAuth URL for mobile
+  const buildGoogleAuthUrl = () => {
+    const params = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: mobileRedirectUri,
+      response_type: "code",
+      scope: SCOPES,
+      access_type: "offline",
+      prompt: "consent",
+    });
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  };
 
-  // Handle mobile OAuth response
-  useEffect(() => {
-    if (Platform.OS !== "web" && response) {
-      if (response.type === "success" && response.params.code) {
-        // Exchange code for tokens via our backend
-        handleMobileCallback(response.params.code);
-      } else if (response.type === "error") {
-        setError(response.error?.message || "Authentication failed");
-        setIsLoading(false);
-      } else if (response.type === "cancel" || response.type === "dismiss") {
+  // Handle mobile OAuth
+  const startMobileAuth = async () => {
+    try {
+      const authUrl = buildGoogleAuthUrl();
+      const result = await WebBrowser.openAuthSessionAsync(
+        authUrl,
+        mobileRedirectUri
+      );
+
+      if (result.type === "success" && result.url) {
+        // Extract code from URL
+        const url = new URL(result.url);
+        const code = url.searchParams.get("code");
+        const errorParam = url.searchParams.get("error");
+
+        if (errorParam) {
+          setError(`Authentication failed: ${errorParam}`);
+          setIsLoading(false);
+          return;
+        }
+
+        if (code) {
+          await handleCallback(code);
+        } else {
+          setError("No authorization code received");
+          setIsLoading(false);
+        }
+      } else if (result.type === "cancel" || result.type === "dismiss") {
         router.replace("/(tabs)/settings");
       }
+    } catch (err: any) {
+      console.error("Mobile auth error:", err);
+      setError(err.message || "Authentication failed");
+      setIsLoading(false);
     }
-  }, [response]);
+  };
 
-  const handleMobileCallback = async (code: string) => {
+  const handleCallback = async (code: string) => {
     try {
       const result = await linkGmailAccount({
         code,
@@ -103,14 +124,15 @@ export default function LinkGmailScreen() {
     }
   }, [authUrl]);
 
-  // Mobile: auto-start OAuth when request is ready
+  // Mobile: wait for auth then start OAuth
   useEffect(() => {
-    if (Platform.OS !== "web" && request) {
+    if (Platform.OS !== "web" && !authLoading && isAuthenticated) {
+      startMobileAuth();
+    } else if (Platform.OS !== "web" && !authLoading && !isAuthenticated) {
+      setError("Please sign in first");
       setIsLoading(false);
-      // @ts-ignore - useProxy is deprecated but required for Google OAuth
-      promptAsync({ useProxy: true });
     }
-  }, [request]);
+  }, [authLoading, isAuthenticated]);
 
   if (error) {
     return (
