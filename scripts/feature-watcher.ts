@@ -163,7 +163,7 @@ async function processFeatureRequest(request: {
     });
 
     // Create a branch for this feature (from the merged state)
-    const branchName = `feature/voice-${request._id.slice(-8)}`;
+    const branchName = `feature/req-${request._id.slice(-8)}`;
     console.log(`\n🌿 Creating branch: ${branchName}`);
     execSync(`git checkout -b ${branchName}`, { cwd: workDir, stdio: "inherit" });
 
