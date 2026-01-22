@@ -122,6 +122,9 @@ export interface EmailCardData {
   // Attachments
   attachments?: AttachmentData[];
   userEmail?: string; // User's email for downloading attachments
+  // Multi-account support
+  gmailAccountId?: string;
+  gmailAccount?: { _id: string; email: string };
 }
 
 interface EmailCardProps {
@@ -207,6 +210,12 @@ export function EmailCard({
           <Text style={styles.senderEmail} numberOfLines={1}>
             {displayEmail}
           </Text>
+          {/* Show which account received this email (for multi-account users) */}
+          {email.gmailAccount && !isOutgoing && (
+            <Text style={styles.receivedBy} numberOfLines={1}>
+              to {email.gmailAccount.email}
+            </Text>
+          )}
         </View>
 
         <Text style={styles.timeAgo}>{timeAgo}</Text>
@@ -468,6 +477,11 @@ const styles = StyleSheet.create({
   senderEmail: {
     fontSize: 14,
     color: "#666",
+    marginTop: 2,
+  },
+  receivedBy: {
+    fontSize: 12,
+    color: "#6366F1",
     marginTop: 2,
   },
   timeAgo: {

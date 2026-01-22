@@ -108,3 +108,46 @@ export const getUserIdFromAccount = internalQuery({
     return account?.userId ?? null;
   },
 });
+
+// Get Gmail account by email for a specific user
+export const getGmailAccountByEmail = internalQuery({
+  args: {
+    userEmail: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // First find the user by email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+      .first();
+
+    if (!user) {
+      // Try to find Gmail account directly by email
+      const account = await ctx.db
+        .query("gmailAccounts")
+        .withIndex("by_email", (q) => q.eq("email", args.userEmail))
+        .first();
+      return account ? { _id: account._id, userId: account.userId } : null;
+    }
+
+    // Find Gmail account for this user with matching email
+    const account = await ctx.db
+      .query("gmailAccounts")
+      .withIndex("by_user_email", (q) =>
+        q.eq("userId", user._id).eq("email", args.userEmail)
+      )
+      .first();
+
+    if (account) {
+      return { _id: account._id, userId: account.userId };
+    }
+
+    // Fall back to any Gmail account for this user
+    const anyAccount = await ctx.db
+      .query("gmailAccounts")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+
+    return anyAccount ? { _id: anyAccount._id, userId: anyAccount.userId } : null;
+  },
+});

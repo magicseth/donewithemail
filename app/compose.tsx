@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
   Alert,
   ActivityIndicator,
   SafeAreaView,
+  Modal,
+  FlatList,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { useAction, useQuery } from "convex/react";
@@ -20,11 +22,12 @@ import { useAuth } from "../lib/authContext";
 import { Id } from "../convex/_generated/dataModel";
 
 export default function ComposeScreen() {
-  const { replyTo, subject: initialSubject, emailId, body: initialBody } = useLocalSearchParams<{
+  const { replyTo, subject: initialSubject, emailId, body: initialBody, fromAccountId } = useLocalSearchParams<{
     replyTo?: string;
     subject?: string;
     emailId?: string;
     body?: string;
+    fromAccountId?: string;
   }>();
   const { user } = useAuth();
 
@@ -32,8 +35,13 @@ export default function ComposeScreen() {
   const [subject, setSubject] = useState(initialSubject || "");
   const [body, setBody] = useState(initialBody || "");
   const [isSending, setIsSending] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(fromAccountId || null);
+  const [showAccountPicker, setShowAccountPicker] = useState(false);
 
   const isReply = Boolean(replyTo);
+
+  // Get user's Gmail accounts
+  const gmailAccounts = useQuery(api.gmailAccountAuth.listGmailAccounts);
 
   // Get AI suggested reply if available (only if no body was passed)
   const originalEmail = useQuery(
@@ -47,6 +55,27 @@ export default function ComposeScreen() {
       setBody(originalEmail.suggestedReply);
     }
   }, [originalEmail?.suggestedReply]);
+
+  // Auto-select account based on original email's receiving account when replying
+  useEffect(() => {
+    if (!selectedAccountId && originalEmail?.gmailAccountId) {
+      setSelectedAccountId(originalEmail.gmailAccountId);
+    }
+  }, [originalEmail?.gmailAccountId, selectedAccountId]);
+
+  // Auto-select primary account if no account selected
+  useEffect(() => {
+    if (!selectedAccountId && gmailAccounts && gmailAccounts.length > 0) {
+      const primaryAccount = gmailAccounts.find((a: { isPrimary: boolean }) => a.isPrimary) || gmailAccounts[0];
+      setSelectedAccountId(primaryAccount._id);
+    }
+  }, [gmailAccounts, selectedAccountId]);
+
+  // Get the selected account email
+  const selectedAccount = useMemo(() => {
+    if (!gmailAccounts || !selectedAccountId) return null;
+    return gmailAccounts.find((a: { _id: string }) => a._id === selectedAccountId) || null;
+  }, [gmailAccounts, selectedAccountId]);
 
   // Send email action
   const sendEmailAction = useAction(api.gmailSend.sendEmail);
@@ -62,7 +91,9 @@ export default function ComposeScreen() {
       return;
     }
 
-    if (!user?.email) {
+    // Use selected account email, or fall back to user email
+    const senderEmail = selectedAccount?.email || user?.email;
+    if (!senderEmail) {
       Alert.alert("Error", "Not authenticated");
       return;
     }
@@ -71,7 +102,7 @@ export default function ComposeScreen() {
 
     try {
       await sendEmailAction({
-        userEmail: user.email,
+        userEmail: senderEmail,
         to: to.trim(),
         subject: subject.trim(),
         body: body.trim(),
@@ -90,7 +121,7 @@ export default function ComposeScreen() {
     } finally {
       setIsSending(false);
     }
-  }, [to, subject, body, user?.email, emailId, sendEmailAction]);
+  }, [to, subject, body, selectedAccount?.email, user?.email, emailId, sendEmailAction]);
 
   const handleDiscard = useCallback(() => {
     console.log("Cancel pressed - going back");
@@ -149,6 +180,23 @@ export default function ComposeScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView style={styles.scrollView} keyboardShouldPersistTaps="handled">
+          {/* From field (account selector) */}
+          {gmailAccounts && gmailAccounts.length > 1 && (
+            <>
+              <TouchableOpacity
+                style={styles.fieldRow}
+                onPress={() => setShowAccountPicker(true)}
+              >
+                <Text style={styles.fieldLabel}>From:</Text>
+                <Text style={styles.fieldInputText}>
+                  {selectedAccount?.email || user?.email || "Select account"}
+                </Text>
+                <Text style={styles.chevron}>▼</Text>
+              </TouchableOpacity>
+              <View style={styles.divider} />
+            </>
+          )}
+
           {/* To field */}
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>To:</Text>
@@ -201,6 +249,54 @@ export default function ComposeScreen() {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      {/* Account picker modal */}
+      <Modal
+        visible={showAccountPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAccountPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowAccountPicker(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Send from</Text>
+            <FlatList
+              data={gmailAccounts || []}
+              keyExtractor={(item) => item._id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.accountItem,
+                    item._id === selectedAccountId && styles.accountItemSelected,
+                  ]}
+                  onPress={() => {
+                    setSelectedAccountId(item._id);
+                    setShowAccountPicker(false);
+                  }}
+                >
+                  <Text style={styles.accountEmail}>{item.email}</Text>
+                  {item.isPrimary && (
+                    <Text style={styles.primaryBadge}>Primary</Text>
+                  )}
+                  {item._id === selectedAccountId && (
+                    <Text style={styles.checkmark}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setShowAccountPicker(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -267,6 +363,16 @@ const styles = StyleSheet.create({
     color: "#1a1a1a",
     padding: 0,
   },
+  fieldInputText: {
+    flex: 1,
+    fontSize: 16,
+    color: "#1a1a1a",
+  },
+  chevron: {
+    fontSize: 12,
+    color: "#999",
+    marginLeft: 8,
+  },
   divider: {
     height: 1,
     backgroundColor: "#eee",
@@ -314,5 +420,65 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6366F1",
     fontWeight: "500",
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingTop: 20,
+    paddingBottom: 34,
+    maxHeight: "50%",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  accountItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  accountItemSelected: {
+    backgroundColor: "#F0F0FF",
+  },
+  accountEmail: {
+    flex: 1,
+    fontSize: 16,
+    color: "#1a1a1a",
+  },
+  primaryBadge: {
+    fontSize: 12,
+    color: "#6366F1",
+    backgroundColor: "#E0E4FF",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  checkmark: {
+    fontSize: 18,
+    color: "#6366F1",
+    fontWeight: "600",
+  },
+  cancelButton: {
+    marginTop: 8,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    color: "#666",
   },
 });

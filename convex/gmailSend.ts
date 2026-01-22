@@ -87,38 +87,79 @@ export const sendEmail = action({
     replyToMessageId: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<{ messageId: string; threadId: string }> => {
-    // Get user's Gmail tokens
-    type UserWithGmail = {
-      _id: any;
-      gmailAccessToken?: string;
-      gmailRefreshToken?: string;
-      gmailTokenExpiresAt?: number;
-    };
-    const user: UserWithGmail | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
-      email: args.userEmail,
-    });
+    // First try to get Gmail account from gmailAccounts table (multi-account support)
+    const gmailAccountInfo = await ctx.runQuery(
+      internal.gmailAccountHelpers.getGmailAccountByEmail,
+      { userEmail: args.userEmail }
+    );
 
-    if (!user?.gmailAccessToken) {
-      throw new Error("Gmail not connected");
-    }
+    let accessToken: string;
 
-    // Refresh token if needed
-    let accessToken: string = user.gmailAccessToken;
-    if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
-      const refreshed = await refreshTokenIfNeeded(
-        user.gmailAccessToken,
-        user.gmailRefreshToken,
-        user.gmailTokenExpiresAt
+    if (gmailAccountInfo) {
+      // Use gmailAccounts table (preferred)
+      const accountTokens = await ctx.runMutation(
+        internal.gmailAccountHelpers.decryptGmailAccountTokens,
+        { accountId: gmailAccountInfo._id }
       );
-      accessToken = refreshed.accessToken;
 
-      // Save refreshed token to database
-      if (refreshed.refreshed) {
-        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
-          userId: user._id,
-          accessToken: refreshed.accessToken,
-          expiresAt: refreshed.expiresAt,
-        });
+      if (!accountTokens?.accessToken) {
+        throw new Error("Gmail account tokens not found");
+      }
+
+      // Refresh token if needed
+      if (accountTokens.refreshToken && accountTokens.tokenExpiresAt) {
+        const refreshed = await refreshTokenIfNeeded(
+          accountTokens.accessToken,
+          accountTokens.refreshToken,
+          accountTokens.tokenExpiresAt
+        );
+        accessToken = refreshed.accessToken;
+
+        // Save refreshed token to database
+        if (refreshed.refreshed) {
+          await ctx.runMutation(internal.gmailAccountHelpers.updateGmailAccountTokens, {
+            accountId: gmailAccountInfo._id,
+            accessToken: refreshed.accessToken,
+            tokenExpiresAt: refreshed.expiresAt,
+          });
+        }
+      } else {
+        accessToken = accountTokens.accessToken;
+      }
+    } else {
+      // Fall back to legacy user tokens
+      type UserWithGmail = {
+        _id: any;
+        gmailAccessToken?: string;
+        gmailRefreshToken?: string;
+        gmailTokenExpiresAt?: number;
+      };
+      const user: UserWithGmail | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+        email: args.userEmail,
+      });
+
+      if (!user?.gmailAccessToken) {
+        throw new Error("Gmail not connected");
+      }
+
+      // Refresh token if needed
+      accessToken = user.gmailAccessToken;
+      if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
+        const refreshed = await refreshTokenIfNeeded(
+          user.gmailAccessToken,
+          user.gmailRefreshToken,
+          user.gmailTokenExpiresAt
+        );
+        accessToken = refreshed.accessToken;
+
+        // Save refreshed token to database
+        if (refreshed.refreshed) {
+          await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+            userId: user._id,
+            accessToken: refreshed.accessToken,
+            expiresAt: refreshed.expiresAt,
+          });
+        }
       }
     }
 
@@ -190,38 +231,79 @@ export const sendReply = action({
     inReplyTo: v.optional(v.string()), // Convex ID of the email being replied to
   },
   handler: async (ctx, args): Promise<{ messageId: string; threadId: string }> => {
-    // Get user's Gmail tokens
-    type UserWithGmail = {
-      _id: any;
-      gmailAccessToken?: string;
-      gmailRefreshToken?: string;
-      gmailTokenExpiresAt?: number;
-    };
-    const user: UserWithGmail | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
-      email: args.userEmail,
-    });
+    // First try to get Gmail account from gmailAccounts table (multi-account support)
+    const gmailAccountInfo = await ctx.runQuery(
+      internal.gmailAccountHelpers.getGmailAccountByEmail,
+      { userEmail: args.userEmail }
+    );
 
-    if (!user?.gmailAccessToken) {
-      throw new Error("Gmail not connected");
-    }
+    let accessToken: string;
 
-    // Refresh token if needed
-    let accessToken: string = user.gmailAccessToken;
-    if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
-      const refreshed = await refreshTokenIfNeeded(
-        user.gmailAccessToken,
-        user.gmailRefreshToken,
-        user.gmailTokenExpiresAt
+    if (gmailAccountInfo) {
+      // Use gmailAccounts table (preferred)
+      const accountTokens = await ctx.runMutation(
+        internal.gmailAccountHelpers.decryptGmailAccountTokens,
+        { accountId: gmailAccountInfo._id }
       );
-      accessToken = refreshed.accessToken;
 
-      // Save refreshed token to database
-      if (refreshed.refreshed) {
-        await ctx.runMutation(internal.gmailSync.updateUserTokens, {
-          userId: user._id,
-          accessToken: refreshed.accessToken,
-          expiresAt: refreshed.expiresAt,
-        });
+      if (!accountTokens?.accessToken) {
+        throw new Error("Gmail account tokens not found");
+      }
+
+      // Refresh token if needed
+      if (accountTokens.refreshToken && accountTokens.tokenExpiresAt) {
+        const refreshed = await refreshTokenIfNeeded(
+          accountTokens.accessToken,
+          accountTokens.refreshToken,
+          accountTokens.tokenExpiresAt
+        );
+        accessToken = refreshed.accessToken;
+
+        // Save refreshed token to database
+        if (refreshed.refreshed) {
+          await ctx.runMutation(internal.gmailAccountHelpers.updateGmailAccountTokens, {
+            accountId: gmailAccountInfo._id,
+            accessToken: refreshed.accessToken,
+            tokenExpiresAt: refreshed.expiresAt,
+          });
+        }
+      } else {
+        accessToken = accountTokens.accessToken;
+      }
+    } else {
+      // Fall back to legacy user tokens
+      type UserWithGmail = {
+        _id: any;
+        gmailAccessToken?: string;
+        gmailRefreshToken?: string;
+        gmailTokenExpiresAt?: number;
+      };
+      const user: UserWithGmail | null = await ctx.runQuery(internal.gmailSync.getUserByEmail, {
+        email: args.userEmail,
+      });
+
+      if (!user?.gmailAccessToken) {
+        throw new Error("Gmail not connected");
+      }
+
+      // Refresh token if needed
+      accessToken = user.gmailAccessToken;
+      if (user.gmailRefreshToken && user.gmailTokenExpiresAt) {
+        const refreshed = await refreshTokenIfNeeded(
+          user.gmailAccessToken,
+          user.gmailRefreshToken,
+          user.gmailTokenExpiresAt
+        );
+        accessToken = refreshed.accessToken;
+
+        // Save refreshed token to database
+        if (refreshed.refreshed) {
+          await ctx.runMutation(internal.gmailSync.updateUserTokens, {
+            userId: user._id,
+            accessToken: refreshed.accessToken,
+            expiresAt: refreshed.expiresAt,
+          });
+        }
       }
     }
 

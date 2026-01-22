@@ -366,6 +366,15 @@ export const getMyUntriagedEmails = authedQuery({
       emailIds.map((id, i) => [id, summariesArray[i]])
     );
 
+    // Batch fetch Gmail accounts
+    const gmailAccountIds = [...new Set(emails.map((e) => e.gmailAccountId).filter(Boolean))] as Id<"gmailAccounts">[];
+    const gmailAccountsArray = await Promise.all(
+      gmailAccountIds.map((id) => ctx.db.get(id))
+    );
+    const gmailAccountsMap = new Map(
+      gmailAccountIds.map((id, i) => [id, gmailAccountsArray[i]])
+    );
+
     // Get PII helper for decryption (returns null if user has no key yet)
     const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
 
@@ -444,6 +453,9 @@ export const getMyUntriagedEmails = authedQuery({
           };
         }
 
+        // Get Gmail account for this email
+        const gmailAccount = email.gmailAccountId ? gmailAccountsMap.get(email.gmailAccountId) : undefined;
+
         return {
           _id: email._id,
           externalId: email.externalId,
@@ -484,6 +496,9 @@ export const getMyUntriagedEmails = authedQuery({
           calendarEventId: summaryData?.calendarEventId,
           calendarEventLink: summaryData?.calendarEventLink,
           aiProcessedAt: summaryData?.createdAt,
+          // Multi-account support
+          gmailAccountId: email.gmailAccountId,
+          gmailAccount: gmailAccount ? { _id: gmailAccount._id, email: gmailAccount.email } : undefined,
         };
       })
     );
@@ -532,6 +547,15 @@ export const getMyTodoEmails = authedQuery({
       emailIds.map((id, i) => [id, summariesArray[i]])
     );
 
+    // Batch fetch Gmail accounts
+    const gmailAccountIds = [...new Set(emails.map((e) => e.gmailAccountId).filter(Boolean))] as Id<"gmailAccounts">[];
+    const gmailAccountsArray = await Promise.all(
+      gmailAccountIds.map((id) => ctx.db.get(id))
+    );
+    const gmailAccountsMap = new Map(
+      gmailAccountIds.map((id, i) => [id, gmailAccountsArray[i]])
+    );
+
     // Get PII helper for decryption
     const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
 
@@ -539,6 +563,7 @@ export const getMyTodoEmails = authedQuery({
       emails.map(async (email) => {
         const fromContact = contactsMap.get(email.from);
         const summaryData = summariesMap.get(email._id);
+        const gmailAccount = email.gmailAccountId ? gmailAccountsMap.get(email.gmailAccountId) : undefined;
 
         // Decrypt email fields
         let decryptedEmail = { subject: null as string | null, bodyPreview: null as string | null, fromName: null as string | null };
@@ -649,6 +674,9 @@ export const getMyTodoEmails = authedQuery({
           calendarEventId: summaryData?.calendarEventId,
           calendarEventLink: summaryData?.calendarEventLink,
           aiProcessedAt: summaryData?.createdAt,
+          // Multi-account support
+          gmailAccountId: email.gmailAccountId,
+          gmailAccount: gmailAccount ? { _id: gmailAccount._id, email: gmailAccount.email } : undefined,
         };
       })
     );
@@ -678,6 +706,15 @@ export const getMyEmail = authedQuery({
       email.to.map((id) => ctx.db.get(id))
     );
     const summaryData = await getSummaryForEmail(ctx.db, email._id);
+
+    // Get Gmail account info if available
+    let gmailAccount: { _id: Id<"gmailAccounts">; email: string } | undefined;
+    if (email.gmailAccountId) {
+      const account = await ctx.db.get(email.gmailAccountId);
+      if (account) {
+        gmailAccount = { _id: account._id, email: account.email };
+      }
+    }
 
     // Get PII helper for decryption
     const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
@@ -789,6 +826,9 @@ export const getMyEmail = authedQuery({
       calendarEventId: summaryData?.calendarEventId,
       calendarEventLink: summaryData?.calendarEventLink,
       aiProcessedAt: summaryData?.createdAt,
+      // Multi-account support
+      gmailAccountId: email.gmailAccountId,
+      gmailAccount,
     };
   },
 });
@@ -1288,6 +1328,9 @@ interface BatchEmailPreview {
   aiProcessedAt?: number;
   /** True if this email is already triaged as reply_needed (in TODO list) */
   isInTodo?: boolean;
+  /** Multi-account support: which Gmail account received this email */
+  gmailAccountId?: Id<"gmailAccounts">;
+  gmailAccount?: { _id: Id<"gmailAccounts">; email: string };
 }
 
 /**
@@ -1376,6 +1419,15 @@ export const getMyBatchTriagePreview = authedQuery({
       emailIds.map((id, i) => [id, summariesArray[i]])
     );
 
+    // Batch fetch Gmail accounts
+    const gmailAccountIds = [...new Set(allEmails.map((e) => e.gmailAccountId).filter(Boolean))] as Id<"gmailAccounts">[];
+    const gmailAccountsArray = await Promise.all(
+      gmailAccountIds.map((id) => ctx.db.get(id))
+    );
+    const gmailAccountsMap = new Map(
+      gmailAccountIds.map((id, i) => [id, gmailAccountsArray[i]])
+    );
+
     // Get PII helper for decryption
     const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
 
@@ -1383,6 +1435,7 @@ export const getMyBatchTriagePreview = authedQuery({
     const emailToPreview = async (email: typeof untriagedEmails[0]): Promise<BatchEmailPreview> => {
       const fromContact = contactsMap.get(email.from);
       const summaryData = summariesMap.get(email._id);
+      const gmailAccount = email.gmailAccountId ? gmailAccountsMap.get(email.gmailAccountId) : undefined;
 
       // Decrypt email fields
       let subject = "";
@@ -1482,6 +1535,9 @@ export const getMyBatchTriagePreview = authedQuery({
         aiProcessedAt: summaryData?.createdAt,
         importantAttachments,
         isPunted: email.isPunted ?? false,
+        // Multi-account support
+        gmailAccountId: email.gmailAccountId,
+        gmailAccount: gmailAccount ? { _id: gmailAccount._id, email: gmailAccount.email } : undefined,
       } as any;
     };
 

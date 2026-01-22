@@ -1196,6 +1196,12 @@ export declare const internal: {
       { accountId: Id<"gmailAccounts"> },
       any
     >;
+    getGmailAccountByEmail: FunctionReference<
+      "query",
+      "internal",
+      { userEmail: string },
+      any
+    >;
     getGmailAccountsForSync: FunctionReference<"query", "internal", {}, any>;
     getUserIdFromAccount: FunctionReference<
       "query",
