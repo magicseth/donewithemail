@@ -85,7 +85,7 @@ export function useGmail(sessionStart?: number) {
       !convexAuthenticated &&
       !convexLoading &&
       !isRefreshingAuth &&
-      now - lastRefreshAttempt > 5000
+      now - lastRefreshAttempt > 2000
     ) {
       console.log("[useGmail] Auth mismatch detected - triggering token refresh");
       isRefreshingAuth = true;
