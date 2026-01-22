@@ -66,6 +66,12 @@ export default function ComposeScreen() {
       return;
     }
 
+    // If we're replying to an email, wait for originalEmail to load before auto-selecting
+    // This ensures we can select the correct account that received the email
+    if (emailId && originalEmail === undefined) {
+      return; // Still loading, wait
+    }
+
     hasAutoSelectedAccountRef.current = true;
 
     // If replying, try to use the account that received the email
@@ -82,7 +88,7 @@ export default function ComposeScreen() {
     // Otherwise use primary or first account
     const primary = gmailAccounts.find((a: GmailAccount) => a.isPrimary);
     setSelectedAccountId(primary?._id ?? gmailAccounts[0]._id);
-  }, [gmailAccounts, originalEmail?.gmailAccountId]);
+  }, [gmailAccounts, originalEmail, emailId]);
 
   // Get the selected account object for display
   const selectedAccount = useMemo(() => {
