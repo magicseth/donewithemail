@@ -404,6 +404,12 @@ export declare const api: {
       { emailId: Id<"emails"> },
       any
     >;
+    togglePuntEmail: FunctionReference<
+      "mutation",
+      "public",
+      { emailId: Id<"emails"> },
+      any
+    >;
   };
   featureRequests: {
     cancel: FunctionReference<

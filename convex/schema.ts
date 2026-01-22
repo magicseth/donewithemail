@@ -29,6 +29,8 @@ export default defineSchema({
       v.literal("delegated")
     )),
     triagedAt: v.optional(v.number()),
+    // Punt state - flagged for human review during batch triage (before final triage)
+    isPunted: v.optional(v.boolean()),
 
     // Follow-up reminder tracking
     lastReminderAt: v.optional(v.number()),

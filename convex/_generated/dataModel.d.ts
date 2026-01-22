@@ -250,6 +250,7 @@ export type DataModel = {
       isRead: boolean;
       isSubscription?: boolean;
       isTriaged: boolean;
+      isPunted?: boolean;
       lastReminderAt?: number;
       listUnsubscribe?: string;
       listUnsubscribePost?: boolean;
@@ -292,6 +293,7 @@ export type DataModel = {
       | "isRead"
       | "isSubscription"
       | "isTriaged"
+      | "isPunted"
       | "lastReminderAt"
       | "listUnsubscribe"
       | "listUnsubscribePost"
