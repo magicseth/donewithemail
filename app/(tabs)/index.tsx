@@ -23,8 +23,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { api } from "../../convex/_generated/api";
 import { useGmail } from "../../hooks/useGmail";
 import { useVoiceRecording } from "../../hooks/useDailyVoice";
-import { BatchTriageView, VoiceEmailData, BatchTriageViewRef, SwipeableEmailStack } from "../../components/batch";
-import type { BatchEmailPreview } from "../../hooks/useBatchTriage";
+import { BatchTriageView, VoiceEmailData, BatchTriageViewRef } from "../../components/batch";
 
 import {
   ReplyDraft,
@@ -91,9 +90,6 @@ export default function InboxScreen() {
   const [pendingTranscriptEmail, setPendingTranscriptEmail] = useState<VoiceEmailData | null>(null);
   const [replyDraft, setReplyDraft] = useState<ReplyDraft | null>(null);
   const batchTriageRef = useRef<BatchTriageViewRef>(null);
-
-  // View mode: "batch" for category view, "swipe" for TikTok-style swipe
-  const [viewMode, setViewMode] = useState<"batch" | "swipe">("swipe");
 
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
@@ -250,24 +246,6 @@ export default function InboxScreen() {
     setPendingTranscriptEmail(null);
   }, [pendingTranscriptEmail, gmailEmails, transcript, showToast]);
 
-  // Swipe mode handlers
-  const handleSwipeMarkDone = useCallback(async (emailId: string) => {
-    // Mark email as done - this will be handled by the triage mutation
-    showToast("Marked as done", "success");
-  }, [showToast]);
-
-  const handleSwipeReply = useCallback((email: BatchEmailPreview) => {
-    // Open compose screen with reply details
-    router.push({
-      pathname: "/compose",
-      params: {
-        replyTo: email.fromContact?.email || "",
-        subject: email.subject.startsWith("Re:") ? email.subject : `Re: ${email.subject}`,
-        emailId: email._id,
-      },
-    });
-  }, []);
-
   // Skip loading screen in demo mode - BatchTriageView will show demo data
   if (!isDemoMode && isLoading && gmailEmails.length === 0) {
     return (
@@ -296,78 +274,37 @@ export default function InboxScreen() {
           <Stack.Screen
             options={{
               headerRight: () => (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                  <TouchableOpacity
-                    style={[styles.headerRefreshButton, (refreshing || isSyncing) && styles.headerRefreshButtonDisabled]}
-                    onPress={handleRefresh}
-                    disabled={refreshing || isSyncing}
-                  >
-                    {refreshing || isSyncing ? (
-                      <ActivityIndicator size="small" color="#6366F1" />
-                    ) : (
-                      <Text style={styles.headerRefreshButtonText}>Refresh</Text>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.headerModeToggle}
-                    onPress={() => setViewMode(prev => prev === "batch" ? "swipe" : "batch")}
-                  >
-                    <Text style={styles.headerModeToggleText}>
-                      {viewMode === "batch" ? "🃏 Swipe" : "📋 Batch"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  style={[styles.headerRefreshButton, (refreshing || isSyncing) && styles.headerRefreshButtonDisabled]}
+                  onPress={handleRefresh}
+                  disabled={refreshing || isSyncing}
+                >
+                  {refreshing || isSyncing ? (
+                    <ActivityIndicator size="small" color="#6366F1" />
+                  ) : (
+                    <Text style={styles.headerRefreshButtonText}>Refresh</Text>
+                  )}
+                </TouchableOpacity>
               ),
             }}
           />
         )}
 
-        {/* Mode toggle for native */}
-        {Platform.OS !== "web" && (
-          <View style={styles.modeToggleContainer}>
-            <TouchableOpacity
-              style={[styles.modeToggleButton, viewMode === "swipe" && styles.modeToggleButtonActive]}
-              onPress={() => setViewMode("swipe")}
-            >
-              <Text style={[styles.modeToggleButtonText, viewMode === "swipe" && styles.modeToggleButtonTextActive]}>
-                🃏 Swipe
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modeToggleButton, viewMode === "batch" && styles.modeToggleButtonActive]}
-              onPress={() => setViewMode("batch")}
-            >
-              <Text style={[styles.modeToggleButtonText, viewMode === "batch" && styles.modeToggleButtonTextActive]}>
-                📋 Batch
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {viewMode === "batch" ? (
-          <BatchTriageView
-            ref={batchTriageRef}
-            userEmail={userEmail}
-            sessionStart={sessionStart}
-            onRefresh={handleRefresh}
-            refreshing={refreshing}
-            onQuickReply={handleBatchQuickReply}
-            onMicPressIn={handleBatchMicPressIn}
-            onMicPressOut={handleBatchMicPressOut}
-            onSendTranscript={handleBatchSendTranscript}
-            recordingForId={recordingFor}
-            isRecordingConnected={isConnected}
-            pendingTranscriptForId={pendingTranscriptFor}
-            transcript={transcript}
-          />
-        ) : (
-          <SwipeableEmailStack
-            emails={gmailEmails as unknown as BatchEmailPreview[]}
-            onMarkDone={handleSwipeMarkDone}
-            onReply={handleSwipeReply}
-            isLoading={isLoading}
-          />
-        )}
+        <BatchTriageView
+          ref={batchTriageRef}
+          userEmail={userEmail}
+          sessionStart={sessionStart}
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
+          onQuickReply={handleBatchQuickReply}
+          onMicPressIn={handleBatchMicPressIn}
+          onMicPressOut={handleBatchMicPressOut}
+          onSendTranscript={handleBatchSendTranscript}
+          recordingForId={recordingFor}
+          isRecordingConnected={isConnected}
+          pendingTranscriptForId={pendingTranscriptFor}
+          transcript={transcript}
+        />
 
         <TouchableOpacity style={styles.fab} onPress={() => router.push("/compose")}>
           <Text style={styles.fabIcon}>{"\u270f\ufe0f"}</Text>
