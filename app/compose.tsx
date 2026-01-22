@@ -47,8 +47,26 @@ export default function ComposeScreen() {
   const hasAutoFilledRef = useRef(false);
   const hasAutoSelectedAccountRef = useRef(false);
 
-  // Query gmail accounts
-  const gmailAccounts = useQuery(api.gmailAccounts.getMyGmailAccounts) as GmailAccount[] | undefined;
+  // Query linked gmail accounts
+  const linkedGmailAccounts = useQuery(api.gmailAccounts.getMyGmailAccounts) as GmailAccount[] | undefined;
+
+  // Combine main user account with linked accounts
+  // The main WorkOS account can also send emails
+  const gmailAccounts = useMemo(() => {
+    if (!user?.email) return linkedGmailAccounts;
+
+    const mainAccount: GmailAccount = {
+      _id: "main" as Id<"gmailAccounts">,
+      email: user.email,
+      isPrimary: true,
+    };
+
+    if (!linkedGmailAccounts) return [mainAccount];
+
+    // Filter out the main account if it's already in linked accounts (shouldn't happen but be safe)
+    const filtered = linkedGmailAccounts.filter(a => a.email !== user.email);
+    return [mainAccount, ...filtered];
+  }, [linkedGmailAccounts, user?.email]);
 
   // Get AI suggested reply if available (only if no body was passed)
   const originalEmail = useQuery(
@@ -75,9 +93,10 @@ export default function ComposeScreen() {
     hasAutoSelectedAccountRef.current = true;
 
     // If replying, try to use the account that received the email
-    if (originalEmail?.gmailAccountId) {
+    if (originalEmail?.gmailAccount?.email) {
+      // Match by email since linked accounts have real IDs but main account uses "main"
       const matchingAccount = gmailAccounts.find(
-        (a: GmailAccount) => a._id === originalEmail.gmailAccountId
+        (a: GmailAccount) => a.email === originalEmail.gmailAccount?.email
       );
       if (matchingAccount) {
         setSelectedAccountId(matchingAccount._id);
