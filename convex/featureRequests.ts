@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery, MutationCtx, QueryCtx } from "./_generated/server";
 import { components, internal } from "./_generated/api";
 import { PushNotifications } from "@convex-dev/expo-push-notifications";
 import { encryptedPii } from "./pii";
@@ -38,6 +38,52 @@ export const debugListRecent = internalQuery({
 const pushNotifications = new PushNotifications(components.pushNotifications);
 
 /**
+ * Helper function to get or create user from identity
+ * Handles race condition where user is authenticated but document may not exist yet
+ */
+async function getOrCreateUser(ctx: MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new Error("Not authenticated");
+  }
+
+  // Get user - try by workosId first, then fall back to email
+  const workosId = identity.subject;
+  let user = await ctx.db
+    .query("users")
+    .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+    .first();
+
+  if (!user && identity.email) {
+    user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", identity.email!))
+      .first();
+  }
+
+  // If user still doesn't exist, create it now (race condition fix)
+  // This can happen if the user submits a request before upsertUser completes
+  if (!user) {
+    if (!identity.email) {
+      throw new Error("User identity has no email");
+    }
+
+    const userId = await ctx.db.insert("users", {
+      email: identity.email,
+      workosId: workosId,
+      avatarUrl: identity.pictureUrl,
+    });
+
+    user = await ctx.db.get(userId);
+    if (!user) {
+      throw new Error("Failed to create user");
+    }
+  }
+
+  return user;
+}
+
+/**
  * Submit a new feature request from voice recording
  */
 export const submit = mutation({
@@ -46,28 +92,7 @@ export const submit = mutation({
     debugLogs: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
-
-    // Get user - try by workosId first, then fall back to email
-    const workosId = identity.subject;
-    let user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
-      .first();
-
-    if (!user && identity.email) {
-      user = await ctx.db
-        .query("users")
-        .withIndex("by_email", (q) => q.eq("email", identity.email!))
-        .first();
-    }
-
-    if (!user) {
-      throw new Error("User not found");
-    }
+    const user = await getOrCreateUser(ctx);
 
     // Get PII helper for encrypting transcript and debug logs
     const pii = await encryptedPii.forUser(ctx, user._id);
@@ -295,30 +320,39 @@ export const markFailed = mutation({
 });
 
 /**
+ * Helper function for queries - returns null if user doesn't exist yet
+ * (queries can't create data, so we just return empty results)
+ */
+async function getUserForQuery(ctx: QueryCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    return null;
+  }
+
+  // Get user - try by workosId first, then fall back to email
+  const workosId = identity.subject;
+  let user = await ctx.db
+    .query("users")
+    .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+    .first();
+
+  if (!user && identity.email) {
+    user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", identity.email!))
+      .first();
+  }
+
+  return user;
+}
+
+/**
  * Get my feature requests
  */
 export const getMine = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      return [];
-    }
-
-    // Get user - try by workosId first, then fall back to email
-    const workosId = identity.subject;
-    let user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
-      .first();
-
-    if (!user && identity.email) {
-      user = await ctx.db
-        .query("users")
-        .withIndex("by_email", (q) => q.eq("email", identity.email!))
-        .first();
-    }
-
+    const user = await getUserForQuery(ctx);
     if (!user) {
       return [];
     }
@@ -433,31 +467,15 @@ export const cancel = mutation({
     id: v.id("featureRequests"),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    const user = await getOrCreateUser(ctx);
 
     const request = await ctx.db.get(args.id);
     if (!request) {
       throw new Error("Feature request not found");
     }
 
-    // Verify ownership by checking user
-    const workosId = identity.subject;
-    let user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
-      .first();
-
-    if (!user && identity.email) {
-      user = await ctx.db
-        .query("users")
-        .withIndex("by_email", (q) => q.eq("email", identity.email!))
-        .first();
-    }
-
-    if (!user || request.userId !== user._id) {
+    // Verify ownership
+    if (request.userId !== user._id) {
       throw new Error("Not authorized to cancel this request");
     }
 
@@ -526,31 +544,15 @@ export const retryOne = mutation({
     id: v.id("featureRequests"),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    const user = await getOrCreateUser(ctx);
 
     const request = await ctx.db.get(args.id);
     if (!request) {
       throw new Error("Feature request not found");
     }
 
-    // Verify ownership by checking user
-    const workosId = identity.subject;
-    let user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
-      .first();
-
-    if (!user && identity.email) {
-      user = await ctx.db
-        .query("users")
-        .withIndex("by_email", (q) => q.eq("email", identity.email!))
-        .first();
-    }
-
-    if (!user || request.userId !== user._id) {
+    // Verify ownership
+    if (request.userId !== user._id) {
       throw new Error("Not authorized to retry this request");
     }
 
@@ -654,10 +656,7 @@ export const requestRevert = mutation({
     id: v.id("featureRequests"),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    const user = await getOrCreateUser(ctx);
 
     const request = await ctx.db.get(args.id);
     if (!request) {
@@ -665,20 +664,7 @@ export const requestRevert = mutation({
     }
 
     // Verify ownership
-    const workosId = identity.subject;
-    let user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
-      .first();
-
-    if (!user && identity.email) {
-      user = await ctx.db
-        .query("users")
-        .withIndex("by_email", (q) => q.eq("email", identity.email!))
-        .first();
-    }
-
-    if (!user || request.userId !== user._id) {
+    if (request.userId !== user._id) {
       throw new Error("Not authorized to revert this request");
     }
 
@@ -713,10 +699,7 @@ export const addClarification = mutation({
     clarificationText: v.string(),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    const user = await getOrCreateUser(ctx);
 
     const request = await ctx.db.get(args.id);
     if (!request) {
@@ -724,20 +707,7 @@ export const addClarification = mutation({
     }
 
     // Verify ownership
-    const workosId = identity.subject;
-    let user = await ctx.db
-      .query("users")
-      .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
-      .first();
-
-    if (!user && identity.email) {
-      user = await ctx.db
-        .query("users")
-        .withIndex("by_email", (q) => q.eq("email", identity.email!))
-        .first();
-    }
-
-    if (!user || request.userId !== user._id) {
+    if (request.userId !== user._id) {
       throw new Error("Not authorized to clarify this request");
     }
 
