@@ -453,6 +453,12 @@ export declare const api: {
     >;
   };
   featureRequests: {
+    addClarification: FunctionReference<
+      "mutation",
+      "public",
+      { clarificationText: string; id: Id<"featureRequests"> },
+      any
+    >;
     cancel: FunctionReference<
       "mutation",
       "public",
@@ -487,6 +493,12 @@ export declare const api: {
       any
     >;
     markProcessing: FunctionReference<
+      "mutation",
+      "public",
+      { id: Id<"featureRequests"> },
+      any
+    >;
+    requestRevert: FunctionReference<
       "mutation",
       "public",
       { id: Id<"featureRequests"> },

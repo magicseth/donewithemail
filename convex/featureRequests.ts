@@ -645,3 +645,135 @@ export const sendFeatureFailedNotification = internalMutation({
     });
   },
 });
+
+/**
+ * Request revert of a completed feature
+ */
+export const requestRevert = mutation({
+  args: {
+    id: v.id("featureRequests"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const request = await ctx.db.get(args.id);
+    if (!request) {
+      throw new Error("Feature request not found");
+    }
+
+    // Verify ownership
+    const workosId = identity.subject;
+    let user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+      .first();
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
+
+    if (!user || request.userId !== user._id) {
+      throw new Error("Not authorized to revert this request");
+    }
+
+    // Only allow reverting completed requests
+    if (request.status !== "completed") {
+      throw new Error("Can only revert completed features");
+    }
+
+    // Create a new feature request for the revert operation
+    const pii = await encryptedPii.forUser(ctx, user._id);
+    const originalTranscript = await pii.decrypt(request.transcript);
+    const revertTranscript = `Revert the changes from this feature request: ${originalTranscript}`;
+    const encryptedRevertTranscript = await pii.encrypt(revertTranscript);
+
+    const revertRequestId = await ctx.db.insert("featureRequests", {
+      userId: user._id,
+      transcript: encryptedRevertTranscript,
+      status: "pending",
+      createdAt: Date.now(),
+    });
+
+    return { id: revertRequestId };
+  },
+});
+
+/**
+ * Add clarification/amendment to a feature request
+ */
+export const addClarification = mutation({
+  args: {
+    id: v.id("featureRequests"),
+    clarificationText: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+
+    const request = await ctx.db.get(args.id);
+    if (!request) {
+      throw new Error("Feature request not found");
+    }
+
+    // Verify ownership
+    const workosId = identity.subject;
+    let user = await ctx.db
+      .query("users")
+      .withIndex("by_workos_id", (q) => q.eq("workosId", workosId))
+      .first();
+
+    if (!user && identity.email) {
+      user = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", identity.email!))
+        .first();
+    }
+
+    if (!user || request.userId !== user._id) {
+      throw new Error("Not authorized to clarify this request");
+    }
+
+    // Get PII helper for decryption and encryption
+    const pii = await encryptedPii.forUser(ctx, user._id);
+
+    // Get original transcript and any previous outputs
+    const originalTranscript = await pii.decrypt(request.transcript);
+    const claudeOutput = request.claudeOutput ? await pii.decrypt(request.claudeOutput) : undefined;
+    const error = request.error ? await pii.decrypt(request.error) : undefined;
+
+    // Build comprehensive clarification text
+    let newTranscript = `Original request: ${originalTranscript}\n\n`;
+
+    if (request.status === "failed" && error) {
+      newTranscript += `Previous attempt failed with error: ${error}\n\n`;
+    }
+
+    if (claudeOutput) {
+      newTranscript += `Previous Claude output:\n${claudeOutput}\n\n`;
+    }
+
+    newTranscript += `Clarification/Amendment: ${args.clarificationText}`;
+
+    // Create a new feature request with the clarification
+    const encryptedNewTranscript = await pii.encrypt(newTranscript);
+
+    const clarificationRequestId = await ctx.db.insert("featureRequests", {
+      userId: user._id,
+      transcript: encryptedNewTranscript,
+      status: "pending",
+      createdAt: Date.now(),
+      // Copy debug logs if they exist
+      debugLogs: request.debugLogs,
+    });
+
+    return { id: clarificationRequestId };
+  },
+});

@@ -72,6 +72,7 @@ export default function SettingsScreen() {
   const [isRetryingRequest, setIsRetryingRequest] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [selectedSuccessRequest, setSelectedSuccessRequest] = useState<{
+    id: string;
     transcript: string;
     claudeOutput?: string;
     commitHash?: string;
@@ -80,9 +81,17 @@ export default function SettingsScreen() {
     easDashboardUrl?: string;
     progressMessage?: string;
   } | null>(null);
+  const [showClarifyModal, setShowClarifyModal] = useState(false);
+  const [clarificationTranscript, setClarificationTranscript] = useState<string | null>(null);
+  const [streamingClarification, setStreamingClarification] = useState<string | null>(null);
+  const [isRecordingClarification, setIsRecordingClarification] = useState(false);
+  const [isSubmittingClarification, setIsSubmittingClarification] = useState(false);
+  const [isRequestingRevert, setIsRequestingRevert] = useState(false);
   const submitFeatureRequest = useMutation(api.featureRequests.submit);
   const cancelFeatureRequest = useMutation(api.featureRequests.cancel);
   const retryFeatureRequest = useMutation(api.featureRequests.retryOne);
+  const requestRevert = useMutation(api.featureRequests.requestRevert);
+  const addClarification = useMutation(api.featureRequests.addClarification);
   const myFeatureRequests = useQuery(api.featureRequests.getMine);
   const myCosts = useQuery(api.costs.getMyTotalCosts);
 
@@ -596,6 +605,7 @@ export default function SettingsScreen() {
   }, [selectedErrorRequest, retryFeatureRequest]);
 
   const handleShowSuccessDetails = useCallback((
+    id: string,
     transcript: string,
     claudeOutput?: string,
     commitHash?: string,
@@ -605,6 +615,7 @@ export default function SettingsScreen() {
     progressMessage?: string
   ) => {
     setSelectedSuccessRequest({
+      id,
       transcript,
       claudeOutput,
       commitHash,
@@ -620,6 +631,108 @@ export default function SettingsScreen() {
     setShowSuccessModal(false);
     setSelectedSuccessRequest(null);
   }, []);
+
+  const handleRequestRevert = useCallback(async () => {
+    if (!selectedSuccessRequest) return;
+
+    const doRevert = async () => {
+      setIsRequestingRevert(true);
+      try {
+        await requestRevert({ id: selectedSuccessRequest.id as any });
+        const msg = "Revert request submitted! The feature watcher will attempt to revert this change.";
+        Platform.OS === "web" ? window.alert(msg) : Alert.alert("Revert Requested", msg);
+        setShowSuccessModal(false);
+        setSelectedSuccessRequest(null);
+      } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : "Unknown error";
+        Platform.OS === "web" ? window.alert(`Error: ${errorMsg}`) : Alert.alert("Error", errorMsg);
+      } finally {
+        setIsRequestingRevert(false);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm("Request revert of this feature? The feature watcher will attempt to cleanly revert the changes.");
+      if (confirmed) {
+        await doRevert();
+      }
+    } else {
+      Alert.alert(
+        "Revert Feature",
+        "Request revert of this feature? The feature watcher will attempt to cleanly revert the changes.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Revert", style: "destructive", onPress: doRevert },
+        ]
+      );
+    }
+  }, [selectedSuccessRequest, requestRevert]);
+
+  const handleOpenClarifyModal = useCallback(() => {
+    setShowSuccessModal(false);
+    setShowErrorModal(false);
+    setShowClarifyModal(true);
+    setClarificationTranscript(null);
+    setStreamingClarification(null);
+  }, []);
+
+  const handleCloseClarifyModal = useCallback(() => {
+    setShowClarifyModal(false);
+    setClarificationTranscript(null);
+    setStreamingClarification(null);
+    setIsRecordingClarification(false);
+  }, []);
+
+  const handleClarificationTranscript = useCallback((transcript: string) => {
+    setClarificationTranscript(transcript);
+  }, []);
+
+  const handleClarificationStreamingTranscript = useCallback((transcript: string) => {
+    setStreamingClarification(transcript);
+  }, []);
+
+  const handleClarificationRecordingStart = useCallback(() => {
+    setIsRecordingClarification(true);
+    setStreamingClarification(null);
+    setClarificationTranscript(null);
+  }, []);
+
+  const handleClarificationRecordingEnd = useCallback(() => {
+    setIsRecordingClarification(false);
+  }, []);
+
+  const handleClarificationError = useCallback((error: string) => {
+    setIsRecordingClarification(false);
+    setStreamingClarification(null);
+    Platform.OS === "web" ? window.alert(error) : Alert.alert("Error", error);
+  }, []);
+
+  const handleSubmitClarification = useCallback(async () => {
+    if (!clarificationTranscript) return;
+
+    const requestId = selectedErrorRequest?.id || selectedSuccessRequest?.id;
+    if (!requestId) return;
+
+    setIsSubmittingClarification(true);
+    try {
+      await addClarification({
+        id: requestId as any,
+        clarificationText: clarificationTranscript,
+      });
+      const msg = `Clarification submitted!\n\nA new feature request has been created with your amendment.`;
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert("Clarification Submitted", msg);
+      handleCloseClarifyModal();
+      setShowSuccessModal(false);
+      setShowErrorModal(false);
+      setSelectedSuccessRequest(null);
+      setSelectedErrorRequest(null);
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : "Unknown error";
+      Platform.OS === "web" ? window.alert(`Error: ${errorMsg}`) : Alert.alert("Error", errorMsg);
+    } finally {
+      setIsSubmittingClarification(false);
+    }
+  }, [clarificationTranscript, selectedErrorRequest, selectedSuccessRequest, addClarification, handleCloseClarifyModal]);
 
   const handleSignOut = async () => {
     const doSignOut = async () => {
@@ -1418,6 +1531,7 @@ export default function SettingsScreen() {
                             );
                           } else if (isCompleted) {
                             handleShowSuccessDetails(
+                              req._id,
                               req.transcript,
                               req.claudeOutput,
                               req.commitHash,
@@ -1572,23 +1686,31 @@ export default function SettingsScreen() {
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonCancel, { marginTop: 16, flex: 1 }]}
-                onPress={handleCloseErrorModal}
-                disabled={isRetryingRequest}
-              >
-                <Text style={styles.modalButtonCancelText}>Close</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16, flex: 1 }]}
                 onPress={handleRetryFeatureRequest}
                 disabled={isRetryingRequest}
               >
                 {isRetryingRequest ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color="#666" />
                 ) : (
-                  <Text style={styles.modalButtonSubmitText}>Retry</Text>
+                  <Text style={styles.modalButtonCancelText}>Retry</Text>
                 )}
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16, flex: 1 }]}
+                onPress={handleOpenClarifyModal}
+                disabled={isRetryingRequest}
+              >
+                <Text style={styles.modalButtonSubmitText}>Clarify</Text>
+              </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonCancel, { marginTop: 8, flex: undefined }]}
+              onPress={handleCloseErrorModal}
+              disabled={isRetryingRequest}
+            >
+              <Text style={styles.modalButtonCancelText}>Close</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1653,8 +1775,28 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             )}
 
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel, { marginTop: selectedSuccessRequest?.easDashboardUrl ? 0 : 16 }]}
+                onPress={handleRequestRevert}
+                disabled={isRequestingRevert}
+              >
+                {isRequestingRevert ? (
+                  <ActivityIndicator size="small" color="#EF4444" />
+                ) : (
+                  <Text style={styles.modalButtonCancelText}>Revert</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: selectedSuccessRequest?.easDashboardUrl ? 0 : 16 }]}
+                onPress={handleOpenClarifyModal}
+              >
+                <Text style={styles.modalButtonSubmitText}>Clarify</Text>
+              </TouchableOpacity>
+            </View>
+
             <TouchableOpacity
-              style={[styles.modalButton, styles.modalButtonCancel, { marginTop: selectedSuccessRequest?.easDashboardUrl ? 0 : 16, flex: undefined }]}
+              style={[styles.modalButton, styles.modalButtonCancel, { marginTop: 8, flex: undefined }]}
               onPress={handleCloseSuccessModal}
             >
               <Text style={styles.modalButtonCancelText}>Close</Text>
@@ -1669,6 +1811,66 @@ export default function SettingsScreen() {
         changelogs={(allChangelogs ?? []) as ChangelogEntry[]}
         onClose={() => setShowChangelogModal(false)}
       />
+
+      {/* Clarify Modal */}
+      <Modal
+        visible={showClarifyModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleCloseClarifyModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Add Clarification</Text>
+            <Text style={styles.modalMessage}>
+              Explain how to improve or fix the implementation
+            </Text>
+
+            <View style={styles.clarifyVoiceSection}>
+              <Text style={[
+                styles.settingDescription,
+                isRecordingClarification && streamingClarification && styles.streamingTranscript
+              ]}>
+                {isRecordingClarification
+                  ? (streamingClarification || "Listening...")
+                  : clarificationTranscript
+                    ? clarificationTranscript
+                    : "Press and hold to record your clarification"}
+              </Text>
+              <VoiceRecordButton
+                onTranscript={handleClarificationTranscript}
+                onStreamingTranscript={handleClarificationStreamingTranscript}
+                onRecordingStart={handleClarificationRecordingStart}
+                onRecordingEnd={handleClarificationRecordingEnd}
+                onError={handleClarificationError}
+                disabled={isSubmittingClarification}
+                size="large"
+              />
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={handleCloseClarifyModal}
+                disabled={isSubmittingClarification}
+              >
+                <Text style={styles.modalButtonCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSubmit, !clarificationTranscript && styles.modalButtonDisabled]}
+                onPress={handleSubmitClarification}
+                disabled={!clarificationTranscript || isSubmittingClarification}
+              >
+                {isSubmittingClarification ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalButtonSubmitText}>Submit</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -2400,5 +2602,18 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     color: "#6366F1",
+  },
+  clarifyVoiceSection: {
+    marginVertical: 16,
+    padding: 16,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    alignItems: "center",
+    gap: 12,
+  },
+  modalButtonDisabled: {
+    opacity: 0.5,
   },
 });
