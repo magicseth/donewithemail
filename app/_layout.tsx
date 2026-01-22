@@ -72,6 +72,8 @@ function useAuthAdapter() {
   const [token, setToken] = useState<string | null>(null);
   // Track the last refresh signal we processed
   const lastProcessedSignal = useRef(0);
+  // Track if we've already logged token expiry (prevent log spam)
+  const hasLoggedExpiry = useRef(false);
 
   // Load token from storage on mount and when storage changes
   useEffect(() => {
@@ -111,9 +113,13 @@ function useAuthAdapter() {
           const isExpiredByJwt = accessToken && !jwtInfo.valid;
 
           if (isExpiredByStorage || isExpiredByJwt) {
-            console.log("[Auth] Token expired");
+            if (!hasLoggedExpiry.current) {
+              console.log("[Auth] Token expired");
+              hasLoggedExpiry.current = true;
+            }
             if (token !== null) setToken(null);
           } else if (accessToken && accessToken !== token) {
+            hasLoggedExpiry.current = false; // Reset when token is valid
             setToken(accessToken);
           } else if (!accessToken && token !== null) {
             setToken(null);

@@ -245,6 +245,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Track if we need to retry refresh when app becomes active
   const pendingRefreshRef = useRef(false);
+  // Automatic retry with exponential backoff
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryDelayRef = useRef(1000);
 
   // Check if error is a connection-related error (should retry)
   const isConnectionError = (error: unknown): boolean => {
@@ -291,6 +294,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setRefreshToken(result.refreshToken);
           setExpiresAt(newExpiresAt);
           console.log("[Auth] Token refreshed successfully, expires at:", new Date(newExpiresAt).toISOString());
+          // Reset retry backoff on success
+          retryDelayRef.current = 1000;
+          if (retryTimeoutRef.current) {
+            clearTimeout(retryTimeoutRef.current);
+            retryTimeoutRef.current = null;
+          }
           // Signal the auth adapter to force Convex re-authentication
           signalAuthRefresh();
           return result.accessToken;
@@ -304,8 +313,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Check if this is a connection error - if so, schedule retry instead of signing out
       if (isConnectionError(e)) {
-        console.log("[Auth] Connection error during refresh, will retry when app becomes active");
+        console.log("[Auth] Connection error during refresh, scheduling retry");
         pendingRefreshRef.current = true;
+
+        // Schedule automatic retry with exponential backoff
+        if (!retryTimeoutRef.current) {
+          const delay = retryDelayRef.current;
+          console.log(`[Auth] Will retry in ${delay}ms`);
+          retryTimeoutRef.current = setTimeout(() => {
+            retryTimeoutRef.current = null;
+            refreshAccessToken();
+          }, delay);
+          retryDelayRef.current = Math.min(retryDelayRef.current * 2, 30000);
+        }
         return accessToken; // Return existing token, don't clear auth
       }
 
@@ -410,6 +430,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => clearTimeout(timer);
   }, [expiresAt, refreshToken, user, refreshAccessToken]);
+
+  // Clean up retry timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Handle auth errors from Convex queries/mutations
   const handleAuthError = useCallback(async (error: Error) => {
