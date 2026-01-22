@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useRef } from "react";
 import { useQuery, useMutation, useAction, useConvexAuth } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
+import { usePushNotifications } from "./usePushNotifications";
 
 // Module-level cache to persist data across auth transitions
 // This prevents UI from showing "Inbox Zero" when auth temporarily desynchronizes
@@ -100,6 +101,7 @@ export interface BatchTriageResult {
 
 export function useBatchTriage(userEmail: string | undefined, sessionStart?: number): BatchTriageResult {
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
+  const { dismissAllNotifications } = usePushNotifications();
 
   // Query for batch triage preview with session stability
   const batchPreviewQuery = useQuery(
@@ -420,12 +422,17 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
         return next;
       });
 
+      // Dismiss all notifications after batch triaging
+      if (triaged > 0) {
+        await dismissAllNotifications();
+      }
+
     } finally {
       setProcessingCategory(null);
     }
 
     return { triaged, errors, emailIds: triagedEmailIds };
-  }, [userEmail, categoriesData, puntedEmails, batchCalendarAction, batchTriageMutation]);
+  }, [userEmail, categoriesData, puntedEmails, batchCalendarAction, batchTriageMutation, dismissAllNotifications]);
 
   // Accept a single calendar event
   const acceptCalendar = useCallback(async (emailId: string) => {
@@ -450,6 +457,9 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
           action: "done",
         }],
       });
+
+      // Dismiss notifications after triaging
+      await dismissAllNotifications();
     } finally {
       setAcceptingIds(prev => {
         const next = new Set(prev);
@@ -457,7 +467,7 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
         return next;
       });
     }
-  }, [userEmail, batchCalendarAction, batchTriageMutation]);
+  }, [userEmail, batchCalendarAction, batchTriageMutation, dismissAllNotifications]);
 
   // Unsubscribe from a mailing list - marks only THIS email as done
   // (User may have multiple emails from same sender to different recipients)
@@ -473,6 +483,9 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
           action: "done",
         }],
       });
+
+      // Dismiss notifications after triaging
+      await dismissAllNotifications();
     } finally {
       setUnsubscribingIds(prev => {
         const next = new Set(prev);
@@ -480,7 +493,7 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
         return next;
       });
     }
-  }, [batchTriageMutation]);
+  }, [batchTriageMutation, dismissAllNotifications]);
 
   // Mark a single email as done
   const markEmailDone = useCallback(async (emailId: string) => {
@@ -490,7 +503,10 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
         action: "done",
       }],
     });
-  }, [batchTriageMutation]);
+
+    // Dismiss notifications after triaging
+    await dismissAllNotifications();
+  }, [batchTriageMutation, dismissAllNotifications]);
 
   // Untriage an email (undo triage action)
   const untriage = useCallback(async (emailId: string) => {

@@ -3,6 +3,7 @@ import { api } from "../convex/_generated/api";
 import { Id } from "../convex/_generated/dataModel";
 import { useCallback } from "react";
 import { isAuthError, useAuthError } from "../lib/AuthErrorBoundary";
+import { usePushNotifications } from "./usePushNotifications";
 
 /**
  * Wraps a mutation call to detect and report auth errors
@@ -69,22 +70,29 @@ export function useThreadEmails(emailId: Id<"emails"> | undefined) {
 /**
  * Hook for email triage actions (authenticated)
  * Automatically reports auth errors to the error handler
+ * Dismisses push notifications after triaging
  */
 export function useTriageEmail() {
   const triageMutation = useMutation(api.emails.triageMyEmail);
   const { reportAuthError } = useAuthError();
+  const { dismissAllNotifications } = usePushNotifications();
 
   const triageEmail = useCallback(
     async (
       emailId: Id<"emails">,
       action: "done" | "reply_needed" | "delegated"
     ) => {
-      return withAuthErrorHandling(
+      const result = await withAuthErrorHandling(
         () => triageMutation({ emailId, action }),
         reportAuthError
       );
+
+      // Dismiss all notifications after triaging
+      await dismissAllNotifications();
+
+      return result;
     },
-    [triageMutation, reportAuthError]
+    [triageMutation, reportAuthError, dismissAllNotifications]
   );
 
   return { triageEmail };

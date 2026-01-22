@@ -33,6 +33,7 @@ import { api } from "../../convex/_generated/api";
 import { useAuth } from "../../lib/authContext";
 import { Id } from "../../convex/_generated/dataModel";
 import { replaceDatePlaceholders } from "../../lib/datePlaceholders";
+import { usePushNotifications } from "../../hooks/usePushNotifications";
 
 // Swipe threshold for done action
 const SWIPE_THRESHOLD = 100;
@@ -276,6 +277,7 @@ const EmailRow = React.memo(function EmailRow({
 export default function TodosScreen() {
   const { user, isAuthenticated } = useAuth();
   const { reportAuthError } = useAuthError();
+  const { dismissAllNotifications } = usePushNotifications();
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
   const [isSearchingMissed, setIsSearchingMissed] = useState(false);
 
@@ -320,6 +322,9 @@ export default function TodosScreen() {
         emailId: email._id as Id<"emails">,
         action: "done",
       });
+
+      // Dismiss notifications after triaging
+      await dismissAllNotifications();
     } catch (error) {
       console.error("Error marking email as done:", error);
       // Check for auth errors and report them
@@ -333,7 +338,7 @@ export default function TodosScreen() {
         return next;
       });
     }
-  }, [triageEmail, reportAuthError]);
+  }, [triageEmail, reportAuthError, dismissAllNotifications]);
 
   // Handler for searching missed TODOs
   const handleSearchMissedTodos = useCallback(async () => {

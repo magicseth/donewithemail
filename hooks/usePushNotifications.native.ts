@@ -191,9 +191,20 @@ export function usePushNotifications() {
     }
   }, [expoPushToken, isAuthenticated, isLoading, registerToken]);
 
+  // Function to dismiss all notifications (called when user triages emails)
+  const dismissAllNotifications = async () => {
+    try {
+      await Notifications.dismissAllNotificationsAsync();
+      console.log("[Push] Dismissed all notifications");
+    } catch (error) {
+      console.error("[Push] Failed to dismiss notifications:", error);
+    }
+  };
+
   return {
     expoPushToken,
     notification,
+    dismissAllNotifications,
   };
 }
 
