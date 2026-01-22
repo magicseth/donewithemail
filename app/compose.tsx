@@ -56,20 +56,25 @@ export default function ComposeScreen() {
     }
   }, [originalEmail?.suggestedReply]);
 
-  // Auto-select account based on original email's receiving account when replying
+  // Auto-select account once when data becomes available
+  const hasAutoSelected = React.useRef(false);
   useEffect(() => {
-    if (!selectedAccountId && originalEmail?.gmailAccountId) {
-      setSelectedAccountId(originalEmail.gmailAccountId);
-    }
-  }, [originalEmail?.gmailAccountId, selectedAccountId]);
+    if (hasAutoSelected.current) return;
 
-  // Auto-select primary account if no account selected
-  useEffect(() => {
-    if (!selectedAccountId && gmailAccounts && gmailAccounts.length > 0) {
+    // First priority: use account from original email when replying
+    if (originalEmail?.gmailAccountId) {
+      setSelectedAccountId(originalEmail.gmailAccountId);
+      hasAutoSelected.current = true;
+      return;
+    }
+
+    // Second priority: use primary account
+    if (gmailAccounts && gmailAccounts.length > 0) {
       const primaryAccount = gmailAccounts.find((a: { isPrimary: boolean }) => a.isPrimary) || gmailAccounts[0];
       setSelectedAccountId(primaryAccount._id);
+      hasAutoSelected.current = true;
     }
-  }, [gmailAccounts, selectedAccountId]);
+  }, [originalEmail?.gmailAccountId, gmailAccounts]);
 
   // Get the selected account email
   const selectedAccount = useMemo(() => {
