@@ -118,6 +118,17 @@ export declare const api: {
       any
     >;
   };
+  changelog: {
+    getAllChangelogs: FunctionReference<"query", "public", {}, any>;
+    getChangelogsSince: FunctionReference<
+      "query",
+      "public",
+      { since?: number },
+      any
+    >;
+    getLastOpened: FunctionReference<"query", "public", {}, any>;
+    updateLastOpened: FunctionReference<"mutation", "public", {}, any>;
+  };
   chatHistory: {
     deleteThread: FunctionReference<
       "action",
@@ -923,6 +934,20 @@ export declare const internal: {
       any
     >;
   };
+  changelog: {
+    addChangelog: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        description: string;
+        publishedAt?: number;
+        title: string;
+        type: "feature" | "improvement" | "bugfix" | "other";
+        version: string;
+      },
+      any
+    >;
+  };
   costs: {
     refreshPricingData: FunctionReference<"action", "internal", {}, any>;
   };
@@ -1487,6 +1512,9 @@ export declare const internal: {
       { senderName: string; subject: string; userId: Id<"users"> },
       any
     >;
+  };
+  seedChangelogs: {
+    seed: FunctionReference<"mutation", "internal", {}, any>;
   };
   staticHosting: {
     gcOldAssets: FunctionReference<

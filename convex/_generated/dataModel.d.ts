@@ -102,6 +102,34 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  changelogs: {
+    document: {
+      createdAt: number;
+      description: string;
+      publishedAt: number;
+      title: string;
+      type: "feature" | "improvement" | "bugfix" | "other";
+      version: string;
+      _id: Id<"changelogs">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "createdAt"
+      | "description"
+      | "publishedAt"
+      | "title"
+      | "type"
+      | "version";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_published: ["publishedAt", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   contacts: {
     document: {
       avatarStorageId?: Id<"_storage">;
@@ -708,6 +736,7 @@ export type DataModel = {
       };
       gmailTokenExpiresAt?: number;
       lastEmailSyncAt?: number;
+      lastOpenedAt?: number;
       name?: { __encrypted: true; c: string; i: string; k: string; v: number };
       preferences?: { autoProcessEmails?: boolean; urgencyThreshold?: number };
       workosId?: string;
@@ -747,6 +776,7 @@ export type DataModel = {
       | "gmailRefreshToken.v"
       | "gmailTokenExpiresAt"
       | "lastEmailSyncAt"
+      | "lastOpenedAt"
       | "name"
       | "name.__encrypted"
       | "name.c"
