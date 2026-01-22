@@ -1662,26 +1662,28 @@ export default function SettingsScreen() {
           <View style={[styles.modalContent, styles.errorModalContent]}>
             <Text style={styles.modalTitle}>Feature Request Failed</Text>
 
-            <View style={styles.errorSection}>
-              <Text style={styles.errorSectionTitle}>Request</Text>
-              <Text style={styles.errorSectionText}>"{selectedErrorRequest?.transcript}"</Text>
-            </View>
-
-            <View style={styles.errorSection}>
-              <Text style={styles.errorSectionTitle}>Error</Text>
-              <ScrollView style={styles.errorScrollView} nestedScrollEnabled>
-                <Text style={styles.errorText}>{selectedErrorRequest?.error}</Text>
-              </ScrollView>
-            </View>
-
-            {selectedErrorRequest?.claudeOutput && (
+            <ScrollView style={styles.modalScrollContent} showsVerticalScrollIndicator={true}>
               <View style={styles.errorSection}>
-                <Text style={styles.errorSectionTitle}>Claude Output</Text>
+                <Text style={styles.errorSectionTitle}>Request</Text>
+                <Text style={styles.errorSectionText}>"{selectedErrorRequest?.transcript}"</Text>
+              </View>
+
+              <View style={styles.errorSection}>
+                <Text style={styles.errorSectionTitle}>Error</Text>
                 <ScrollView style={styles.errorScrollView} nestedScrollEnabled>
-                  <Text style={styles.claudeOutputText}>{selectedErrorRequest.claudeOutput}</Text>
+                  <Text style={styles.errorText}>{selectedErrorRequest?.error}</Text>
                 </ScrollView>
               </View>
-            )}
+
+              {selectedErrorRequest?.claudeOutput && (
+                <View style={styles.errorSection}>
+                  <Text style={styles.errorSectionTitle}>Claude Output</Text>
+                  <ScrollView style={styles.errorScrollView} nestedScrollEnabled>
+                    <Text style={styles.claudeOutputText}>{selectedErrorRequest.claudeOutput}</Text>
+                  </ScrollView>
+                </View>
+              )}
+            </ScrollView>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -1696,11 +1698,11 @@ export default function SettingsScreen() {
                 )}
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16, flex: 1 }]}
+                style={[styles.modalButton, styles.modalButtonRed, { marginTop: 16, flex: 1 }]}
                 onPress={handleOpenClarifyModal}
                 disabled={isRetryingRequest}
               >
-                <Text style={styles.modalButtonSubmitText}>Clarify</Text>
+                <Text style={styles.modalButtonRedText}>Clarify</Text>
               </TouchableOpacity>
             </View>
 
@@ -1726,72 +1728,74 @@ export default function SettingsScreen() {
           <View style={[styles.modalContent, styles.errorModalContent]}>
             <Text style={styles.modalTitle}>Feature Request Completed</Text>
 
-            <View style={styles.errorSection}>
-              <Text style={styles.errorSectionTitle}>Request</Text>
-              <Text style={styles.errorSectionText}>"{selectedSuccessRequest?.transcript}"</Text>
-            </View>
-
-            {selectedSuccessRequest?.progressMessage && (
+            <ScrollView style={styles.modalScrollContent} showsVerticalScrollIndicator={true}>
               <View style={styles.errorSection}>
-                <Text style={styles.errorSectionTitle}>Status</Text>
-                <Text style={styles.successText}>{selectedSuccessRequest.progressMessage}</Text>
+                <Text style={styles.errorSectionTitle}>Request</Text>
+                <Text style={styles.errorSectionText}>"{selectedSuccessRequest?.transcript}"</Text>
               </View>
-            )}
 
-            {selectedSuccessRequest?.claudeOutput && (
-              <View style={styles.errorSection}>
-                <Text style={styles.errorSectionTitle}>Claude Output</Text>
-                <ScrollView style={styles.errorScrollView} nestedScrollEnabled>
-                  <Text style={styles.claudeOutputText}>{selectedSuccessRequest.claudeOutput}</Text>
-                </ScrollView>
-              </View>
-            )}
+              {selectedSuccessRequest?.progressMessage && (
+                <View style={styles.errorSection}>
+                  <Text style={styles.errorSectionTitle}>Status</Text>
+                  <Text style={styles.successText}>{selectedSuccessRequest.progressMessage}</Text>
+                </View>
+              )}
 
-            {(selectedSuccessRequest?.commitHash || selectedSuccessRequest?.branchName) && (
-              <View style={styles.errorSection}>
-                <Text style={styles.errorSectionTitle}>Implementation Details</Text>
-                {selectedSuccessRequest.branchName && (
-                  <Text style={styles.metadataText}>Branch: {selectedSuccessRequest.branchName}</Text>
-                )}
-                {selectedSuccessRequest.commitHash && (
-                  <Text style={styles.metadataText}>Commit: {selectedSuccessRequest.commitHash.substring(0, 7)}</Text>
-                )}
-                {selectedSuccessRequest.easUpdateId && (
-                  <Text style={styles.metadataText}>EAS Update: {selectedSuccessRequest.easUpdateId}</Text>
-                )}
-              </View>
-            )}
+              {selectedSuccessRequest?.claudeOutput && (
+                <View style={styles.errorSection}>
+                  <Text style={styles.errorSectionTitle}>Claude Output</Text>
+                  <ScrollView style={styles.errorScrollView} nestedScrollEnabled>
+                    <Text style={styles.claudeOutputText}>{selectedSuccessRequest.claudeOutput}</Text>
+                  </ScrollView>
+                </View>
+              )}
 
-            {selectedSuccessRequest?.easDashboardUrl && (
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16, marginBottom: 8, flex: undefined }]}
-                onPress={() => {
-                  if (selectedSuccessRequest.easDashboardUrl) {
-                    Linking.openURL(selectedSuccessRequest.easDashboardUrl);
-                  }
-                }}
-              >
-                <Text style={styles.modalButtonSubmitText}>View on EAS Dashboard</Text>
-              </TouchableOpacity>
-            )}
+              {(selectedSuccessRequest?.commitHash || selectedSuccessRequest?.branchName) && (
+                <View style={styles.errorSection}>
+                  <Text style={styles.errorSectionTitle}>Implementation Details</Text>
+                  {selectedSuccessRequest.branchName && (
+                    <Text style={styles.metadataText}>Branch: {selectedSuccessRequest.branchName}</Text>
+                  )}
+                  {selectedSuccessRequest.commitHash && (
+                    <Text style={styles.metadataText}>Commit: {selectedSuccessRequest.commitHash.substring(0, 7)}</Text>
+                  )}
+                  {selectedSuccessRequest.easUpdateId && (
+                    <Text style={styles.metadataText}>EAS Update: {selectedSuccessRequest.easUpdateId}</Text>
+                  )}
+                </View>
+              )}
+
+              {selectedSuccessRequest?.easDashboardUrl && (
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: 16, marginBottom: 8, flex: undefined }]}
+                  onPress={() => {
+                    if (selectedSuccessRequest.easDashboardUrl) {
+                      Linking.openURL(selectedSuccessRequest.easDashboardUrl);
+                    }
+                  }}
+                >
+                  <Text style={styles.modalButtonSubmitText}>View on EAS Dashboard</Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel, { marginTop: selectedSuccessRequest?.easDashboardUrl ? 0 : 16 }]}
+                style={[styles.modalButton, styles.modalButtonRed, { marginTop: selectedSuccessRequest?.easDashboardUrl ? 0 : 16 }]}
                 onPress={handleRequestRevert}
                 disabled={isRequestingRevert}
               >
                 {isRequestingRevert ? (
-                  <ActivityIndicator size="small" color="#EF4444" />
+                  <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.modalButtonCancelText}>Revert</Text>
+                  <Text style={styles.modalButtonRedText}>Revert</Text>
                 )}
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonSubmit, { marginTop: selectedSuccessRequest?.easDashboardUrl ? 0 : 16 }]}
+                style={[styles.modalButton, styles.modalButtonRed, { marginTop: selectedSuccessRequest?.easDashboardUrl ? 0 : 16 }]}
                 onPress={handleOpenClarifyModal}
               >
-                <Text style={styles.modalButtonSubmitText}>Clarify</Text>
+                <Text style={styles.modalButtonRedText}>Clarify</Text>
               </TouchableOpacity>
             </View>
 
@@ -2508,8 +2512,21 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#fff",
   },
+  modalButtonRed: {
+    backgroundColor: "#EF4444",
+  },
+  modalButtonRedText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#fff",
+  },
   errorModalContent: {
     maxHeight: "80%",
+  },
+  modalScrollContent: {
+    flexGrow: 0,
+    flexShrink: 1,
+    marginBottom: 8,
   },
   errorSection: {
     marginBottom: 16,
