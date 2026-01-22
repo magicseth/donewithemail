@@ -576,6 +576,15 @@ export declare const api: {
       any
     >;
   };
+  gmailAccounts: {
+    getGmailAccountByEmail: FunctionReference<
+      "query",
+      "public",
+      { email: string },
+      any
+    >;
+    getMyGmailAccounts: FunctionReference<"query", "public", {}, any>;
+  };
   gmailAuth: {
     exchangeCodeForTokens: FunctionReference<
       "action",
