@@ -216,7 +216,7 @@ export const inboxStyles = StyleSheet.create({
   // Toast styles
   toast: {
     position: "absolute",
-    bottom: 100,
+    top: 10,
     left: 20,
     right: 20,
     backgroundColor: "#333",

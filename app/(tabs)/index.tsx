@@ -19,6 +19,7 @@ import { useDemoMode } from "../../lib/demoModeContext";
 import { useAudioPlayer } from "expo-audio";
 import * as Haptics from "expo-haptics";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api } from "../../convex/_generated/api";
 import { useGmail } from "../../hooks/useGmail";
@@ -78,6 +79,7 @@ const useMicSounds = () => {
 export default function InboxScreen() {
   const { refreshAccessToken, signIn } = useAuth();
   const { isDemoMode } = useDemoMode();
+  const insets = useSafeAreaInsets();
 
   // Session state
   const [sessionStart] = useState(() => Date.now());
@@ -377,6 +379,7 @@ export default function InboxScreen() {
             pointerEvents="none"
             style={[
               styles.toast,
+              { top: insets.top + 10 },
               toast.type === "success" && styles.toastSuccess,
               toast.type === "error" && styles.toastError,
             ]}

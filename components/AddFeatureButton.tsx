@@ -14,9 +14,11 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { VoiceRecordButton } from "./VoiceRecordButton";
 import { useAppLogs } from "../lib/appLogger";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export function AddFeatureButton() {
   const logs = useAppLogs();
+  const insets = useSafeAreaInsets();
 
   // Feature request state
   const [isSubmittingFeature, setIsSubmittingFeature] = useState(false);
@@ -232,7 +234,7 @@ export function AddFeatureButton() {
 
       {/* Toast notification */}
       {toast && (
-        <View style={styles.toast}>
+        <View style={[styles.toast, { top: insets.top + 10 }]}>
           <Text style={styles.toastText}>{toast.message}</Text>
         </View>
       )}
@@ -405,7 +407,7 @@ const styles = StyleSheet.create({
   },
   toast: {
     position: "absolute",
-    bottom: 100,
+    top: 10,
     left: 20,
     right: 20,
     backgroundColor: "#10B981",
