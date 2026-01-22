@@ -277,7 +277,7 @@ const EmailRow = React.memo(function EmailRow({
 export default function TodosScreen() {
   const { user, isAuthenticated } = useAuth();
   const { reportAuthError } = useAuthError();
-  const { dismissAllNotifications } = usePushNotifications();
+  const { dismissNotificationForEmail } = usePushNotifications();
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
   const [isSearchingMissed, setIsSearchingMissed] = useState(false);
 
@@ -323,8 +323,8 @@ export default function TodosScreen() {
         action: "done",
       });
 
-      // Dismiss notifications after triaging
-      await dismissAllNotifications();
+      // Dismiss notification for this specific email
+      await dismissNotificationForEmail(email._id);
     } catch (error) {
       console.error("Error marking email as done:", error);
       // Check for auth errors and report them
@@ -338,7 +338,7 @@ export default function TodosScreen() {
         return next;
       });
     }
-  }, [triageEmail, reportAuthError, dismissAllNotifications]);
+  }, [triageEmail, reportAuthError, dismissNotificationForEmail]);
 
   // Handler for searching missed TODOs
   const handleSearchMissedTodos = useCallback(async () => {

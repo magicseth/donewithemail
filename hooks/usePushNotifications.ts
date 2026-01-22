@@ -4,13 +4,13 @@
  */
 export function usePushNotifications() {
   // No-op function for web platform
-  const dismissAllNotifications = async () => {
+  const dismissNotificationForEmail = async (emailId: string) => {
     // Push notifications not supported on web
   };
 
   return {
     expoPushToken: null,
     notification: null,
-    dismissAllNotifications,
+    dismissNotificationForEmail,
   };
 }

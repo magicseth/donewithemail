@@ -75,7 +75,7 @@ export function useThreadEmails(emailId: Id<"emails"> | undefined) {
 export function useTriageEmail() {
   const triageMutation = useMutation(api.emails.triageMyEmail);
   const { reportAuthError } = useAuthError();
-  const { dismissAllNotifications } = usePushNotifications();
+  const { dismissNotificationForEmail } = usePushNotifications();
 
   const triageEmail = useCallback(
     async (
@@ -87,12 +87,12 @@ export function useTriageEmail() {
         reportAuthError
       );
 
-      // Dismiss all notifications after triaging
-      await dismissAllNotifications();
+      // Dismiss notification for this specific email after triaging
+      await dismissNotificationForEmail(emailId);
 
       return result;
     },
-    [triageMutation, reportAuthError, dismissAllNotifications]
+    [triageMutation, reportAuthError, dismissNotificationForEmail]
   );
 
   return { triageEmail };

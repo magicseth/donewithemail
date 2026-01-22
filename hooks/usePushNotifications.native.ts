@@ -191,20 +191,38 @@ export function usePushNotifications() {
     }
   }, [expoPushToken, isAuthenticated, isLoading, registerToken]);
 
-  // Function to dismiss all notifications (called when user triages emails)
-  const dismissAllNotifications = async () => {
+  // Function to dismiss notification for a specific email
+  const dismissNotificationForEmail = async (emailId: string) => {
     try {
-      await Notifications.dismissAllNotificationsAsync();
-      console.log("[Push] Dismissed all notifications");
+      // Get all presented notifications
+      const presentedNotifications = await Notifications.getPresentedNotificationsAsync();
+
+      // Find notifications for this email
+      const notificationsToDismiss = presentedNotifications.filter(
+        (notification) => {
+          const data = notification.request.content.data as NotificationData;
+          return data?.emailId === emailId;
+        }
+      );
+
+      // Dismiss each matching notification
+      for (const notification of notificationsToDismiss) {
+        await Notifications.dismissNotificationAsync(notification.request.identifier);
+        console.log(`[Push] Dismissed notification ${notification.request.identifier} for email ${emailId}`);
+      }
+
+      if (notificationsToDismiss.length === 0) {
+        console.log(`[Push] No notifications found for email ${emailId}`);
+      }
     } catch (error) {
-      console.error("[Push] Failed to dismiss notifications:", error);
+      console.error(`[Push] Failed to dismiss notification for email ${emailId}:`, error);
     }
   };
 
   return {
     expoPushToken,
     notification,
-    dismissAllNotifications,
+    dismissNotificationForEmail,
   };
 }
 
