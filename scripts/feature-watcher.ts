@@ -24,8 +24,6 @@ import { spawn, execSync } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
-import { generateText } from "ai";
-import { createAnthropic } from "@ai-sdk/anthropic";
 
 // Load environment
 const CONVEX_URL = process.env.CONVEX_URL || process.env.VITE_CONVEX_URL;
@@ -54,7 +52,6 @@ const WORKTREE_BASE = path.join(os.tmpdir(), "tokmail-features");
 
 // Get Convex deployment from environment or .env.local
 let CONVEX_DEPLOYMENT = process.env.CONVEX_DEPLOYMENT;
-let ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 let EXPO_PUBLIC_CONVEX_URL = process.env.EXPO_PUBLIC_CONVEX_URL;
 
 const envPath = path.join(__dirname, "..", ".env.local");
@@ -65,13 +62,6 @@ if (fs.existsSync(envPath)) {
     const match = envContent.match(/CONVEX_DEPLOYMENT=([^\s#]+)/);
     if (match) {
       CONVEX_DEPLOYMENT = match[1].trim();
-    }
-  }
-
-  if (!ANTHROPIC_API_KEY) {
-    const match = envContent.match(/ANTHROPIC_API_KEY=([^\s#]+)/);
-    if (match) {
-      ANTHROPIC_API_KEY = match[1].trim();
     }
   }
 
@@ -89,20 +79,12 @@ if (!CONVEX_DEPLOYMENT) {
 if (!EXPO_PUBLIC_CONVEX_URL) {
   console.error("Warning: EXPO_PUBLIC_CONVEX_URL not found. Convex deploy may fail.");
 }
-if (!ANTHROPIC_API_KEY) {
-  console.log("Note: ANTHROPIC_API_KEY not set. Feature combining will be skipped.");
-}
-
-// Set env var so AI SDK can find it, then create client
-process.env.ANTHROPIC_API_KEY = ANTHROPIC_API_KEY;
-const anthropic = createAnthropic();
 
 console.log("🔄 Feature Request Watcher starting...");
 console.log(`   Convex URL: ${convexUrl}`);
 console.log(`   Convex Deployment: ${CONVEX_DEPLOYMENT || "(not set)"}`);
 console.log(`   Expo Public Convex URL: ${EXPO_PUBLIC_CONVEX_URL || "(not set)"}`);
-console.log(`   Anthropic API Key: ${ANTHROPIC_API_KEY ? "✓ found (for feature combining)" : "(not set - combining disabled)"}`);
-console.log(`   Claude Code: Using subscription (no API key passed)`);
+console.log(`   Claude Code: Using subscription for all AI operations`);
 console.log(`   Repo: ${REPO_URL}`);
 console.log(`   Worktree base: ${WORKTREE_BASE}`);
 console.log("");
@@ -585,14 +567,15 @@ interface CombinationResult {
 }
 
 /**
- * Use Claude to analyze pending requests and identify ones that should be combined
+ * Use Claude Code to analyze pending requests and identify ones that should be combined
+ * This uses Claude Code subscription instead of direct API to avoid extra costs
  */
 async function findSimilarRequests(pending: PendingRequest[]): Promise<CombinationResult | null> {
   if (pending.length < 2) {
     return null;
   }
 
-  console.log(`\n🔍 Analyzing ${pending.length} pending requests for similar features...`);
+  console.log(`\n🔍 Analyzing ${pending.length} pending requests for similar features (via Claude Code)...`);
 
   const requestList = pending.map((r, i) => `${i + 1}. ID: ${r._id}\n   Transcript: "${r.transcript}"`).join("\n\n");
 
@@ -606,7 +589,8 @@ RULES:
 2. Don't combine unrelated features just to be efficient
 3. If requests should be combined, provide a combined transcript that includes both features clearly
 
-Respond in JSON format only:
+IMPORTANT: Your ONLY output should be valid JSON with no other text, no markdown, no explanation. Just the raw JSON object.
+
 {
   "shouldCombine": boolean,
   "reason": "brief explanation",
@@ -615,25 +599,20 @@ Respond in JSON format only:
   "combinedTranscript": "combined feature description if shouldCombine is true, otherwise null"
 }
 
-Example response if combining:
+Example if combining:
 {"shouldCombine": true, "reason": "Both features relate to email filtering", "primaryIndex": 1, "combineIndices": [2], "combinedTranscript": "Add email filtering with both sender-based rules and keyword-based rules"}
 
-Example response if not combining:
+Example if not combining:
 {"shouldCombine": false, "reason": "Features are unrelated", "primaryIndex": null, "combineIndices": [], "combinedTranscript": null}`;
 
   try {
-    const { text } = await generateText({
-      model: anthropic("claude-sonnet-4-20250514"),
-      prompt,
-    });
+    // Use Claude Code with haiku model for quick analysis (cheaper via subscription)
+    const result = await runClaudeCodeForJson(prompt);
 
-    // Strip markdown code blocks if present
-    let jsonText = text.trim();
-    if (jsonText.startsWith("```")) {
-      jsonText = jsonText.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+    if (!result) {
+      console.log(`   ✓ Could not analyze requests`);
+      return null;
     }
-
-    const result = JSON.parse(jsonText);
 
     if (!result.shouldCombine) {
       console.log(`   ✓ No similar requests found: ${result.reason}`);
@@ -659,6 +638,69 @@ Example response if not combining:
     console.log(`   Failed to analyze requests: ${e}`);
     return null;
   }
+}
+
+/**
+ * Run Claude Code for a simple JSON response (for feature combining)
+ */
+function runClaudeCodeForJson(prompt: string): Promise<any | null> {
+  return new Promise((resolve) => {
+    const promptFile = path.join(os.tmpdir(), `claude-combine-${Date.now()}.txt`);
+    fs.writeFileSync(promptFile, prompt);
+
+    let fullOutput = "";
+
+    const claude = spawn("claude", ["-p", promptFile, "--dangerously-skip-permissions"], {
+      cwd: path.join(__dirname, ".."),
+      stdio: ["inherit", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        FORCE_COLOR: "1",
+        // Unset API key so Claude Code uses subscription
+        ANTHROPIC_API_KEY: "",
+      },
+    });
+
+    claude.stdout?.on("data", (data: Buffer) => {
+      fullOutput += data.toString();
+    });
+
+    claude.stderr?.on("data", (data: Buffer) => {
+      fullOutput += data.toString();
+    });
+
+    claude.on("close", (code: number | null) => {
+      try {
+        fs.unlinkSync(promptFile);
+      } catch {}
+
+      try {
+        // Try to extract JSON from the output
+        let jsonText = fullOutput.trim();
+
+        // Look for JSON object in the output
+        const jsonMatch = jsonText.match(/\{[\s\S]*"shouldCombine"[\s\S]*\}/);
+        if (jsonMatch) {
+          jsonText = jsonMatch[0];
+        }
+
+        // Strip markdown code blocks if present
+        if (jsonText.includes("```")) {
+          jsonText = jsonText.replace(/```(?:json)?\n?/g, "").replace(/\n?```/g, "");
+        }
+
+        const result = JSON.parse(jsonText);
+        resolve(result);
+      } catch (e) {
+        console.log(`   Could not parse JSON from Claude Code output`);
+        resolve(null);
+      }
+    });
+
+    claude.on("error", () => {
+      resolve(null);
+    });
+  });
 }
 
 async function poll() {
