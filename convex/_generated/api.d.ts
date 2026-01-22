@@ -326,6 +326,12 @@ export declare const api: {
       },
       any
     >;
+    batchUntriagedMyEmails: FunctionReference<
+      "mutation",
+      "public",
+      { emailIds: Array<Id<"emails">> },
+      any
+    >;
     downloadAttachment: FunctionReference<
       "action",
       "public",
@@ -420,12 +426,6 @@ export declare const api: {
       "mutation",
       "public",
       { senderEmail: string },
-      any
-    >;
-    batchUntriagedMyEmails: FunctionReference<
-      "mutation",
-      "public",
-      { emailIds: Id<"emails">[] },
       any
     >;
     untriagedMyEmail: FunctionReference<
