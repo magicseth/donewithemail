@@ -1440,6 +1440,7 @@ export const getMyBatchTriagePreview = authedQuery({
         } : null,
         aiProcessedAt: summaryData?.createdAt,
         importantAttachments,
+        isPunted: email.isPunted ?? false,
       } as any;
     };
 
@@ -1546,6 +1547,7 @@ export const batchTriageMyEmails = authedMutation({
           isTriaged: true,
           triageAction: action,
           triagedAt: Date.now(),
+          isPunted: undefined, // Clear punt state when triaged
         });
         triaged++;
       } catch (err) {
@@ -1629,6 +1631,7 @@ export const resetMyTriagedEmails = authedMutation({
         isTriaged: false,
         triageAction: undefined,
         triagedAt: undefined,
+        isPunted: undefined,
       });
     }
 
@@ -1667,9 +1670,38 @@ export const untriagedMyEmail = authedMutation({
       isTriaged: false,
       triageAction: undefined,
       triagedAt: undefined,
+      isPunted: undefined,
     });
 
     return { success: true };
+  },
+});
+
+/**
+ * Toggle punt state for an email during batch triage
+ * Punted emails will be marked as reply_needed when category is marked done
+ */
+export const togglePuntEmail = authedMutation({
+  args: {
+    emailId: v.id("emails"),
+  },
+  handler: async (ctx, args) => {
+    const email = await ctx.db.get(args.emailId);
+    if (!email) {
+      throw new Error("Email not found");
+    }
+    if (email.userId !== ctx.userId) {
+      throw new Error("Email does not belong to you");
+    }
+
+    // Toggle punt state
+    const newPuntState = !email.isPunted;
+    await ctx.db.patch(args.emailId, {
+      isPunted: newPuntState,
+    });
+
+    console.log(`[TogglePunt] Email ${args.emailId} punt state: ${newPuntState}`);
+    return { success: true, isPunted: newPuntState };
   },
 });
 

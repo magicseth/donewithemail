@@ -49,6 +49,8 @@ export interface BatchEmailPreview {
     size: number;
     attachmentId: string;
   }>;
+  /** True if this email is punted (flagged) during batch triage */
+  isPunted?: boolean;
 }
 
 export interface BatchTriageResult {
@@ -152,6 +154,32 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
     });
   }, [getSenderKey]);
 
+  // Initialize punted emails from backend state
+  // This runs once when batchPreview is first loaded
+  const [isPuntedInitialized, setIsPuntedInitialized] = useState(false);
+
+  if (batchPreview && !isPuntedInitialized) {
+    const allEmails = [
+      ...batchPreview.done,
+      ...batchPreview.humanWaiting,
+      ...batchPreview.actionNeeded,
+      ...batchPreview.calendar,
+      ...batchPreview.lowConfidence,
+      ...batchPreview.pending,
+    ];
+
+    // Initialize puntedEmails from isPunted field
+    const initialPuntedIds = new Set<string>();
+    for (const email of allEmails) {
+      if (email.isPunted) {
+        initialPuntedIds.add(email._id);
+      }
+    }
+
+    setPuntedEmails(initialPuntedIds);
+    setIsPuntedInitialized(true);
+  }
+
   // Categories data sorted by sender
   // Punted emails should appear in humanWaiting regardless of their original category
   const categoriesData = useMemo(() => {
@@ -239,18 +267,42 @@ export function useBatchTriage(userEmail: string | undefined, sessionStart?: num
     };
   }, [batchPreview, sortBySender, buildSenderCache, puntedEmails]);
 
+  // Mutation for toggling punt state
+  const togglePuntMutation = useMutation(api.emails.togglePuntEmail);
+
   // Toggle punt state for an email
-  const togglePuntEmail = useCallback((emailId: string) => {
+  const togglePuntEmail = useCallback(async (emailId: string) => {
+    // Determine the new punt state
+    const willBePunted = !puntedEmails.has(emailId);
+
+    // Optimistically update local state
     setPuntedEmails(prev => {
       const next = new Set(prev);
-      if (next.has(emailId)) {
-        next.delete(emailId);
-      } else {
+      if (willBePunted) {
         next.add(emailId);
+      } else {
+        next.delete(emailId);
       }
       return next;
     });
-  }, []);
+
+    // Persist to backend immediately
+    try {
+      await togglePuntMutation({ emailId: emailId as Id<"emails"> });
+    } catch (err) {
+      // Revert optimistic update on error
+      console.error("[TogglePunt] Failed to persist flag state:", err);
+      setPuntedEmails(prev => {
+        const next = new Set(prev);
+        if (willBePunted) {
+          next.delete(emailId);
+        } else {
+          next.add(emailId);
+        }
+        return next;
+      });
+    }
+  }, [puntedEmails, togglePuntMutation]);
 
   // Mark all unpunted emails in a category as done
   const markCategoryDone = useCallback(async (category: BatchCategory): Promise<{
