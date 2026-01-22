@@ -320,16 +320,19 @@ export const listGmailAccounts = query({
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
 
-    // Decrypt display names for UI
+    // Try to decrypt display names for UI (but don't fail if we can't)
     const pii = await encryptedPii.forUserQuery(ctx, user._id);
-    if (!pii) {
-      return [];
-    }
+
     const decrypted = await Promise.all(
       accounts.map(async (acc) => {
         let displayName: string | undefined;
-        if (acc.displayName) {
-          displayName = await pii.decrypt(acc.displayName) ?? undefined;
+        if (acc.displayName && pii) {
+          try {
+            displayName = await pii.decrypt(acc.displayName) ?? undefined;
+          } catch {
+            // Fall back to email if decryption fails
+            displayName = undefined;
+          }
         }
         return {
           _id: acc._id,
