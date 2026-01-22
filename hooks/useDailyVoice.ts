@@ -59,9 +59,9 @@ function useDeepgramNative(): UseVoiceResult {
   const transcriptRef = useRef("");
   const isStreamingRef = useRef(false);
   const sessionIdRef = useRef(0); // Track recording sessions to prevent cross-contamination
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordingStartTimeRef = useRef<number>(0);
-  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const getDeepgramKey = useAction(api.voice.getDeepgramKey);
 
@@ -400,9 +400,9 @@ function useDeepgramWeb(): UseVoiceResult {
   const streamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const transcriptRef = useRef("");
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordingStartTimeRef = useRef<number>(0);
-  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const getDeepgramKey = useAction(api.voice.getDeepgramKey);
 
