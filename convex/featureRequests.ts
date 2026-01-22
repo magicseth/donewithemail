@@ -242,6 +242,14 @@ export const markCompleted = mutation({
       userId: request.userId,
       transcript: decryptedTranscript || "Feature request",
     });
+
+    // Add changelog entry for the new feature
+    await ctx.scheduler.runAfter(0, internal.changelog.addChangelog, {
+      version: "voice",
+      title: decryptedTranscript?.slice(0, 100) || "New feature",
+      description: decryptedTranscript || "A new feature has been added based on your request.",
+      type: "feature" as const,
+    });
   },
 });
 
