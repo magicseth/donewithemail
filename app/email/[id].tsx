@@ -18,6 +18,7 @@ import { useEmail, useEmailActions, useThreadEmails } from "../../hooks/useEmail
 import { useAuth } from "../../lib/authContext";
 import { Id } from "../../convex/_generated/dataModel";
 import { AttachmentData } from "../../components/AttachmentList";
+import { VoiceRecordButton } from "../../components/VoiceRecordButton";
 
 function showAlert(title: string, message: string) {
   if (Platform.OS === "web") {
@@ -52,6 +53,7 @@ export default function EmailDetailScreen() {
   const [loadingBodies, setLoadingBodies] = useState<Set<string>>(new Set());
   const [isAddingToCalendar, setIsAddingToCalendar] = useState(false);
   const [isReprocessing, setIsReprocessing] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState<string>("");
   const [meetingAvailability, setMeetingAvailability] = useState<Array<{
     startTime: string;
     endTime: string;
@@ -186,6 +188,34 @@ export default function EmailDetailScreen() {
       },
     });
   }, [email]);
+
+  const handleReplyWithBody = useCallback((body: string) => {
+    if (!email) return;
+    const replyTo = email.fromContact?.email || "";
+    const subject = email.subject.startsWith("Re:")
+      ? email.subject
+      : `Re: ${email.subject}`;
+    router.push({
+      pathname: "/compose",
+      params: {
+        replyTo,
+        subject,
+        emailId: email._id,
+        gmailAccountId: (email as any).gmailAccountId || undefined,
+        body,
+      },
+    });
+  }, [email]);
+
+  const handleVoiceTranscript = useCallback((transcript: string) => {
+    setVoiceTranscript(transcript);
+    handleReplyWithBody(transcript);
+  }, [handleReplyWithBody]);
+
+  const handleUseSuggestedReply = useCallback(() => {
+    if (!email?.suggestedReply) return;
+    handleReplyWithBody(email.suggestedReply);
+  }, [email?.suggestedReply, handleReplyWithBody]);
 
   const handleReplyAll = useCallback(() => {
     if (!email) return;
@@ -593,12 +623,12 @@ export default function EmailDetailScreen() {
                     <EmailCard
                       email={emailData}
                       onContactPress={handleContactPress}
-                      onUseReply={isLastEmail ? handleReply : undefined}
                       onAddToCalendar={handleAddToCalendar}
                       onSelectMeetingTime={handleSelectMeetingTime}
                       meetingAvailability={isCurrentEmail ? meetingAvailability : undefined}
                       isAddingToCalendar={isAddingToCalendar}
                       showFullContent
+                      hideAISummary={isLastEmail}
                     />
                   </View>
                 )}
@@ -611,14 +641,48 @@ export default function EmailDetailScreen() {
             <EmailCard
               email={displayEmail}
               onContactPress={handleContactPress}
-              onUseReply={handleReply}
               onAddToCalendar={handleAddToCalendar}
               onSelectMeetingTime={handleSelectMeetingTime}
               meetingAvailability={meetingAvailability}
               isAddingToCalendar={isAddingToCalendar}
               showFullContent
+              hideAISummary
             />
           </>
+        )}
+
+        {/* Suggested Reply and Auto-Reply Section at Bottom */}
+        {email && (email.suggestedReply) && (
+          <View style={styles.bottomReplySection}>
+            {/* Suggested Reply */}
+            {email.suggestedReply && (
+              <View style={styles.suggestedReplyContainer}>
+                <View style={styles.replyHeader}>
+                  <View style={styles.aiIconSmall}>
+                    <Text style={styles.aiIconTextSmall}>AI</Text>
+                  </View>
+                  <Text style={styles.replyLabel}>Suggested Reply</Text>
+                </View>
+                <View style={styles.replyBox}>
+                  <Text style={styles.replyText}>{email.suggestedReply}</Text>
+                </View>
+                <View style={styles.replyActions}>
+                  <TouchableOpacity
+                    style={styles.useReplyButton}
+                    onPress={handleUseSuggestedReply}
+                  >
+                    <Text style={styles.useReplyButtonText}>Use This Reply</Text>
+                  </TouchableOpacity>
+                  <VoiceRecordButton
+                    onTranscript={handleVoiceTranscript}
+                    onError={(error) => showAlert("Voice Error", error)}
+                    size="medium"
+                    style={styles.voiceButton}
+                  />
+                </View>
+              </View>
+            )}
+          </View>
         )}
       </ScrollView>
 
@@ -754,5 +818,74 @@ const styles = StyleSheet.create({
   },
   currentEmailHighlight: {
     backgroundColor: "#F8F9FF",
+  },
+  // Bottom reply section styles
+  bottomReplySection: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: "#F8F9FF",
+    borderTopWidth: 1,
+    borderTopColor: "#E0E4FF",
+    marginTop: 16,
+  },
+  suggestedReplyContainer: {
+    marginBottom: 8,
+  },
+  replyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  aiIconSmall: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: "#6366F1",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+  },
+  aiIconTextSmall: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  replyLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6366F1",
+  },
+  replyBox: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    marginBottom: 12,
+  },
+  replyText: {
+    fontSize: 14,
+    color: "#333",
+    lineHeight: 20,
+  },
+  replyActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  useReplyButton: {
+    flex: 1,
+    backgroundColor: "#6366F1",
+    borderRadius: 8,
+    padding: 12,
+    alignItems: "center",
+  },
+  useReplyButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  voiceButton: {
+    // VoiceRecordButton already has its own styling
   },
 });

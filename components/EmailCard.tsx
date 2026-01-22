@@ -148,6 +148,7 @@ interface EmailCardProps {
   }>;
   showFullContent?: boolean;
   isAddingToCalendar?: boolean;
+  hideAISummary?: boolean;
 }
 
 export function EmailCard({
@@ -160,6 +161,7 @@ export function EmailCard({
   meetingAvailability,
   showFullContent = false,
   isAddingToCalendar = false,
+  hideAISummary = false,
 }: EmailCardProps) {
   const isOutgoing = email.direction === "outgoing";
 
@@ -244,7 +246,7 @@ export function EmailCard({
       )}
 
       {/* AI Summary */}
-      {email.summary && (
+      {email.summary && !hideAISummary && (
         <AISummary
           summary={email.summary}
           urgencyScore={email.urgencyScore}
@@ -386,7 +388,7 @@ export function EmailCard({
       )}
 
       {/* Urgency indicator bar */}
-      {email.urgencyScore !== undefined && (
+      {email.urgencyScore !== undefined && !hideAISummary && (
         <View style={styles.urgencyBar}>
           <View
             style={[
