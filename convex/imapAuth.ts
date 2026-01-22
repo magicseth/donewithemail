@@ -141,7 +141,9 @@ export const listImapAccounts = mutation({
     // Get authenticated user ID
     const identity = await ctx.auth.getUserIdentity();
     if (!identity || !identity.email) {
-      throw new Error("Not authenticated");
+      // Not authenticated yet - return empty array instead of throwing
+      // This can happen during app startup before Convex auth is fully initialized
+      return [];
     }
 
     // Find user by identity
