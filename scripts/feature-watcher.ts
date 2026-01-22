@@ -114,6 +114,7 @@ if (!fs.existsSync(WORKTREE_BASE)) {
 async function processFeatureRequest(request: {
   _id: string;
   transcript: string;
+  debugLogs?: string;
 }) {
   const workDir = path.join(WORKTREE_BASE, `feature-${request._id}`);
 
@@ -168,10 +169,16 @@ async function processFeatureRequest(request: {
     // Run Claude Code with the feature description
     console.log(`\n🤖 Running Claude Code...`);
     await updateProgress("implementing", "Claude is working on your request...", { branchName });
+
+    // Include debug logs if available (for bug investigations)
+    const debugLogsSection = request.debugLogs
+      ? `\n\n## Debug Logs from App\nThese logs were captured when the user submitted this request. Use them to diagnose issues:\n\`\`\`\n${request.debugLogs}\n\`\`\`\n`
+      : "";
+
     const prompt = `You are helping with a React Native Expo app. A user submitted this request via voice:
 
 "${request.transcript}"
-
+${debugLogsSection}
 IMPORTANT: First, determine what type of request this is:
 
 1. **Bug fix / Investigation**: If the request mentions "fix", "bug", "issue", "problem", "not working", "broken", "investigate", "check logs", or describes unexpected behavior:
@@ -198,6 +205,8 @@ After completing your work:
 5. Do NOT push to remote - I will handle that
 
 Important: Do not consider the task complete until convex dev and tsc both pass without errors.`;
+
+    console.log(`\n📋 Prompt being sent to Claude Code:\n${"─".repeat(60)}\n${prompt}\n${"─".repeat(60)}\n`);
 
     let claudeResult = await runClaudeCode(workDir, prompt);
     let attempts = 1;
@@ -529,6 +538,7 @@ function runClaudeCode(cwd: string, prompt: string): Promise<ClaudeResult> {
 interface PendingRequest {
   _id: string;
   transcript: string;
+  debugLogs?: string;
 }
 
 interface CombinationResult {

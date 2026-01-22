@@ -100,18 +100,23 @@ export const getPending = query({
       .order("asc")
       .take(10);
 
-    // Decrypt transcripts for each request
+    // Decrypt transcripts and debug logs for each request
     return Promise.all(
       requests.map(async (req) => {
         const pii = await encryptedPii.forUserQuery(ctx, req.userId);
         let transcript = "";
+        let debugLogs: string | undefined;
         if (pii) {
           transcript = (await pii.decrypt(req.transcript)) ?? "";
+          if (req.debugLogs) {
+            debugLogs = (await pii.decrypt(req.debugLogs)) ?? undefined;
+          }
         }
         return {
           _id: req._id,
           userId: req.userId,
           transcript,
+          debugLogs,
           status: req.status,
           createdAt: req.createdAt,
         };
