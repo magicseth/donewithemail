@@ -617,6 +617,8 @@ export default function EmailDetailScreen() {
                 name: c.name,
                 avatarUrl: c.avatarUrl,
               })),
+              // Attachments are fetched for the main email - show them for current email in thread
+              attachments: isCurrentEmail ? (attachments as AttachmentData[] | undefined) : undefined,
               userEmail: user?.email,
             };
 
