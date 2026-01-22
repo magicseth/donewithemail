@@ -35,9 +35,15 @@ export const startChat = action({
   handler: async (ctx, args): Promise<{ threadId: string; response: string; toolResults?: any[] }> => {
     const user = await getAuthenticatedUser(ctx);
 
+    // Create a title from the user's message (truncate to 60 chars)
+    const title = args.message.length > 60
+      ? args.message.substring(0, 57) + "..."
+      : args.message;
+
     // Create a new thread for this conversation
     const { threadId } = await emailQAAgent.createThread(ctx, {
       userId: user._id,
+      title,
     });
 
     // Generate response using the agent's generateText method directly

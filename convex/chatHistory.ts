@@ -63,14 +63,52 @@ export const listThreads = action({
       },
     });
 
-    // Return threads immediately without fetching messages
-    // The first message can be fetched on-demand if needed
-    const threadInfos: ThreadInfo[] = threads.page.map((thread) => ({
-      threadId: thread._id,
-      title: thread.title || null,
-      createdAt: thread._creationTime,
-      firstMessage: null, // Will be populated on demand when thread is opened
-    }));
+    // Normalize threads: populate titles from first message if missing
+    const threadInfos: ThreadInfo[] = await Promise.all(
+      threads.page.map(async (thread) => {
+        let title = thread.title || null;
+
+        // If thread has no title, generate one from the first user message
+        if (!title) {
+          try {
+            const messages = await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
+              threadId: thread._id,
+              order: "asc",
+              paginationOpts: {
+                numItems: 1,
+                cursor: null,
+              },
+            });
+
+            // Get the first user message
+            const firstMessage = messages.page[0];
+            if (firstMessage?.message?.role === "user") {
+              const messageText = extractTextFromContent(firstMessage.message.content);
+              // Truncate to 60 characters for a clean title
+              title = messageText.length > 60
+                ? messageText.substring(0, 57) + "..."
+                : messageText;
+
+              // Update the thread with the new title so we don't need to fetch it again
+              await ctx.runMutation(components.agent.threads.updateThread, {
+                threadId: thread._id,
+                patch: { title },
+              });
+            }
+          } catch (err) {
+            console.error(`Failed to generate title for thread ${thread._id}:`, err);
+            // Continue with null title on error
+          }
+        }
+
+        return {
+          threadId: thread._id,
+          title,
+          createdAt: thread._creationTime,
+          firstMessage: title, // Use title as the display text
+        };
+      })
+    );
 
     return threadInfos;
   },
