@@ -359,6 +359,14 @@ export type DataModel = {
       deadlineReminderSent?: boolean;
       emailId: Id<"emails">;
       embedding?: Array<number>;
+      importantAttachmentIds?: Array<Id<"emailAttachments">>;
+      meetingRequest?: {
+        __encrypted: true;
+        c: string;
+        i: string;
+        k: string;
+        v: number;
+      };
       quickReplies?: {
         __encrypted: true;
         c: string;
@@ -421,6 +429,13 @@ export type DataModel = {
       | "deadlineReminderSent"
       | "emailId"
       | "embedding"
+      | "importantAttachmentIds"
+      | "meetingRequest"
+      | "meetingRequest.__encrypted"
+      | "meetingRequest.c"
+      | "meetingRequest.i"
+      | "meetingRequest.k"
+      | "meetingRequest.v"
       | "quickReplies"
       | "quickReplies.__encrypted"
       | "quickReplies.c"

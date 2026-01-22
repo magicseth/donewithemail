@@ -90,6 +90,15 @@ export declare const api: {
       },
       any
     >;
+    checkMeetingAvailability: FunctionReference<
+      "action",
+      "public",
+      {
+        proposedTimes: Array<{ endTime: string; startTime: string }>;
+        userEmail: string;
+      },
+      any
+    >;
   };
   chatHistory: {
     deleteThread: FunctionReference<
@@ -1024,6 +1033,12 @@ export declare const internal: {
     >;
   };
   featureRequests: {
+    debugListRecent: FunctionReference<
+      "query",
+      "internal",
+      { limit?: number },
+      any
+    >;
     sendFeatureCompletedNotification: FunctionReference<
       "mutation",
       "internal",
@@ -1680,6 +1695,11 @@ export declare const internal: {
         deadline?: string;
         deadlineDescription?: string;
         emailId: Id<"emails">;
+        importantAttachmentIds?: Array<Id<"emailAttachments">>;
+        meetingRequest?: {
+          isMeetingRequest: boolean;
+          proposedTimes?: Array<{ endTime: string; startTime: string }>;
+        };
         quickReplies?: Array<{ body: string; label: string }>;
         shouldAcceptCalendar?: boolean;
         suggestedReply?: string;

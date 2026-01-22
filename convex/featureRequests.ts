@@ -1,8 +1,38 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { components, internal } from "./_generated/api";
 import { PushNotifications } from "@convex-dev/expo-push-notifications";
 import { encryptedPii } from "./pii";
+
+// Debug query to list recent feature requests (internal only)
+export const debugListRecent = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 20;
+    const requests = await ctx.db
+      .query("featureRequests")
+      .order("desc")
+      .take(limit);
+
+    // Return raw data with encrypted fields (they'll show as encrypted strings)
+    return requests.map((req) => ({
+      _id: req._id,
+      status: req.status,
+      progressStep: req.progressStep,
+      createdAt: new Date(req.createdAt).toISOString(),
+      startedAt: req.startedAt ? new Date(req.startedAt).toISOString() : null,
+      completedAt: req.completedAt ? new Date(req.completedAt).toISOString() : null,
+      branchName: req.branchName,
+      commitHash: req.commitHash,
+      easUpdateId: req.easUpdateId,
+      claudeSuccess: req.claudeSuccess,
+      // Encrypted fields - will show encrypted values
+      transcript: req.transcript,
+      error: req.error,
+      progressMessage: req.progressMessage,
+    }));
+  },
+});
 
 // Initialize push notifications client
 const pushNotifications = new PushNotifications(components.pushNotifications);
