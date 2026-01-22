@@ -14,6 +14,7 @@ import {
   Animated,
   Dimensions,
   Linking,
+  Image,
 } from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "../../lib/authContext";
@@ -846,10 +847,9 @@ export default function SettingsScreen() {
                   <View style={styles.providerRow}>
                     <View style={styles.providerIcon}>
                       {account.avatarUrl ? (
-                        <img
-                          src={account.avatarUrl}
+                        <Image
+                          source={{ uri: account.avatarUrl }}
                           style={{ width: 40, height: 40, borderRadius: 20 }}
-                          alt="avatar"
                         />
                       ) : (
                         <Text style={styles.providerIconText}>📧</Text>
