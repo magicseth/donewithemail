@@ -187,6 +187,69 @@ export default function EmailDetailScreen() {
     });
   }, [email]);
 
+  const handleReplyAll = useCallback(() => {
+    if (!email) return;
+
+    // Get user's email addresses to exclude from recipients
+    const userEmails = new Set([user?.email?.toLowerCase()].filter(Boolean));
+
+    // Collect all recipients: from + to + cc (excluding our own emails)
+    const allRecipients: string[] = [];
+
+    // Add the sender first
+    if (email.fromContact?.email) {
+      allRecipients.push(email.fromContact.email);
+    }
+
+    // Add To recipients (excluding self)
+    if (email.toContacts) {
+      for (const contact of email.toContacts) {
+        if (contact?.email && !userEmails.has(contact.email.toLowerCase())) {
+          allRecipients.push(contact.email);
+        }
+      }
+    }
+
+    // Dedupe recipients
+    const uniqueRecipients = [...new Set(allRecipients)];
+
+    const subject = email.subject.startsWith("Re:")
+      ? email.subject
+      : `Re: ${email.subject}`;
+
+    router.push({
+      pathname: "/compose",
+      params: {
+        replyTo: uniqueRecipients.join(", "),
+        subject,
+        emailId: email._id,
+        gmailAccountId: (email as any).gmailAccountId || undefined,
+      },
+    });
+  }, [email, user?.email]);
+
+  const handleForward = useCallback(() => {
+    if (!email) return;
+
+    const subject = email.subject.startsWith("Fwd:")
+      ? email.subject
+      : `Fwd: ${email.subject}`;
+
+    // Build forwarded message body
+    const fromName = email.fromContact?.name || email.fromContact?.email || "Unknown";
+    const date = new Date(email.receivedAt).toLocaleString();
+    const forwardedBody = `\n\n---------- Forwarded message ----------\nFrom: ${fromName}\nDate: ${date}\nSubject: ${email.subject}\n\n${email.bodyPreview || ""}`;
+
+    router.push({
+      pathname: "/compose",
+      params: {
+        subject,
+        body: forwardedBody,
+        // Don't pass emailId for forward - it's a new message
+      },
+    });
+  }, [email]);
+
   const handleAddToCalendar = useCallback(async (event: CalendarEventData, skipDuplicateCheck = false) => {
     if (!user?.email) {
       showAlert("Error", "Not signed in");
@@ -566,22 +629,22 @@ export default function EmailDetailScreen() {
           <Text style={styles.actionText}>Reply</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity style={styles.actionButton} onPress={handleReplyAll}>
+          <Text style={styles.actionIcon}>↩️↩️</Text>
+          <Text style={styles.actionText}>Reply All</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionButton} onPress={handleForward}>
+          <Text style={styles.actionIcon}>➡️</Text>
+          <Text style={styles.actionText}>Forward</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={[styles.actionButton, styles.actionButtonPrimary]}
           onPress={handleArchive}
         >
           <Text style={styles.actionIcon}>✓</Text>
           <Text style={[styles.actionText, styles.actionTextPrimary]}>Done</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={() => {
-            if (convexId) markReplyNeeded(convexId);
-          }}
-        >
-          <Text style={styles.actionIcon}>⏰</Text>
-          <Text style={styles.actionText}>Remind</Text>
         </TouchableOpacity>
       </View>
     </>
