@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -34,6 +34,7 @@ export default function ComposeScreen() {
   const [isSending, setIsSending] = useState(false);
 
   const isReply = Boolean(replyTo);
+  const hasAutoFilledRef = useRef(false);
 
   // Get AI suggested reply if available (only if no body was passed)
   const originalEmail = useQuery(
@@ -42,11 +43,14 @@ export default function ComposeScreen() {
   );
 
   // Pre-fill with AI suggested reply if available and no body was passed
+  // Use ref to ensure we only auto-fill once
+  const suggestedReply = originalEmail?.suggestedReply;
   useEffect(() => {
-    if (originalEmail?.suggestedReply && !body && !initialBody) {
-      setBody(originalEmail.suggestedReply);
+    if (suggestedReply && !hasAutoFilledRef.current && !initialBody) {
+      hasAutoFilledRef.current = true;
+      setBody(suggestedReply);
     }
-  }, [originalEmail?.suggestedReply]);
+  }, [suggestedReply, initialBody]);
 
   // Send email action
   const sendEmailAction = useAction(api.gmailSend.sendEmail);
