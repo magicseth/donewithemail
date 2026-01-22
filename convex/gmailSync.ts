@@ -13,7 +13,7 @@ import { Id } from "./_generated/dataModel";
 import { encryptedPii } from "./pii";
 
 // Import from extracted modules
-import { extractBody, extractAttachments, type AttachmentInfo } from "./gmailHelpers";
+import { extractBody, extractAttachments, type AttachmentInfo, getHeader, unfold as unfoldHeader, parseSender } from "./gmailHelpers";
 import {
   refreshTokenIfNeeded,
   fetchProfilePhotoUrl,
@@ -762,12 +762,11 @@ export const fetchAndStoreEmailsByIds = internalAction({
 
     // Helper for delays
     const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-    const unfold = (s: string) => s.replace(/\r?\n\s+/g, "").trim();
 
     const stored: string[] = [];
     const failed: string[] = [];
 
-    // Step 1: Fetch all message metadata in parallel (just HTTP calls, no mutations)
+    // Step 1: Fetch full messages in parallel (using format=full to get body)
     interface MessageData {
       msgId: string;
       threadId?: string;
@@ -775,12 +774,15 @@ export const fetchAndStoreEmailsByIds = internalAction({
       senderName: string;
       subject: string;
       snippet: string;
+      bodyFull: string;  // Full body (HTML preferred, fallback to plain text)
       receivedAt: number;
       isRead: boolean;
       // Subscription fields
       listUnsubscribe?: string;
       listUnsubscribePost: boolean;
       isSubscription: boolean;
+      // Attachments
+      attachments: AttachmentInfo[];
     }
     const messageDataList: MessageData[] = [];
 
@@ -792,8 +794,9 @@ export const fetchAndStoreEmailsByIds = internalAction({
 
       const results = await Promise.all(batch.map(async (msgId): Promise<MessageData | null> => {
         try {
+          // Use format=full to get the complete email body
           const msgResponse = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe&metadataHeaders=List-Unsubscribe-Post`,
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`,
             { headers: { Authorization: `Bearer ${accessToken}` } }
           );
 
@@ -805,47 +808,44 @@ export const fetchAndStoreEmailsByIds = internalAction({
 
           const msgData = await msgResponse.json();
           const headers = msgData.payload?.headers || [];
-          const getHeader = (name: string) =>
-            headers.find((h: { name: string }) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
 
-          const from = unfold(getHeader("From"));
-          const subject = unfold(getHeader("Subject")) || "(No subject)";
-          const date = getHeader("Date");
+          const from = unfoldHeader(getHeader(headers, "From"));
+          const subject = unfoldHeader(getHeader(headers, "Subject")) || "(No subject)";
+          const date = getHeader(headers, "Date");
 
-          // Parse sender
-          let senderName = "";
-          let senderEmail = "";
-          const fromMatch = from.match(/(?:"?([^"<]*)"?\s*)?<?([^\s<>]+@[^\s<>]+)>?/);
-          if (fromMatch) {
-            senderName = fromMatch[1]?.trim() || "";
-            senderEmail = fromMatch[2] || from;
-          } else {
-            senderEmail = from;
-          }
-          if (!senderName) senderName = senderEmail;
-
-          if (!senderEmail?.includes("@")) {
+          // Parse sender using helper
+          const sender = parseSender(from);
+          if (!sender.email?.includes("@")) {
             failed.push(msgId);
             return null;
           }
 
+          // Extract full body (HTML preferred, fallback to plain text)
+          const { html, plain } = extractBody(msgData.payload);
+          const bodyFull = html || plain || msgData.snippet || "";
+
+          // Extract attachment metadata
+          const attachments = extractAttachments(msgData.payload);
+
           // Extract subscription headers
-          const listUnsubscribe = getHeader("List-Unsubscribe") || undefined;
-          const listUnsubscribePost = !!getHeader("List-Unsubscribe-Post");
+          const listUnsubscribe = getHeader(headers, "List-Unsubscribe") || undefined;
+          const listUnsubscribePost = !!getHeader(headers, "List-Unsubscribe-Post");
           const isSubscription = !!listUnsubscribe;
 
           return {
             msgId,
             threadId: msgData.threadId || undefined,
-            senderEmail,
-            senderName: senderName !== senderEmail ? senderName : senderEmail,
+            senderEmail: sender.email,
+            senderName: sender.name !== sender.email ? sender.name : sender.email,
             subject,
             snippet: msgData.snippet || "",
+            bodyFull,
             receivedAt: date ? new Date(date).getTime() : Date.now(),
             isRead: !msgData.labelIds?.includes("UNREAD"),
             listUnsubscribe,
             listUnsubscribePost,
             isSubscription,
+            attachments,
           };
         } catch (e) {
           console.error(`Error fetching message ${msgId}:`, e);
@@ -892,6 +892,7 @@ export const fetchAndStoreEmailsByIds = internalAction({
       }
 
       try {
+        // Store with full body instead of just snippet
         const { emailId, isNew } = await ctx.runMutation(internal.gmailSync.storeEmailInternal, {
           externalId: msg.msgId,
           threadId: msg.threadId,
@@ -901,7 +902,7 @@ export const fetchAndStoreEmailsByIds = internalAction({
           to: [],
           subject: msg.subject,
           bodyPreview: msg.snippet,
-          bodyFull: msg.snippet,
+          bodyFull: msg.bodyFull,  // Use full body extracted from email
           receivedAt: msg.receivedAt,
           isRead: msg.isRead,
           listUnsubscribe: msg.listUnsubscribe,
@@ -910,6 +911,25 @@ export const fetchAndStoreEmailsByIds = internalAction({
           gmailAccountId: args.gmailAccountId,
         });
         stored.push(msg.msgId);
+
+        // Store attachment metadata for new emails
+        if (isNew && msg.attachments.length > 0) {
+          for (const attachment of msg.attachments) {
+            try {
+              await ctx.runMutation(internal.gmailSync.storeAttachment, {
+                emailId,
+                userId,
+                filename: attachment.filename,
+                mimeType: attachment.mimeType,
+                size: attachment.size,
+                attachmentId: attachment.attachmentId,
+                contentId: attachment.contentId,
+              });
+            } catch (e) {
+              console.error(`Error storing attachment ${attachment.filename}:`, e);
+            }
+          }
+        }
 
         // If this is a subscription email, upsert the subscription record
         if (msg.isSubscription && msg.listUnsubscribe) {
