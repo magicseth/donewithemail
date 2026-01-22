@@ -21,10 +21,14 @@ export default function LinkGmailScreen() {
   const linkGmailAccount = useAction(api.gmailAccountAuth.linkGmailAccount);
 
   // For web, use window.location.origin
-  // For mobile, use AuthSession's redirect URI (uses Expo proxy)
+  // For mobile, use Expo Auth proxy (required for Google OAuth compliance)
   const redirectUri = Platform.OS === "web"
     ? `${window.location.origin}/link-gmail-callback`
-    : AuthSession.makeRedirectUri({ preferLocalhost: false });
+    : AuthSession.makeRedirectUri({
+        // Use Expo proxy for Google OAuth compliance
+        // @ts-ignore - useProxy is deprecated but still works and is required for Google
+        useProxy: true,
+      });
 
   // Get auth URL from Convex (for web) or build it for mobile
   const authUrl = useQuery(
@@ -103,7 +107,8 @@ export default function LinkGmailScreen() {
   useEffect(() => {
     if (Platform.OS !== "web" && request) {
       setIsLoading(false);
-      promptAsync();
+      // @ts-ignore - useProxy is deprecated but required for Google OAuth
+      promptAsync({ useProxy: true });
     }
   }, [request]);
 
