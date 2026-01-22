@@ -1842,5 +1842,113 @@ export const togglePuntEmail = authedMutation({
   },
 });
 
+// =============================================================================
+// DEBUG ENDPOINTS
+// =============================================================================
+
+/**
+ * Get ALL emails for the current user with pagination (for debugging)
+ * Shows all emails regardless of triage state
+ */
+export const getMyAllEmailsDebug = authedQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
+
+    // Parse cursor if provided
+    let cursorTime: number | undefined;
+    if (args.cursor) {
+      cursorTime = parseInt(args.cursor, 10);
+    }
+
+    // Get all emails for user, ordered by receivedAt desc
+    let query = ctx.db
+      .query("emails")
+      .withIndex("by_user_received", (q) => q.eq("userId", ctx.userId));
+
+    // If we have a cursor, filter to emails before that time
+    const allEmails = await query.order("desc").collect();
+
+    // Manual pagination using receivedAt
+    let filteredEmails = cursorTime
+      ? allEmails.filter((e) => e.receivedAt < cursorTime!)
+      : allEmails;
+
+    const pageEmails = filteredEmails.slice(0, limit);
+    const hasMore = filteredEmails.length > limit;
+    const nextCursor = hasMore
+      ? pageEmails[pageEmails.length - 1]?.receivedAt.toString()
+      : undefined;
+
+    // Get total count
+    const totalCount = allEmails.length;
+
+    // Batch fetch contacts
+    const contactIds = [...new Set(pageEmails.map((e) => e.from))];
+    const contactsArray = await Promise.all(
+      contactIds.map((id) => ctx.db.get(id))
+    );
+    const contactsMap = new Map(
+      contactIds.map((id, i) => [id, contactsArray[i]])
+    );
+
+    // Build response with minimal decryption for performance
+    const emails = await Promise.all(
+      pageEmails.map(async (email) => {
+        const contact = contactsMap.get(email.from);
+
+        // Decrypt subject only
+        let subject: string | null = null;
+        try {
+          const pii = await encryptedPii.forUserQuery(ctx, ctx.userId);
+          if (pii && email.subject) {
+            subject = await pii.decrypt(email.subject);
+          }
+        } catch {
+          subject = "[encrypted]";
+        }
+
+        return {
+          _id: email._id,
+          externalId: email.externalId,
+          subject,
+          receivedAt: email.receivedAt,
+          direction: email.direction,
+          isTriaged: email.isTriaged,
+          triageAction: email.triageAction,
+          triagedAt: email.triagedAt,
+          isPunted: email.isPunted,
+          isSubscription: email.isSubscription,
+          gmailAccountId: email.gmailAccountId,
+          fromEmail: contact?.email ?? "unknown",
+        };
+      })
+    );
+
+    // Get sync stats
+    const gmailAccounts = await ctx.db
+      .query("gmailAccounts")
+      .withIndex("by_user", (q) => q.eq("userId", ctx.userId))
+      .collect();
+
+    const syncStats = gmailAccounts.map((acc) => ({
+      email: acc.email,
+      lastSyncAt: acc.lastSyncAt,
+      tokenExpiresAt: acc.tokenExpiresAt,
+    }));
+
+    return {
+      emails,
+      totalCount,
+      hasMore,
+      nextCursor,
+      syncStats,
+    };
+  },
+});
+
 // Re-export attachment functions from gmailSync
 export { getEmailAttachments, downloadAttachment } from "./gmailSync";

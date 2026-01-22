@@ -12,6 +12,7 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
     inbox: "📥",
     settings: "⚙️",
     ask: "💬",
+    debug: "🔍",
   };
 
   return (
@@ -74,6 +75,16 @@ export default function TabsLayout() {
           title: "Settings",
           tabBarIcon: ({ focused }) => (
             <TabIcon name="settings" focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="debug"
+        options={{
+          title: "Debug",
+          headerTitle: "Debug: All Emails",
+          tabBarIcon: ({ focused }) => (
+            <TabIcon name="debug" focused={focused} />
           ),
         }}
       />

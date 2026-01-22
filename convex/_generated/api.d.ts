@@ -361,6 +361,12 @@ export declare const api: {
       { emailId: Id<"emails"> },
       any
     >;
+    getMyAllEmailsDebug: FunctionReference<
+      "query",
+      "public",
+      { cursor?: string; limit?: number },
+      any
+    >;
     getMyBatchTriagePreview: FunctionReference<
       "query",
       "public",
