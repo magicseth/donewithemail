@@ -14,6 +14,7 @@ import {
   SafeAreaView,
   Modal,
   FlatList,
+  Image,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
 import { useAction, useQuery } from "convex/react";
@@ -25,6 +26,7 @@ type GmailAccount = {
   _id: Id<"gmailAccounts">;
   email: string;
   isPrimary?: boolean;
+  avatarUrl?: string;
 };
 
 export default function ComposeScreen() {
@@ -59,6 +61,7 @@ export default function ComposeScreen() {
       _id: "main" as Id<"gmailAccounts">,
       email: user.email,
       isPrimary: true,
+      avatarUrl: user.avatarUrl,
     };
 
     if (!linkedGmailAccounts) return [mainAccount];
@@ -341,7 +344,18 @@ export default function ComposeScreen() {
                   setShowAccountPicker(false);
                 }}
               >
-                <Text style={styles.accountEmail}>{item.email}</Text>
+                <View style={styles.accountItemLeft}>
+                  {item.avatarUrl ? (
+                    <Image source={{ uri: item.avatarUrl }} style={styles.accountAvatar} />
+                  ) : (
+                    <View style={styles.accountAvatarPlaceholder}>
+                      <Text style={styles.accountAvatarText}>
+                        {item.email.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <Text style={styles.accountEmail}>{item.email}</Text>
+                </View>
                 {item._id === selectedAccountId && (
                   <Text style={styles.checkmark}>✓</Text>
                 )}
@@ -505,6 +519,31 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
+  },
+  accountItemLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  accountAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginRight: 12,
+  },
+  accountAvatarPlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#6366F1",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  accountAvatarText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
   accountEmail: {
     fontSize: 16,
