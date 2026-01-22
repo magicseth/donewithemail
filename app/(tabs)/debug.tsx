@@ -32,6 +32,16 @@ type SyncStat = {
   email: string;
   lastSyncAt?: number;
   tokenExpiresAt?: number;
+  source?: string;
+};
+
+type LegacySyncStat = {
+  email: string;
+  lastSyncAt?: number;
+  tokenExpiresAt?: number;
+  source: string;
+  hasToken: boolean;
+  hasRefreshToken: boolean;
 };
 
 function formatDate(timestamp: number): string {
@@ -98,15 +108,40 @@ function EmailRow({ email }: { email: DebugEmail }) {
   );
 }
 
-function SyncStatus({ stats }: { stats: SyncStat[] }) {
+function SyncStatus({ stats, legacyStats }: { stats: SyncStat[]; legacyStats?: LegacySyncStat | null }) {
   return (
     <View style={styles.syncSection}>
       <Text style={styles.syncTitle}>Sync Status</Text>
+
+      {/* Legacy WorkOS account */}
+      {legacyStats && (
+        <View style={styles.syncRow}>
+          <Text style={styles.syncEmail}>
+            {legacyStats.email} <Text style={styles.sourceTag}>(WorkOS)</Text>
+          </Text>
+          <Text style={styles.syncTime}>
+            Last sync: {legacyStats.lastSyncAt ? formatDate(legacyStats.lastSyncAt) : "never"}
+          </Text>
+          <Text style={[
+            styles.syncToken,
+            !legacyStats.hasToken ? styles.tokenExpired : undefined,
+            legacyStats.tokenExpiresAt && legacyStats.tokenExpiresAt < Date.now() ? styles.tokenExpired : undefined,
+          ]}>
+            Token: {!legacyStats.hasToken ? "NO TOKEN" :
+              (legacyStats.tokenExpiresAt && legacyStats.tokenExpiresAt < Date.now()) ? "EXPIRED" : "valid"}
+            {legacyStats.hasToken && !legacyStats.hasRefreshToken && " (no refresh!)"}
+          </Text>
+        </View>
+      )}
+
+      {/* Linked Gmail accounts */}
       {stats.map((stat, i) => {
         const isExpired = stat.tokenExpiresAt && stat.tokenExpiresAt < Date.now();
         return (
           <View key={i} style={styles.syncRow}>
-            <Text style={styles.syncEmail}>{stat.email}</Text>
+            <Text style={styles.syncEmail}>
+              {stat.email} <Text style={styles.sourceTag}>(Linked)</Text>
+            </Text>
             <Text style={styles.syncTime}>
               Last sync: {stat.lastSyncAt ? formatDate(stat.lastSyncAt) : "never"}
             </Text>
@@ -116,6 +151,10 @@ function SyncStatus({ stats }: { stats: SyncStat[] }) {
           </View>
         );
       })}
+
+      {!legacyStats?.hasToken && stats.length === 0 && (
+        <Text style={styles.noAccountsText}>No Gmail accounts configured</Text>
+      )}
     </View>
   );
 }
@@ -175,6 +214,7 @@ export default function DebugScreen() {
   const loading = !result;
   const totalCount = result?.totalCount ?? 0;
   const syncStats = (result?.syncStats ?? []) as SyncStat[];
+  const legacySyncStats = result?.legacySyncStats as LegacySyncStat | null | undefined;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -185,7 +225,7 @@ export default function DebugScreen() {
         </Text>
       </View>
 
-      {syncStats.length > 0 && <SyncStatus stats={syncStats} />}
+      <SyncStatus stats={syncStats} legacyStats={legacySyncStats} />
 
       {loading && allEmails.length === 0 ? (
         <View style={styles.loadingContainer}>
@@ -274,6 +314,16 @@ const styles = StyleSheet.create({
   tokenExpired: {
     color: "#EF4444",
     fontWeight: "600",
+  },
+  sourceTag: {
+    fontSize: 11,
+    color: "#888",
+    fontWeight: "400",
+  },
+  noAccountsText: {
+    fontSize: 13,
+    color: "#EF4444",
+    fontStyle: "italic",
   },
   loadingContainer: {
     flex: 1,

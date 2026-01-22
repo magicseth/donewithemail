@@ -1928,7 +1928,7 @@ export const getMyAllEmailsDebug = authedQuery({
       })
     );
 
-    // Get sync stats
+    // Get sync stats from gmailAccounts table
     const gmailAccounts = await ctx.db
       .query("gmailAccounts")
       .withIndex("by_user", (q) => q.eq("userId", ctx.userId))
@@ -1938,7 +1938,23 @@ export const getMyAllEmailsDebug = authedQuery({
       email: acc.email,
       lastSyncAt: acc.lastSyncAt,
       tokenExpiresAt: acc.tokenExpiresAt,
+      source: "gmailAccounts" as const,
     }));
+
+    // Also get legacy user sync info (WorkOS-authenticated Gmail)
+    const user = await ctx.db.get(ctx.userId);
+    let legacySyncStats = null;
+    if (user) {
+      const hasLegacyToken = !!user.gmailAccessToken;
+      legacySyncStats = {
+        email: user.email,
+        lastSyncAt: user.lastEmailSyncAt,
+        tokenExpiresAt: user.gmailTokenExpiresAt,
+        source: "legacy_user" as const,
+        hasToken: hasLegacyToken,
+        hasRefreshToken: !!user.gmailRefreshToken,
+      };
+    }
 
     return {
       emails,
@@ -1946,6 +1962,7 @@ export const getMyAllEmailsDebug = authedQuery({
       hasMore,
       nextCursor,
       syncStats,
+      legacySyncStats,
     };
   },
 });
