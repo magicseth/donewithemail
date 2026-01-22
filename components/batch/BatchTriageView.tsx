@@ -247,6 +247,8 @@ export function BatchTriageView({
         undefined,
         result.emailIds
       );
+      // Close the expanded section and return to overview
+      setExpandedCategory(null);
     }
   }, [markCategoryDone, showToast]);
 
