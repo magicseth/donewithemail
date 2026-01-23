@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -9,16 +9,21 @@ import {
   Alert,
   ActivityIndicator,
   TextInput,
+  ScrollView,
 } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { VoiceRecordButton } from "./VoiceRecordButton";
 import { useAppLogs } from "../lib/appLogger";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useScreenshot } from "../lib/screenshotContext";
+import { ScreenshotAnnotation, AnnotationDot } from "./ScreenshotAnnotation";
+import { Id } from "../convex/_generated/dataModel";
 
 export function AddFeatureButton() {
   const logs = useAppLogs();
   const insets = useSafeAreaInsets();
+  const { captureScreenshot } = useScreenshot();
 
   // Feature request state
   const [isSubmittingFeature, setIsSubmittingFeature] = useState(false);
@@ -30,6 +35,12 @@ export function AddFeatureButton() {
   const [editableTranscript, setEditableTranscript] = useState<string>("");
   const [includeDebugLogs, setIncludeDebugLogs] = useState(false);
 
+  // Screenshot state
+  const [screenshotUri, setScreenshotUri] = useState<string | null>(null);
+  const [annotationDots, setAnnotationDots] = useState<AnnotationDot[]>([]);
+  const [screenshotStorageId, setScreenshotStorageId] = useState<Id<"_storage"> | null>(null);
+  const [isUploadingScreenshot, setIsUploadingScreenshot] = useState(false);
+
   // Toast state
   const [toast, setToast] = useState<{ message: string } | null>(null);
   const showToast = useCallback((message: string) => {
@@ -37,7 +48,10 @@ export function AddFeatureButton() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  const submitFeatureRequest = useMutation(api.featureRequests.submit);
+  // Note: These mutations include new fields for screenshot support
+  // Types will be regenerated when Convex is deployed
+  const submitFeatureRequest = useMutation(api.featureRequests.submit as any);
+  const generateUploadUrl = useMutation((api.featureRequests as any).generateUploadUrl);
 
   const handleFeatureTranscript = useCallback((transcript: string) => {
     setFeatureTranscript(transcript);
@@ -64,21 +78,61 @@ export function AddFeatureButton() {
         debugLogsStr = currentLogs || undefined;
       }
 
+      // Upload screenshot if we have one and haven't uploaded yet
+      let finalStorageId = screenshotStorageId;
+      if (screenshotUri && !finalStorageId) {
+        setIsUploadingScreenshot(true);
+        try {
+          // Get upload URL
+          const uploadUrl = await generateUploadUrl();
+
+          // Convert data URI to blob for upload
+          const response = await fetch(screenshotUri);
+          const blob = await response.blob();
+
+          // Upload the screenshot
+          const uploadResult = await fetch(uploadUrl, {
+            method: "POST",
+            headers: { "Content-Type": blob.type || "image/png" },
+            body: blob,
+          });
+
+          if (!uploadResult.ok) {
+            throw new Error("Failed to upload screenshot");
+          }
+
+          const { storageId } = await uploadResult.json();
+          finalStorageId = storageId;
+        } catch (uploadError) {
+          console.error("[Screenshot] Upload failed:", uploadError);
+          // Continue without screenshot if upload fails
+        } finally {
+          setIsUploadingScreenshot(false);
+        }
+      }
+
       await submitFeatureRequest({
         transcript: finalTranscript,
         debugLogs: debugLogsStr,
+        screenshotStorageId: finalStorageId ?? undefined,
+        screenshotAnnotations: annotationDots.length > 0
+          ? JSON.stringify(annotationDots)
+          : undefined,
       });
       showToast(`Feature request submitted: "${finalTranscript}"`);
       setFeatureTranscript(null);
       setPendingTranscript(null);
       setEditableTranscript("");
+      setScreenshotUri(null);
+      setAnnotationDots([]);
+      setScreenshotStorageId(null);
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : "Unknown error";
       Platform.OS === "web" ? window.alert(`Error: ${errorMsg}`) : Alert.alert("Error", errorMsg);
     } finally {
       setIsSubmittingFeature(false);
     }
-  }, [editableTranscript, includeDebugLogs, logs, submitFeatureRequest, showToast]);
+  }, [editableTranscript, includeDebugLogs, logs, submitFeatureRequest, showToast, screenshotUri, screenshotStorageId, annotationDots, generateUploadUrl]);
 
   const handleCancelFeatureConfirm = useCallback(() => {
     setShowFeatureConfirmModal(false);
@@ -86,6 +140,9 @@ export function AddFeatureButton() {
     setPendingTranscript(null);
     setEditableTranscript("");
     setIncludeDebugLogs(false);
+    setScreenshotUri(null);
+    setAnnotationDots([]);
+    setScreenshotStorageId(null);
   }, []);
 
   const handleRetryRecording = useCallback(() => {
@@ -94,6 +151,9 @@ export function AddFeatureButton() {
     setPendingTranscript(null);
     setEditableTranscript("");
     setIncludeDebugLogs(false);
+    setScreenshotUri(null);
+    setAnnotationDots([]);
+    setScreenshotStorageId(null);
     // User can now tap the voice button again to re-record
   }, []);
 
@@ -111,7 +171,20 @@ export function AddFeatureButton() {
     }
   }, [isRecordingFeature]);
 
-  const handleFeatureRecordingStart = useCallback(() => {
+  const handleFeatureRecordingStart = useCallback(async () => {
+    // Capture screenshot first, before showing the modal
+    try {
+      const uri = await captureScreenshot();
+      if (uri) {
+        setScreenshotUri(uri);
+        setAnnotationDots([]);
+        setScreenshotStorageId(null);
+      }
+    } catch (error) {
+      console.error("[Screenshot] Failed to capture:", error);
+      // Continue without screenshot
+    }
+
     setIsRecordingFeature(true);
     setStreamingTranscript(null);
     setFeatureTranscript(null);
@@ -119,7 +192,7 @@ export function AddFeatureButton() {
     setIncludeDebugLogs(false);
     // Show modal immediately when recording starts
     setShowFeatureConfirmModal(true);
-  }, []);
+  }, [captureScreenshot]);
 
   const handleFeatureRecordingEnd = useCallback(() => {
     setIsRecordingFeature(false);
@@ -166,69 +239,90 @@ export function AddFeatureButton() {
         onRequestClose={handleCancelFeatureConfirm}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {isRecordingFeature ? "Recording Voice..." : "Confirm Feature Request"}
-            </Text>
-            <Text style={styles.modalMessage}>
-              {isRecordingFeature
-                ? "Speak your feature request. Release to finish."
-                : "Review and edit your request below:"}
-            </Text>
+          <ScrollView
+            contentContainerStyle={styles.modalScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>
+                {isRecordingFeature ? "Recording Voice..." : "Confirm Feature Request"}
+              </Text>
+              <Text style={styles.modalMessage}>
+                {isRecordingFeature
+                  ? "Speak your feature request. Release to finish."
+                  : "Review and edit your request below:"}
+              </Text>
 
-            {/* Editable transcript field */}
-            <TextInput
-              style={[
-                styles.modalTranscriptInput,
-                isRecordingFeature && styles.modalTranscriptInputRecording,
-              ]}
-              value={editableTranscript}
-              onChangeText={setEditableTranscript}
-              placeholder={isRecordingFeature ? "Listening..." : "Enter your feature request"}
-              placeholderTextColor="#999"
-              multiline
-              editable={!isRecordingFeature}
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
+              {/* Screenshot annotation (only show when not recording and we have a screenshot) */}
+              {!isRecordingFeature && screenshotUri && (
+                <ScreenshotAnnotation
+                  screenshotUri={screenshotUri}
+                  dots={annotationDots}
+                  onDotsChange={setAnnotationDots}
+                  onRemove={() => {
+                    setScreenshotUri(null);
+                    setAnnotationDots([]);
+                    setScreenshotStorageId(null);
+                  }}
+                />
+              )}
 
-            {!isRecordingFeature && (
-              <>
-                <TouchableOpacity
-                  style={styles.checkboxRow}
-                  onPress={() => setIncludeDebugLogs(!includeDebugLogs)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.checkbox, includeDebugLogs && styles.checkboxChecked]}>
-                    {includeDebugLogs && <Text style={styles.checkmark}>✓</Text>}
+              {/* Editable transcript field */}
+              <TextInput
+                style={[
+                  styles.modalTranscriptInput,
+                  isRecordingFeature && styles.modalTranscriptInputRecording,
+                ]}
+                value={editableTranscript}
+                onChangeText={setEditableTranscript}
+                placeholder={isRecordingFeature ? "Listening..." : "Enter your feature request"}
+                placeholderTextColor="#999"
+                multiline
+                editable={!isRecordingFeature}
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+
+              {!isRecordingFeature && (
+                <>
+                  <TouchableOpacity
+                    style={styles.checkboxRow}
+                    onPress={() => setIncludeDebugLogs(!includeDebugLogs)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.checkbox, includeDebugLogs && styles.checkboxChecked]}>
+                      {includeDebugLogs && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.checkboxLabel}>Include debug logs ({logs.length})</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.modalButtonCancel]}
+                      onPress={handleCancelFeatureConfirm}
+                    >
+                      <Text style={styles.modalButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.modalButtonRetry]}
+                      onPress={handleRetryRecording}
+                    >
+                      <Text style={styles.modalButtonText}>Retry</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.modalButtonSubmit, (isUploadingScreenshot || isSubmittingFeature) && styles.modalButtonDisabled]}
+                      onPress={handleConfirmFeatureSubmit}
+                      disabled={!editableTranscript.trim() || isUploadingScreenshot || isSubmittingFeature}
+                    >
+                      <Text style={styles.modalButtonTextLight}>
+                        {isUploadingScreenshot ? "Uploading..." : "Submit"}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                  <Text style={styles.checkboxLabel}>Include debug logs ({logs.length})</Text>
-                </TouchableOpacity>
-
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity
-                    style={[styles.modalButton, styles.modalButtonCancel]}
-                    onPress={handleCancelFeatureConfirm}
-                  >
-                    <Text style={styles.modalButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalButton, styles.modalButtonRetry]}
-                    onPress={handleRetryRecording}
-                  >
-                    <Text style={styles.modalButtonText}>Retry</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalButton, styles.modalButtonSubmit]}
-                    onPress={handleConfirmFeatureSubmit}
-                    disabled={!editableTranscript.trim()}
-                  >
-                    <Text style={styles.modalButtonTextLight}>Submit</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </View>
+                </>
+              )}
+            </View>
+          </ScrollView>
         </View>
       </Modal>
 
@@ -298,6 +392,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
+  },
+  modalScrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
   },
   modalContent: {
     backgroundColor: "#fff",
@@ -394,6 +494,10 @@ const styles = StyleSheet.create({
   },
   modalButtonSubmit: {
     backgroundColor: "#6366F1",
+  },
+  modalButtonDisabled: {
+    backgroundColor: "#A5A6F6",
+    opacity: 0.7,
   },
   modalButtonText: {
     color: "#333",

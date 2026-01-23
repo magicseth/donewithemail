@@ -323,6 +323,11 @@ export default defineSchema({
     easDashboardUrl: v.optional(v.string()),
     // Debug logs from the app when the request was submitted (ENCRYPTED)
     debugLogs: v.optional(piiField()),
+    // Screenshot attached to the feature request (stored in Convex storage)
+    screenshotStorageId: v.optional(v.id("_storage")),
+    // Annotation dots on the screenshot - encrypted as JSON string
+    // JSON: Array<{id: string, x: number, y: number}> (x,y are percentages 0-100)
+    screenshotAnnotations: v.optional(piiField()),
     // If this request was combined into another, reference to the combined request
     combinedIntoId: v.optional(v.id("featureRequests")),
   })
@@ -393,6 +398,12 @@ export type WritingStyle = {
   samplePhrases?: string[];
   emailsAnalyzed: number;
   analyzedAt: number;
+};
+
+export type ScreenshotAnnotationDot = {
+  id: string;
+  x: number; // Percentage 0-100
+  y: number; // Percentage 0-100
 };
 
 export type ConnectedProvider = {

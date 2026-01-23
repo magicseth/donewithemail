@@ -11,6 +11,7 @@ import { AuthProvider, useAuth } from "../lib/authContext";
 import { AuthErrorProvider } from "../lib/AuthErrorBoundary";
 import { DemoModeProvider } from "../lib/demoModeContext";
 import { ThemeProvider } from "../lib/themeContext";
+import { ScreenshotProvider } from "../lib/screenshotContext";
 import { usePushNotifications } from "../hooks/usePushNotifications";
 import { getLastAuthRefreshSignal } from "../lib/authSignal";
 import * as SecureStore from "expo-secure-store";
@@ -328,44 +329,46 @@ export default function RootLayout() {
         <AuthProvider>
           <DemoModeProvider>
             <ThemeProvider>
-              <AuthErrorHandler>
-              <AuthenticatedFeaturesWrapper>
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    animation: "slide_from_right",
-                  }}
-                >
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  <Stack.Screen
-                    name="email/[id]"
-                    options={{
-                      presentation: "card",
-                      headerShown: true,
-                      headerTitle: "Email",
-                      headerBackTitle: "Back",
+              <ScreenshotProvider>
+                <AuthErrorHandler>
+                <AuthenticatedFeaturesWrapper>
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                      animation: "slide_from_right",
                     }}
-                  />
-                  <Stack.Screen
-                    name="person/[id]"
-                    options={{
-                      presentation: "card",
-                      headerShown: true,
-                      headerTitle: "Contact",
-                      headerBackTitle: "Back",
-                    }}
-                  />
-                  <Stack.Screen
-                    name="compose"
-                    options={{
-                      presentation: "modal",
-                      headerShown: true,
-                      headerTitle: "Compose",
-                    }}
-                  />
-                </Stack>
-              </AuthenticatedFeaturesWrapper>
-              </AuthErrorHandler>
+                  >
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                    <Stack.Screen
+                      name="email/[id]"
+                      options={{
+                        presentation: "card",
+                        headerShown: true,
+                        headerTitle: "Email",
+                        headerBackTitle: "Back",
+                      }}
+                    />
+                    <Stack.Screen
+                      name="person/[id]"
+                      options={{
+                        presentation: "card",
+                        headerShown: true,
+                        headerTitle: "Contact",
+                        headerBackTitle: "Back",
+                      }}
+                    />
+                    <Stack.Screen
+                      name="compose"
+                      options={{
+                        presentation: "modal",
+                        headerShown: true,
+                        headerTitle: "Compose",
+                      }}
+                    />
+                  </Stack>
+                </AuthenticatedFeaturesWrapper>
+                </AuthErrorHandler>
+              </ScreenshotProvider>
             </ThemeProvider>
           </DemoModeProvider>
         </AuthProvider>
