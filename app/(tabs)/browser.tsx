@@ -265,9 +265,7 @@ export default function BrowserScreen() {
   const flatListRef = useRef<FlatList>(null);
   const { user } = useAuth();
 
-  // @ts-expect-error - browserAgent will be available after running `npx convex dev`
   const startBrowserChat = useAction(api.browserAgent.startBrowserChat);
-  // @ts-expect-error - browserAgent will be available after running `npx convex dev`
   const continueBrowserChat = useAction(api.browserAgent.continueBrowserChat);
 
   // Handle messages from WebView
