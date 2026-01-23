@@ -6,17 +6,16 @@ import { useTheme } from "../../lib/themeContext";
 import { SignInScreen } from "../../components/SignInScreen";
 import { AddFeatureButton } from "../../components/AddFeatureButton";
 
-// Signal for inbox tab press - used to close category only on explicit tab re-tap
-// Module-level to avoid re-render coordination issues
-let inboxTabPressSignal = 0;
-export function getInboxTabPressSignal() {
-  return inboxTabPressSignal;
-}
-
 // Track whether inbox is currently focused - used to detect re-taps vs initial navigation
 let isInboxFocused = false;
 export function setInboxFocused(focused: boolean) {
   isInboxFocused = focused;
+}
+
+// Callback for when inbox tab is re-tapped (used to close category)
+let onInboxRetap: (() => void) | null = null;
+export function setInboxRetapCallback(callback: (() => void) | null) {
+  onInboxRetap = callback;
 }
 
 // Simple icon components (replace with proper icons later)
@@ -69,10 +68,10 @@ export default function TabsLayout() {
         }}
         listeners={{
           tabPress: () => {
-            // Only increment signal if inbox is already focused (re-tap)
-            // This allows category to close on re-tap but not when switching from another tab
-            if (isInboxFocused) {
-              inboxTabPressSignal++;
+            // Only trigger callback if inbox is already focused (re-tap)
+            // This closes the category when re-tapping inbox, but preserves state when switching from another tab
+            if (isInboxFocused && onInboxRetap) {
+              onInboxRetap();
             }
           },
         }}
