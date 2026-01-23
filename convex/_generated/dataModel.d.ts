@@ -827,6 +827,7 @@ export type DataModel = {
       lastOpenedAt?: number;
       name?: { __encrypted: true; c: string; i: string; k: string; v: number };
       preferences?: { autoProcessEmails?: boolean; urgencyThreshold?: number };
+      timezone?: string;
       workosId?: string;
       workosRefreshToken?: {
         __encrypted: true;
@@ -874,6 +875,7 @@ export type DataModel = {
       | "preferences"
       | "preferences.autoProcessEmails"
       | "preferences.urgencyThreshold"
+      | "timezone"
       | "workosId"
       | "workosRefreshToken"
       | "workosRefreshToken.__encrypted"

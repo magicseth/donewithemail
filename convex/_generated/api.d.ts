@@ -152,7 +152,12 @@ export declare const api: {
       any
     >;
     getLastOpened: FunctionReference<"query", "public", {}, any>;
-    updateLastOpened: FunctionReference<"mutation", "public", {}, any>;
+    updateLastOpened: FunctionReference<
+      "mutation",
+      "public",
+      { timezone?: string },
+      any
+    >;
   };
   chatHistory: {
     deleteThread: FunctionReference<
