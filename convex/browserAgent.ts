@@ -112,7 +112,8 @@ export const startBrowserChat = action({
       );
 
       console.log(`[BrowserAgent] Got response: ${result.text.substring(0, 200)}...`);
-      console.log(`[BrowserAgent] Tool results: ${result.toolResults?.length ?? 0}`);
+      console.log(`[BrowserAgent] Steps: ${(result as any).steps?.length ?? 0}`);
+      console.log(`[BrowserAgent] Tool results (last step): ${result.toolResults?.length ?? 0}`);
 
       // Track AI cost
       try {
@@ -138,21 +139,39 @@ export const startBrowserChat = action({
       }
 
       // Extract browser actions from tool results
-      // AI SDK v5 returns tool results with output directly: { output: { action, ... } }
+      // AI SDK returns tool results in steps array - each step has its own toolResults
+      // result.toolResults only contains results from the LAST step
       const browserActions: BrowserAction[] = [];
-      if (result.toolResults) {
-        console.log(`[BrowserAgent] Processing ${result.toolResults.length} tool results`);
-        for (const toolResult of result.toolResults) {
-          const tr = toolResult as any;
-          console.log(`[BrowserAgent] Tool result:`, JSON.stringify(tr, null, 2));
-          // AI SDK v5 puts the tool return value directly in output (not wrapped in value)
-          // But @convex-dev/agent may normalize it to { type: "json", value: ... }
-          // So check both structures
-          const actionData = tr.output?.value ?? tr.output;
-          if (actionData?.action) {
-            console.log(`[BrowserAgent] Found browser action: ${actionData.action}`);
-            browserActions.push(actionData as BrowserAction);
+
+      // Collect all tool results from all steps
+      const allToolResults: any[] = [];
+      const steps = (result as any).steps || [];
+      for (const step of steps) {
+        if (step.toolResults && Array.isArray(step.toolResults)) {
+          allToolResults.push(...step.toolResults);
+        }
+      }
+      // Also include toolResults from the top level (last step)
+      if (result.toolResults && Array.isArray(result.toolResults)) {
+        // Only add if not already included from steps
+        for (const tr of result.toolResults) {
+          if (!allToolResults.includes(tr)) {
+            allToolResults.push(tr);
           }
+        }
+      }
+
+      console.log(`[BrowserAgent] Processing ${allToolResults.length} total tool results from ${steps.length} steps`);
+
+      for (const toolResult of allToolResults) {
+        const tr = toolResult as any;
+        console.log(`[BrowserAgent] Tool result:`, JSON.stringify(tr, null, 2));
+        // AI SDK v5 puts the tool return value directly in result property
+        // The structure is: { toolCallId, toolName, result: { action, ... } }
+        const actionData = tr.result ?? tr.output?.value ?? tr.output;
+        if (actionData?.action) {
+          console.log(`[BrowserAgent] Found browser action: ${actionData.action}`);
+          browserActions.push(actionData as BrowserAction);
         }
       }
       console.log(`[BrowserAgent] Extracted ${browserActions.length} browser actions`);
@@ -160,7 +179,7 @@ export const startBrowserChat = action({
       return {
         threadId,
         response: result.text,
-        toolResults: result.toolResults as any,
+        toolResults: allToolResults,
         browserActions,
       };
     } catch (error) {
@@ -226,28 +245,46 @@ export const continueBrowserChat = action({
     }
 
     // Extract browser actions from tool results
-    // AI SDK v5 returns tool results with output directly: { output: { action, ... } }
+    // AI SDK returns tool results in steps array - each step has its own toolResults
+    // result.toolResults only contains results from the LAST step
     const browserActions: BrowserAction[] = [];
-    if (result.toolResults) {
-      console.log(`[BrowserAgent] Processing ${result.toolResults.length} tool results`);
-      for (const toolResult of result.toolResults) {
-        const tr = toolResult as any;
-        console.log(`[BrowserAgent] Tool result:`, JSON.stringify(tr, null, 2));
-        // AI SDK v5 puts the tool return value directly in output (not wrapped in value)
-        // But @convex-dev/agent may normalize it to { type: "json", value: ... }
-        // So check both structures
-        const actionData = tr.output?.value ?? tr.output;
-        if (actionData?.action) {
-          console.log(`[BrowserAgent] Found browser action: ${actionData.action}`);
-          browserActions.push(actionData as BrowserAction);
+
+    // Collect all tool results from all steps
+    const allToolResults: any[] = [];
+    const steps = (result as any).steps || [];
+    for (const step of steps) {
+      if (step.toolResults && Array.isArray(step.toolResults)) {
+        allToolResults.push(...step.toolResults);
+      }
+    }
+    // Also include toolResults from the top level (last step)
+    if (result.toolResults && Array.isArray(result.toolResults)) {
+      // Only add if not already included from steps
+      for (const tr of result.toolResults) {
+        if (!allToolResults.includes(tr)) {
+          allToolResults.push(tr);
         }
+      }
+    }
+
+    console.log(`[BrowserAgent] Processing ${allToolResults.length} total tool results from ${steps.length} steps`);
+
+    for (const toolResult of allToolResults) {
+      const tr = toolResult as any;
+      console.log(`[BrowserAgent] Tool result:`, JSON.stringify(tr, null, 2));
+      // AI SDK v5 puts the tool return value directly in result property
+      // The structure is: { toolCallId, toolName, result: { action, ... } }
+      const actionData = tr.result ?? tr.output?.value ?? tr.output;
+      if (actionData?.action) {
+        console.log(`[BrowserAgent] Found browser action: ${actionData.action}`);
+        browserActions.push(actionData as BrowserAction);
       }
     }
     console.log(`[BrowserAgent] Extracted ${browserActions.length} browser actions`);
 
     return {
       response: result.text,
-      toolResults: result.toolResults as any,
+      toolResults: allToolResults,
       browserActions,
     };
   },
