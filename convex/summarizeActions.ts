@@ -57,6 +57,27 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Get "today's date" formatted for the AI prompt, using the user's timezone.
+ * This fixes off-by-one errors when users are in different timezones than UTC.
+ * @param timezone - IANA timezone string (e.g., "America/Los_Angeles")
+ * @returns Formatted date string like "Saturday, 2025-01-18"
+ */
+function getTodayDateForPrompt(timezone?: string): string {
+  const now = new Date();
+
+  // Get the date in the user's timezone (or system timezone if not provided)
+  const dateStr = timezone
+    ? now.toLocaleDateString("en-CA", { timeZone: timezone }) // en-CA gives YYYY-MM-DD
+    : now.toISOString().split("T")[0];
+
+  const dayOfWeek = timezone
+    ? now.toLocaleDateString("en-US", { weekday: "long", timeZone: timezone })
+    : now.toLocaleDateString("en-US", { weekday: "long" });
+
+  return `${dayOfWeek}, ${dateStr}`;
+}
+
 // Generate text with Opus, falling back to Sonnet on overload, with retry logic
 async function generateTextWithFallback(prompt: string): Promise<{ text: string; model: string; usage: UsageStats }> {
   let lastError: Error | null = null;
@@ -320,9 +341,8 @@ ${attachmentList ? `\n\nAttachments:\n${attachmentList}` : ''}
 `.trim();
 
     // Call Anthropic via AI SDK with enhanced prompt (Opus with Sonnet fallback)
-    const now = new Date();
-    const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
-    const today = `${dayOfWeek}, ${now.toISOString().split("T")[0]}`; // e.g., "Saturday, 2025-01-18"
+    // Use user's timezone for "today's date" to avoid off-by-one errors
+    const today = getTodayDateForPrompt(email.userTimezone);
     const { text, model, usage } = await generateTextWithFallback(`Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
 
 TODAY'S DATE: ${today}
@@ -632,9 +652,8 @@ Subject: ${email.subject}${recentContext}${factsContext}
 ${bodyText}`.trim();
 
           // Call Anthropic via AI SDK with enhanced prompt (Opus with Sonnet fallback)
-          const now = new Date();
-          const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
-          const today = `${dayOfWeek}, ${now.toISOString().split("T")[0]}`; // e.g., "Saturday, 2025-01-18"
+          // Use user's timezone for "today's date" to avoid off-by-one errors
+          const today = getTodayDateForPrompt(email.userTimezone);
           const { text, model, usage } = await generateTextWithFallback(`Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
 
 TODAY'S DATE: ${today}

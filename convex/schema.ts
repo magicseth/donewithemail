@@ -232,6 +232,10 @@ export default defineSchema({
     // Track last app open for changelog display
     lastOpenedAt: v.optional(v.number()),
 
+    // User's last known timezone (IANA format, e.g., "America/Los_Angeles")
+    // Used by AI summarizer to calculate relative dates correctly
+    timezone: v.optional(v.string()),
+
     createdAt: v.optional(v.number()),
   })
     .index("by_workos_id", ["workosId"])

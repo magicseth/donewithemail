@@ -231,8 +231,11 @@ function AuthenticatedFeatures() {
         setShowChangelog(true);
       }
 
-      // Update last opened timestamp
-      updateLastOpened().catch((error) => {
+      // Update last opened timestamp and timezone
+      // The timezone is used by the AI summarizer to calculate relative dates correctly
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
+      // Type assertion needed because generated types are out of date until `convex dev` runs
+      (updateLastOpened as unknown as (args: { timezone?: string }) => Promise<void>)({ timezone }).catch((error) => {
         console.error("[Changelog] Failed to update lastOpenedAt:", error);
       });
     }
