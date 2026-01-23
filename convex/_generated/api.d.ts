@@ -496,7 +496,6 @@ export declare const api: {
       { id: Id<"featureRequests"> },
       any
     >;
-    generateUploadUrl: FunctionReference<"mutation", "public", {}, any>;
     getMine: FunctionReference<"query", "public", {}, any>;
     getPending: FunctionReference<"query", "public", {}, any>;
     markCombined: FunctionReference<
@@ -546,12 +545,7 @@ export declare const api: {
     submit: FunctionReference<
       "mutation",
       "public",
-      {
-        debugLogs?: string;
-        screenshotAnnotations?: string;
-        screenshotStorageId?: Id<"_storage">;
-        transcript: string;
-      },
+      { debugLogs?: string; transcript: string },
       any
     >;
     updateClaudeOutput: FunctionReference<
