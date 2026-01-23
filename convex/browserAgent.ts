@@ -138,15 +138,22 @@ export const startBrowserChat = action({
       }
 
       // Extract browser actions from tool results
+      // Tool results from @convex-dev/agent have structure: { output: { type: "json", value: { action, ... } } }
       const browserActions: BrowserAction[] = [];
       if (result.toolResults) {
+        console.log(`[BrowserAgent] Processing ${result.toolResults.length} tool results`);
         for (const toolResult of result.toolResults) {
           const tr = toolResult as any;
-          if (tr.result?.action) {
-            browserActions.push(tr.result as BrowserAction);
+          console.log(`[BrowserAgent] Tool result:`, JSON.stringify(tr, null, 2));
+          // The tool output is wrapped: tr.output.value contains the actual return value
+          const actionData = tr.output?.value;
+          if (actionData?.action) {
+            console.log(`[BrowserAgent] Found browser action: ${actionData.action}`);
+            browserActions.push(actionData as BrowserAction);
           }
         }
       }
+      console.log(`[BrowserAgent] Extracted ${browserActions.length} browser actions`);
 
       return {
         threadId,
@@ -217,15 +224,22 @@ export const continueBrowserChat = action({
     }
 
     // Extract browser actions from tool results
+    // Tool results from @convex-dev/agent have structure: { output: { type: "json", value: { action, ... } } }
     const browserActions: BrowserAction[] = [];
     if (result.toolResults) {
+      console.log(`[BrowserAgent] Processing ${result.toolResults.length} tool results`);
       for (const toolResult of result.toolResults) {
         const tr = toolResult as any;
-        if (tr.result?.action) {
-          browserActions.push(tr.result as BrowserAction);
+        console.log(`[BrowserAgent] Tool result:`, JSON.stringify(tr, null, 2));
+        // The tool output is wrapped: tr.output.value contains the actual return value
+        const actionData = tr.output?.value;
+        if (actionData?.action) {
+          console.log(`[BrowserAgent] Found browser action: ${actionData.action}`);
+          browserActions.push(actionData as BrowserAction);
         }
       }
     }
+    console.log(`[BrowserAgent] Extracted ${browserActions.length} browser actions`);
 
     return {
       response: result.text,
