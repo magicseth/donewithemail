@@ -404,6 +404,7 @@ export type DataModel = {
       emailId: Id<"emails">;
       embedding?: Array<number>;
       importantAttachmentIds?: Array<Id<"attachments">>;
+      isMarketing?: boolean;
       meetingRequest?: {
         __encrypted: true;
         c: string;
@@ -480,6 +481,7 @@ export type DataModel = {
       | "emailId"
       | "embedding"
       | "importantAttachmentIds"
+      | "isMarketing"
       | "meetingRequest"
       | "meetingRequest.__encrypted"
       | "meetingRequest.c"

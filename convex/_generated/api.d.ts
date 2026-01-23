@@ -2034,6 +2034,7 @@ export declare const internal: {
         deadlineDescription?: string;
         emailId: Id<"emails">;
         importantAttachmentIds?: Array<Id<"attachments">>;
+        isMarketing?: boolean;
         meetingRequest?: {
           isMeetingRequest: boolean;
           proposedTimes?: Array<{ endTime: string; startTime: string }>;
