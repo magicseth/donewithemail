@@ -138,15 +138,17 @@ export const startBrowserChat = action({
       }
 
       // Extract browser actions from tool results
-      // Tool results from @convex-dev/agent have structure: { output: { type: "json", value: { action, ... } } }
+      // AI SDK v5 returns tool results with output directly: { output: { action, ... } }
       const browserActions: BrowserAction[] = [];
       if (result.toolResults) {
         console.log(`[BrowserAgent] Processing ${result.toolResults.length} tool results`);
         for (const toolResult of result.toolResults) {
           const tr = toolResult as any;
           console.log(`[BrowserAgent] Tool result:`, JSON.stringify(tr, null, 2));
-          // The tool output is wrapped: tr.output.value contains the actual return value
-          const actionData = tr.output?.value;
+          // AI SDK v5 puts the tool return value directly in output (not wrapped in value)
+          // But @convex-dev/agent may normalize it to { type: "json", value: ... }
+          // So check both structures
+          const actionData = tr.output?.value ?? tr.output;
           if (actionData?.action) {
             console.log(`[BrowserAgent] Found browser action: ${actionData.action}`);
             browserActions.push(actionData as BrowserAction);
@@ -224,15 +226,17 @@ export const continueBrowserChat = action({
     }
 
     // Extract browser actions from tool results
-    // Tool results from @convex-dev/agent have structure: { output: { type: "json", value: { action, ... } } }
+    // AI SDK v5 returns tool results with output directly: { output: { action, ... } }
     const browserActions: BrowserAction[] = [];
     if (result.toolResults) {
       console.log(`[BrowserAgent] Processing ${result.toolResults.length} tool results`);
       for (const toolResult of result.toolResults) {
         const tr = toolResult as any;
         console.log(`[BrowserAgent] Tool result:`, JSON.stringify(tr, null, 2));
-        // The tool output is wrapped: tr.output.value contains the actual return value
-        const actionData = tr.output?.value;
+        // AI SDK v5 puts the tool return value directly in output (not wrapped in value)
+        // But @convex-dev/agent may normalize it to { type: "json", value: ... }
+        // So check both structures
+        const actionData = tr.output?.value ?? tr.output;
         if (actionData?.action) {
           console.log(`[BrowserAgent] Found browser action: ${actionData.action}`);
           browserActions.push(actionData as BrowserAction);
