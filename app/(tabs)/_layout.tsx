@@ -32,6 +32,7 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
     settings: "⚙️",
     ask: "💬",
     debug: "🔍",
+    browser: "🌐",
   };
 
   return (
@@ -100,6 +101,14 @@ export default function TabsLayout() {
           title: "Ask",
           headerTitle: "Ask My Email",
           tabBarIcon: ({ focused }) => <TabIcon name="ask" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="browser"
+        options={{
+          title: "Browse",
+          headerTitle: "AI Browser",
+          tabBarIcon: ({ focused }) => <TabIcon name="browser" focused={focused} />,
         }}
       />
       <Tabs.Screen
