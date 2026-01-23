@@ -610,6 +610,7 @@ export const updateEmailSummary = internalMutation({
     deadline: v.optional(v.string()),
     deadlineDescription: v.optional(v.string()),
     importantAttachmentIds: v.optional(v.array(v.id("attachments"))),
+    isMarketing: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     // Get the email to find the user for encryption
@@ -667,6 +668,7 @@ export const updateEmailSummary = internalMutation({
       deadline: args.deadline,
       deadlineDescription: encryptedDeadlineDescription,
       importantAttachmentIds: args.importantAttachmentIds,
+      isMarketing: args.isMarketing,
       createdAt: Date.now(),
     };
 

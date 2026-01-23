@@ -131,6 +131,13 @@ export const filterOutSubscriptions = internalQuery({
         .withIndex("by_email", (q) => q.eq("emailId", email._id))
         .first();
 
+      // Skip if AI classified as marketing email (promotional, newsletters, automated, etc.)
+      // Type assertion needed until generated types are regenerated with `convex dev`
+      if ((summary as { isMarketing?: boolean } | null)?.isMarketing === true) {
+        console.log(`[Filter] Skipping marketing email: ${email.subject}`);
+        continue;
+      }
+
       // Skip if AI determined it's FYI/none (newsletters, marketing, etc.)
       if (summary?.actionRequired === "fyi" || summary?.actionRequired === "none") {
         console.log(`[Filter] Skipping FYI/none email: ${email.subject}`);

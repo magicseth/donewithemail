@@ -294,6 +294,8 @@ interface SummarizeResult {
   suggestedFacts?: string[];
   // Filenames of important attachments that should be shown in inbox
   importantAttachments?: string[];
+  // Whether this is a marketing/promotional email (vs personal email from individual)
+  isMarketing?: boolean;
 }
 
 export const summarizeEmail = action({
@@ -417,6 +419,11 @@ FIELDS:
    - Maximum 2 attachments in the array
    - Use EXACT filenames from the Attachments list above
    - If no attachments are important, omit this field or return empty array
+13. isMarketing: REQUIRED boolean. Classify whether this email is marketing/promotional:
+   - true: Marketing emails, promotional offers, newsletters, automated transactional (receipts, shipping updates), mass emails from companies, cold outreach, sales pitches
+   - false: Personal emails from real individuals who know the recipient, 1:1 communication from colleagues, friends, family, known business contacts
+   - Key signals for marketing: company sender (noreply@, marketing@, sales@), promotional language ("limited time", "% off", "sale"), mass email formatting, unsubscribe links
+   - This field is CRITICAL for notification filtering - marketing emails should NEVER trigger push notifications
 
 Email:
 ${emailContent}
@@ -500,6 +507,7 @@ Respond with only valid JSON, no markdown or explanation.`);
       deadline: sanitizedDeadline,
       deadlineDescription: sanitizedDeadlineDescription,
       importantAttachmentIds,
+      isMarketing: result.isMarketing,
     } as any);
 
     // Track AI usage cost per user
@@ -712,11 +720,16 @@ FIELDS:
    - Spam calendar invites → likely decline
    - Events at inconvenient times or conflicting with work → likely decline
    Only include this field when calendarEvent is present.
-11. suggestedFacts: Array of NEW facts about the sender learned from this email. Focus on:
+12. suggestedFacts: Array of NEW facts about the sender learned from this email. Focus on:
    - Professional role/title (e.g., "Works at Acme Corp as VP of Sales")
    - Personal relationships (e.g., "Has a daughter named Emma")
    - Location/timezone (e.g., "Based in Seattle")
    Only include clearly stated facts not already in "Known facts about sender". Return empty array if none.
+13. isMarketing: REQUIRED boolean. Classify whether this email is marketing/promotional:
+   - true: Marketing emails, promotional offers, newsletters, automated transactional (receipts, shipping updates), mass emails from companies, cold outreach, sales pitches
+   - false: Personal emails from real individuals who know the recipient, 1:1 communication from colleagues, friends, family, known business contacts
+   - Key signals for marketing: company sender (noreply@, marketing@, sales@), promotional language ("limited time", "% off", "sale"), mass email formatting, unsubscribe links
+   - This field is CRITICAL for notification filtering - marketing emails should NEVER trigger push notifications
 
 Email:
 ${emailContent}
@@ -785,6 +798,7 @@ Respond with only valid JSON, no markdown or explanation.`);
             meetingRequest: result.meetingRequest || undefined,
             deadline: sanitizedDeadline,
             deadlineDescription: sanitizedDeadlineDescription,
+            isMarketing: result.isMarketing,
           } as any);
 
           // Track AI usage cost per user

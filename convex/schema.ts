@@ -131,6 +131,11 @@ export default defineSchema({
 
     // Important attachments (AI-identified subset of attachments worth highlighting)
     importantAttachmentIds: v.optional(v.array(v.id("attachments"))),
+
+    // Marketing/promotional email classification
+    // true = marketing, newsletter, promotional, automated transactional
+    // false = personal email from a real individual
+    isMarketing: v.optional(v.boolean()),
   })
     .index("by_email", ["emailId"])
     .index("by_deadline", ["deadline"])
