@@ -74,6 +74,31 @@ export declare const api: {
       any
     >;
   };
+  browserAgent: {
+    continueBrowserChat: FunctionReference<
+      "action",
+      "public",
+      {
+        message: string;
+        pageContent?: string;
+        pageTitle?: string;
+        pageUrl?: string;
+        threadId: string;
+      },
+      any
+    >;
+    startBrowserChat: FunctionReference<
+      "action",
+      "public",
+      {
+        message: string;
+        pageContent?: string;
+        pageTitle?: string;
+        pageUrl?: string;
+      },
+      any
+    >;
+  };
   calendar: {
     addToCalendar: FunctionReference<
       "action",
