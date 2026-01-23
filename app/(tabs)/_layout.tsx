@@ -8,8 +8,14 @@ import { AddFeatureButton } from "../../components/AddFeatureButton";
 
 // Track whether inbox is currently focused - used to detect re-taps vs initial navigation
 let isInboxFocused = false;
+// Track when inbox gained focus - used to prevent closing category immediately after navigation
+let inboxFocusedAt = 0;
+
 export function setInboxFocused(focused: boolean) {
   isInboxFocused = focused;
+  if (focused) {
+    inboxFocusedAt = Date.now();
+  }
 }
 
 // Callback for when inbox tab is re-tapped (used to close category)
@@ -68,9 +74,13 @@ export default function TabsLayout() {
         }}
         listeners={{
           tabPress: () => {
-            // Only trigger callback if inbox is already focused (re-tap)
-            // This closes the category when re-tapping inbox, but preserves state when switching from another tab
-            if (isInboxFocused && onInboxRetap) {
+            // Only trigger callback if inbox has been focused for a while (re-tap)
+            // This closes the category when re-tapping inbox, but preserves state when:
+            // - Switching from another tab
+            // - Navigating back from email detail (inbox just regained focus)
+            // The 200ms threshold prevents closing category immediately after navigation
+            const timeSinceFocus = Date.now() - inboxFocusedAt;
+            if (isInboxFocused && onInboxRetap && timeSinceFocus > 200) {
               onInboxRetap();
             }
           },
