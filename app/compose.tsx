@@ -17,10 +17,19 @@ import {
   Image,
 } from "react-native";
 import { useLocalSearchParams, router, Stack } from "expo-router";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useAuth } from "../lib/authContext";
 import { Id } from "../convex/_generated/dataModel";
+import * as ImagePicker from "expo-image-picker";
+
+type AttachmentInfo = {
+  uri: string;
+  filename: string;
+  mimeType: string;
+  storageId?: Id<"_storage">;
+  uploading?: boolean;
+};
 
 type GmailAccount = {
   _id: Id<"gmailAccounts">;
@@ -46,6 +55,7 @@ export default function ComposeScreen() {
   const [showAccountPicker, setShowAccountPicker] = useState(false);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [autocompleteQuery, setAutocompleteQuery] = useState("");
+  const [attachments, setAttachments] = useState<AttachmentInfo[]>([]);
 
   const isReply = Boolean(replyTo);
   const hasAutoFilledRef = useRef(false);
@@ -145,6 +155,71 @@ export default function ComposeScreen() {
 
   // Send email action
   const sendEmailAction = useAction(api.gmailSend.sendEmail);
+  const generateUploadUrl = useMutation(api.attachments.generateUploadUrl);
+
+  // Pick images to attach
+  const handleAddAttachment = useCallback(async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets) return;
+
+      // Add selected images to attachments with uploading state
+      const newAttachments: AttachmentInfo[] = result.assets.map((asset) => ({
+        uri: asset.uri,
+        filename: asset.fileName || `image_${Date.now()}.jpg`,
+        mimeType: asset.mimeType || "image/jpeg",
+        uploading: true,
+      }));
+
+      setAttachments((prev) => [...prev, ...newAttachments]);
+
+      // Upload each attachment
+      for (let i = 0; i < newAttachments.length; i++) {
+        const att = newAttachments[i];
+        try {
+          const uploadUrl = await generateUploadUrl();
+          const response = await fetch(att.uri);
+          const blob = await response.blob();
+
+          const uploadResponse = await fetch(uploadUrl, {
+            method: "POST",
+            headers: { "Content-Type": att.mimeType },
+            body: blob,
+          });
+
+          if (!uploadResponse.ok) {
+            throw new Error("Upload failed");
+          }
+
+          const { storageId } = await uploadResponse.json();
+
+          // Update attachment with storageId
+          setAttachments((prev) =>
+            prev.map((a) =>
+              a.uri === att.uri ? { ...a, storageId, uploading: false } : a
+            )
+          );
+        } catch (error) {
+          console.error("Failed to upload attachment:", error);
+          // Remove failed attachment
+          setAttachments((prev) => prev.filter((a) => a.uri !== att.uri));
+          Alert.alert("Error", `Failed to upload ${att.filename}`);
+        }
+      }
+    } catch (error) {
+      console.error("Image picker error:", error);
+    }
+  }, [generateUploadUrl]);
+
+  // Remove an attachment
+  const handleRemoveAttachment = useCallback((uri: string) => {
+    setAttachments((prev) => prev.filter((a) => a.uri !== uri));
+  }, []);
 
   const handleSend = useCallback(async () => {
     if (!to.trim()) {
@@ -163,15 +238,31 @@ export default function ComposeScreen() {
       return;
     }
 
+    // Check if any attachments are still uploading
+    if (attachments.some((a) => a.uploading)) {
+      Alert.alert("Please wait", "Attachments are still uploading");
+      return;
+    }
+
     setIsSending(true);
 
     try {
+      // Prepare attachments for sending
+      const attachmentData = attachments
+        .filter((a) => a.storageId)
+        .map((a) => ({
+          storageId: a.storageId!,
+          filename: a.filename,
+          mimeType: a.mimeType,
+        }));
+
       await sendEmailAction({
         userEmail: senderEmail,
         to: to.trim(),
         subject: subject.trim(),
         body: body.trim(),
         replyToMessageId: emailId,
+        attachments: attachmentData.length > 0 ? attachmentData : undefined,
       });
 
       Alert.alert("Success", "Email sent!", [
@@ -186,7 +277,7 @@ export default function ComposeScreen() {
     } finally {
       setIsSending(false);
     }
-  }, [to, subject, body, selectedAccount?.email, user?.email, emailId, sendEmailAction]);
+  }, [to, subject, body, selectedAccount?.email, user?.email, emailId, sendEmailAction, attachments]);
 
   const handleDiscard = useCallback(() => {
     console.log("Cancel pressed - going back");
@@ -385,19 +476,52 @@ export default function ComposeScreen() {
             multiline
             textAlignVertical="top"
           />
+
+          {/* Attachments */}
+          {attachments.length > 0 && (
+            <View style={styles.attachmentsContainer}>
+              <Text style={styles.attachmentsLabel}>Attachments</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.attachmentsScroll}>
+                {attachments.map((att, index) => (
+                  <View key={att.uri} style={styles.attachmentItem}>
+                    <Image source={{ uri: att.uri }} style={styles.attachmentImage} />
+                    {att.uploading && (
+                      <View style={styles.attachmentUploading}>
+                        <ActivityIndicator size="small" color="#fff" />
+                      </View>
+                    )}
+                    <TouchableOpacity
+                      style={styles.attachmentRemove}
+                      onPress={() => handleRemoveAttachment(att.uri)}
+                    >
+                      <Text style={styles.attachmentRemoveText}>×</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.attachmentFilename} numberOfLines={1}>
+                      {att.filename}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
         </ScrollView>
 
-        {/* AI assist button */}
-        {originalEmail?.suggestedReply && (
-          <View style={styles.toolbar}>
+        {/* Toolbar with attachment and AI buttons */}
+        <View style={styles.toolbar}>
+          <TouchableOpacity style={styles.attachButton} onPress={handleAddAttachment}>
+            <Text style={styles.attachButtonIcon}>📎</Text>
+            <Text style={styles.attachButtonText}>Attach</Text>
+          </TouchableOpacity>
+
+          {originalEmail?.suggestedReply && (
             <TouchableOpacity style={styles.aiButton} onPress={handleAISuggest}>
               <View style={styles.aiIcon}>
                 <Text style={styles.aiIconText}>AI</Text>
               </View>
               <Text style={styles.aiButtonText}>Use suggested reply</Text>
             </TouchableOpacity>
-          </View>
-        )}
+          )}
+        </View>
       </KeyboardAvoidingView>
 
       {/* Account picker modal */}
@@ -527,10 +651,32 @@ const styles = StyleSheet.create({
     minHeight: 200,
   },
   toolbar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
     borderTopWidth: 1,
     borderTopColor: "#eee",
     padding: 12,
     backgroundColor: "#F8F9FA",
+  },
+  attachButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  attachButtonIcon: {
+    fontSize: 16,
+    marginRight: 6,
+  },
+  attachButtonText: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "500",
   },
   aiButton: {
     flexDirection: "row",
@@ -541,7 +687,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#E0E4FF",
-    alignSelf: "flex-start",
   },
   aiIcon: {
     width: 24,
@@ -710,5 +855,69 @@ const styles = StyleSheet.create({
   autocompleteEmail: {
     fontSize: 13,
     color: "#666",
+  },
+  attachmentsContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+  },
+  attachmentsLabel: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 8,
+  },
+  attachmentsScroll: {
+    flexDirection: "row",
+  },
+  attachmentItem: {
+    marginRight: 12,
+    position: "relative",
+    width: 80,
+  },
+  attachmentImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    backgroundColor: "#f0f0f0",
+  },
+  attachmentUploading: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 20,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderRadius: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  attachmentRemove: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#ff4444",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  attachmentRemoveText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
+    lineHeight: 20,
+  },
+  attachmentFilename: {
+    fontSize: 11,
+    color: "#666",
+    marginTop: 4,
+    textAlign: "center",
   },
 });

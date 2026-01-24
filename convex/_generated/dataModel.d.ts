@@ -570,6 +570,14 @@ export type DataModel = {
         | "deploying_backend"
         | "uploading"
         | "ready";
+      screenshotAnnotations?: {
+        __encrypted: true;
+        c: string;
+        i: string;
+        k: string;
+        v: number;
+      };
+      screenshotStorageId?: Id<"_storage">;
       startedAt?: number;
       status: "pending" | "processing" | "completed" | "failed" | "combined";
       transcript: {
@@ -620,6 +628,13 @@ export type DataModel = {
       | "progressMessage.k"
       | "progressMessage.v"
       | "progressStep"
+      | "screenshotAnnotations"
+      | "screenshotAnnotations.__encrypted"
+      | "screenshotAnnotations.c"
+      | "screenshotAnnotations.i"
+      | "screenshotAnnotations.k"
+      | "screenshotAnnotations.v"
+      | "screenshotStorageId"
       | "startedAt"
       | "status"
       | "transcript"

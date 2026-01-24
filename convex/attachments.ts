@@ -2,7 +2,7 @@
  * Attachment queries and actions for fetching and managing email attachments.
  */
 import { v } from "convex/values";
-import { query, action, internalMutation } from "./_generated/server";
+import { query, action, internalMutation, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { encryptedPii } from "./pii";
@@ -209,5 +209,20 @@ export const getAttachmentById = internalMutation({
       contentId: attachment.contentId,
       storageId: attachment.storageId,
     };
+  },
+});
+
+/**
+ * Generate an upload URL for email attachments.
+ * Used when composing emails with attachments.
+ */
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+    return await ctx.storage.generateUploadUrl();
   },
 });

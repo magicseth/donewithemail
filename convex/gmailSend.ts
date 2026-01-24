@@ -2,7 +2,8 @@
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
+import { Id } from "./_generated/dataModel";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
@@ -41,23 +42,58 @@ async function refreshTokenIfNeeded(
   };
 }
 
-// Build RFC 2822 email message
+type Attachment = {
+  filename: string;
+  mimeType: string;
+  data: string; // Base64 encoded
+};
+
+// Build RFC 2822 email message with optional attachments
 function buildEmailMessage(
   from: string,
   to: string,
   subject: string,
   body: string,
   threadId?: string,
-  inReplyTo?: string
+  inReplyTo?: string,
+  attachments?: Attachment[]
 ): string {
-  const boundary = `boundary_${Date.now()}`;
+  // Add footer to email body
+  const bodyWithFooter = body + "\n\n--\ndonewith.email";
+
+  // If no attachments, use simple text format
+  if (!attachments || attachments.length === 0) {
+    let headers = [
+      `From: ${from}`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: text/plain; charset="UTF-8"`,
+    ];
+
+    if (inReplyTo) {
+      headers.push(`In-Reply-To: ${inReplyTo}`);
+      headers.push(`References: ${inReplyTo}`);
+    }
+
+    const message = headers.join("\r\n") + "\r\n\r\n" + bodyWithFooter;
+
+    return Buffer.from(message)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  }
+
+  // With attachments, use multipart/mixed format
+  const boundary = `boundary_${Date.now()}_${Math.random().toString(36).substring(2)}`;
 
   let headers = [
     `From: ${from}`,
     `To: ${to}`,
     `Subject: ${subject}`,
     `MIME-Version: 1.0`,
-    `Content-Type: text/plain; charset="UTF-8"`,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
   ];
 
   if (inReplyTo) {
@@ -65,19 +101,40 @@ function buildEmailMessage(
     headers.push(`References: ${inReplyTo}`);
   }
 
-  // Add footer to email body
-  const bodyWithFooter = body + "\n\n--\ndonewith.email";
+  // Build message parts
+  let parts: string[] = [];
 
-  const message = headers.join("\r\n") + "\r\n\r\n" + bodyWithFooter;
+  // Text part
+  parts.push([
+    `--${boundary}`,
+    `Content-Type: text/plain; charset="UTF-8"`,
+    ``,
+    bodyWithFooter,
+  ].join("\r\n"));
+
+  // Attachment parts
+  for (const attachment of attachments) {
+    parts.push([
+      `--${boundary}`,
+      `Content-Type: ${attachment.mimeType}`,
+      `Content-Disposition: attachment; filename="${attachment.filename}"`,
+      `Content-Transfer-Encoding: base64`,
+      ``,
+      attachment.data,
+    ].join("\r\n"));
+  }
+
+  // Closing boundary
+  parts.push(`--${boundary}--`);
+
+  const message = headers.join("\r\n") + "\r\n\r\n" + parts.join("\r\n");
 
   // Base64url encode
-  const encoded = Buffer.from(message)
+  return Buffer.from(message)
     .toString("base64")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
-
-  return encoded;
 }
 
 // Send email via Gmail API
@@ -88,6 +145,11 @@ export const sendEmail = action({
     subject: v.string(),
     body: v.string(),
     replyToMessageId: v.optional(v.string()),
+    attachments: v.optional(v.array(v.object({
+      storageId: v.id("_storage"),
+      filename: v.string(),
+      mimeType: v.string(),
+    }))),
   },
   handler: async (ctx, args): Promise<{ messageId: string; threadId: string }> => {
     // Get Gmail account from gmailAccounts table
@@ -153,6 +215,27 @@ export const sendEmail = action({
       }
     }
 
+    // Fetch attachments from storage if provided
+    let attachmentData: Attachment[] | undefined;
+    if (args.attachments && args.attachments.length > 0) {
+      attachmentData = await Promise.all(
+        args.attachments.map(async (att) => {
+          const url = await ctx.storage.getUrl(att.storageId);
+          if (!url) {
+            throw new Error(`Attachment not found: ${att.filename}`);
+          }
+          const response = await fetch(url);
+          const arrayBuffer = await response.arrayBuffer();
+          const base64 = Buffer.from(arrayBuffer).toString("base64");
+          return {
+            filename: att.filename,
+            mimeType: att.mimeType,
+            data: base64,
+          };
+        })
+      );
+    }
+
     // Build email message
     const rawMessage = buildEmailMessage(
       args.userEmail,
@@ -160,7 +243,8 @@ export const sendEmail = action({
       args.subject,
       args.body,
       threadId,
-      inReplyTo
+      inReplyTo,
+      attachmentData
     );
 
     // Send via Gmail API

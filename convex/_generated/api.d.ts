@@ -31,6 +31,7 @@ export declare const api: {
       },
       any
     >;
+    generateUploadUrl: FunctionReference<"mutation", "public", {}, any>;
     getEmailAttachments: FunctionReference<
       "query",
       "public",
@@ -501,6 +502,7 @@ export declare const api: {
       { id: Id<"featureRequests"> },
       any
     >;
+    generateUploadUrl: FunctionReference<"mutation", "public", {}, any>;
     getMine: FunctionReference<"query", "public", {}, any>;
     getPending: FunctionReference<"query", "public", {}, any>;
     markCombined: FunctionReference<
@@ -550,7 +552,12 @@ export declare const api: {
     submit: FunctionReference<
       "mutation",
       "public",
-      { debugLogs?: string; transcript: string },
+      {
+        debugLogs?: string;
+        screenshotAnnotations?: string;
+        screenshotStorageId?: Id<"_storage">;
+        transcript: string;
+      },
       any
     >;
     updateClaudeOutput: FunctionReference<
@@ -708,6 +715,11 @@ export declare const api: {
       "action",
       "public",
       {
+        attachments?: Array<{
+          filename: string;
+          mimeType: string;
+          storageId: Id<"_storage">;
+        }>;
         body: string;
         replyToMessageId?: string;
         subject: string;
