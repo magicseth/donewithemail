@@ -836,6 +836,10 @@ export declare const api: {
       any
     >;
   };
+  shortcuts: {
+    ping: FunctionReference<"action", "public", {}, any>;
+    processText: FunctionReference<"action", "public", { text: string }, any>;
+  };
   staticHosting: {
     getCurrentDeployment: FunctionReference<"query", "public", {}, any>;
   };

@@ -18,7 +18,9 @@
       "bundleIdentifier": "com.donewithemail.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSMicrophoneUsageDescription": "DoneWith needs microphone access to record voice replies to emails"
+        "NSMicrophoneUsageDescription": "DoneWith needs microphone access to record voice replies to emails",
+        "NSSiriUsageDescription": "DoneWith uses Siri to help you process text and extract calendar events and action items.",
+        "NSPhotoLibraryUsageDescription": "DoneWith needs access to your photo library to attach images to emails."
       }
     },
     "android": {
@@ -65,7 +67,14 @@
           "teamId": "TCU64E3XV4"
         }
       ],
-      "./plugins/withNotificationServiceExtension.js"
+      "./plugins/withNotificationServiceExtension.js",
+      "./plugins/withAppIntents.js",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "DoneWith needs access to your photo library to attach images to emails."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
