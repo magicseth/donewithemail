@@ -11,6 +11,7 @@ import { AuthProvider, useAuth } from "../lib/authContext";
 import { AuthErrorProvider } from "../lib/AuthErrorBoundary";
 import { DemoModeProvider } from "../lib/demoModeContext";
 import { ThemeProvider } from "../lib/themeContext";
+import { ScreenshotProvider } from "../lib/screenshotContext";
 import { usePushNotifications } from "../hooks/usePushNotifications";
 import { getLastAuthRefreshSignal } from "../lib/authSignal";
 import * as SecureStore from "expo-secure-store";
@@ -331,7 +332,8 @@ export default function RootLayout() {
         <AuthProvider>
           <DemoModeProvider>
             <ThemeProvider>
-              <AuthErrorHandler>
+              <ScreenshotProvider>
+                <AuthErrorHandler>
                 <AuthenticatedFeaturesWrapper>
                   <Stack
                     screenOptions={{
@@ -368,7 +370,8 @@ export default function RootLayout() {
                     />
                   </Stack>
                 </AuthenticatedFeaturesWrapper>
-              </AuthErrorHandler>
+                </AuthErrorHandler>
+              </ScreenshotProvider>
             </ThemeProvider>
           </DemoModeProvider>
         </AuthProvider>

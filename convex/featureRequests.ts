@@ -4,6 +4,13 @@ import { components, internal } from "./_generated/api";
 import { PushNotifications } from "@convex-dev/expo-push-notifications";
 import { encryptedPii } from "./pii";
 
+// Type for screenshot annotation dots
+type AnnotationDot = {
+  id: string;
+  x: number;
+  y: number;
+};
+
 // Debug query to list recent feature requests (internal only)
 export const debugListRecent = internalQuery({
   args: { limit: v.optional(v.number()) },
@@ -84,12 +91,28 @@ async function getOrCreateUser(ctx: MutationCtx) {
 }
 
 /**
+ * Generate an upload URL for screenshot storage
+ */
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Not authenticated");
+    }
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+/**
  * Submit a new feature request from voice recording
  */
 export const submit = mutation({
   args: {
     transcript: v.string(),
     debugLogs: v.optional(v.string()),
+    screenshotStorageId: v.optional(v.id("_storage")),
+    screenshotAnnotations: v.optional(v.string()), // JSON string of AnnotationDot[]
   },
   handler: async (ctx, args) => {
     const user = await getOrCreateUser(ctx);
@@ -101,13 +124,23 @@ export const submit = mutation({
       ? await pii.encrypt(args.debugLogs)
       : undefined;
 
-    const id = await ctx.db.insert("featureRequests", {
+    // Encrypt screenshot annotations if provided
+    const encryptedAnnotations = args.screenshotAnnotations
+      ? await pii.encrypt(args.screenshotAnnotations)
+      : undefined;
+
+    // Note: screenshotStorageId and screenshotAnnotations are new schema fields
+    // Types will be regenerated on next deploy
+    const insertData = {
       userId: user._id,
       transcript: encryptedTranscript,
       status: "pending" as const,
       createdAt: Date.now(),
       debugLogs: encryptedDebugLogs,
-    });
+      screenshotStorageId: args.screenshotStorageId,
+      screenshotAnnotations: encryptedAnnotations,
+    };
+    const id = await ctx.db.insert("featureRequests", insertData as any);
 
     return { id };
   },
@@ -125,23 +158,36 @@ export const getPending = query({
       .order("asc")
       .take(10);
 
-    // Decrypt transcripts and debug logs for each request
+    // Decrypt transcripts, debug logs, and annotations for each request
+    // Cast to any to access new schema fields (types regenerated on deploy)
     return Promise.all(
-      requests.map(async (req) => {
+      requests.map(async (r) => {
+        const req = r as any;
         const pii = await encryptedPii.forUserQuery(ctx, req.userId);
         let transcript = "";
         let debugLogs: string | undefined;
+        let screenshotAnnotations: string | undefined;
+        let screenshotUrl: string | null = null;
         if (pii) {
           transcript = (await pii.decrypt(req.transcript)) ?? "";
           if (req.debugLogs) {
             debugLogs = (await pii.decrypt(req.debugLogs)) ?? undefined;
           }
+          if (req.screenshotAnnotations) {
+            screenshotAnnotations = (await pii.decrypt(req.screenshotAnnotations)) ?? undefined;
+          }
+        }
+        // Get screenshot URL if storage ID exists
+        if (req.screenshotStorageId) {
+          screenshotUrl = await ctx.storage.getUrl(req.screenshotStorageId);
         }
         return {
           _id: req._id,
           userId: req.userId,
           transcript,
           debugLogs,
+          screenshotUrl,
+          screenshotAnnotations,
           status: req.status,
           createdAt: req.createdAt,
         };
@@ -367,13 +413,17 @@ export const getMine = query({
     const pii = await encryptedPii.forUserQuery(ctx, user._id);
 
     // Decrypt PII fields for each request
+    // Cast to any to access new schema fields (types regenerated on deploy)
     return Promise.all(
-      requests.map(async (req) => {
+      requests.map(async (r) => {
+        const req = r as any;
         let transcript = "";
         let error: string | undefined;
         let progressMessage: string | undefined;
         let claudeOutput: string | undefined;
         let debugLogs: string | undefined;
+        let screenshotAnnotations: string | undefined;
+        let screenshotUrl: string | null = null;
 
         if (pii) {
           transcript = (await pii.decrypt(req.transcript)) ?? "";
@@ -389,6 +439,14 @@ export const getMine = query({
           if (req.debugLogs) {
             debugLogs = (await pii.decrypt(req.debugLogs)) ?? undefined;
           }
+          if (req.screenshotAnnotations) {
+            screenshotAnnotations = (await pii.decrypt(req.screenshotAnnotations)) ?? undefined;
+          }
+        }
+
+        // Get screenshot URL if storage ID exists
+        if (req.screenshotStorageId) {
+          screenshotUrl = await ctx.storage.getUrl(req.screenshotStorageId);
         }
 
         return {
@@ -412,6 +470,8 @@ export const getMine = query({
           easDashboardUrl: req.easDashboardUrl,
           combinedIntoId: req.combinedIntoId,
           debugLogs,
+          screenshotUrl,
+          screenshotAnnotations,
         };
       })
     );
