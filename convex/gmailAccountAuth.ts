@@ -237,6 +237,86 @@ export const storeGmailAccount = mutation({
   },
 });
 
+// Internal mutation for storing Gmail account from WorkOS sign-in
+// Called during initial authentication before user's Convex auth context is established
+export const storeGmailAccountFromWorkos = internalMutation({
+  args: {
+    userId: v.id("users"),
+    email: v.string(),
+    accessToken: v.string(),
+    refreshToken: v.optional(v.string()),
+    expiresIn: v.number(),
+    displayName: v.optional(v.string()),
+    avatarUrl: v.optional(v.string()),
+    workosRefreshToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const pii = await encryptedPii.forUser(ctx, args.userId);
+
+    // Check if this Gmail account is already linked
+    const existing = await ctx.db
+      .query("gmailAccounts")
+      .withIndex("by_user_email", (q) =>
+        q.eq("userId", args.userId).eq("email", args.email)
+      )
+      .first();
+
+    if (existing) {
+      // Update existing account with new tokens
+      const updates: Record<string, any> = {
+        accessToken: await pii.encrypt(args.accessToken),
+        tokenExpiresAt: Date.now() + args.expiresIn * 1000,
+        authSource: "workos",
+      };
+      if (args.refreshToken) {
+        updates.refreshToken = await pii.encrypt(args.refreshToken);
+      }
+      if (args.workosRefreshToken) {
+        updates.workosRefreshToken = await pii.encrypt(args.workosRefreshToken);
+      }
+      if (args.displayName) {
+        updates.displayName = await pii.encrypt(args.displayName);
+      }
+      if (args.avatarUrl) {
+        updates.avatarUrl = args.avatarUrl;
+      }
+      await ctx.db.patch(existing._id, updates);
+      return existing._id;
+    }
+
+    // Check if this is the first Gmail account
+    const existingAccounts = await ctx.db
+      .query("gmailAccounts")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    const isPrimary = existingAccounts.length === 0;
+
+    // Create new Gmail account with WorkOS auth source
+    const accountId = await ctx.db.insert("gmailAccounts", {
+      userId: args.userId,
+      email: args.email,
+      accessToken: await pii.encrypt(args.accessToken),
+      refreshToken: args.refreshToken
+        ? await pii.encrypt(args.refreshToken)
+        : undefined,
+      tokenExpiresAt: Date.now() + args.expiresIn * 1000,
+      isPrimary,
+      displayName: args.displayName
+        ? await pii.encrypt(args.displayName)
+        : undefined,
+      avatarUrl: args.avatarUrl,
+      authSource: "workos",
+      workosRefreshToken: args.workosRefreshToken
+        ? await pii.encrypt(args.workosRefreshToken)
+        : undefined,
+      createdAt: Date.now(),
+    });
+
+    return accountId;
+  },
+});
+
 // Internal mutation for storing Gmail account (called from action with userId)
 // This is used for linking additional Gmail accounts via direct Google OAuth
 export const storeGmailAccountInternal = internalMutation({

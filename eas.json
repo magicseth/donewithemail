@@ -31,7 +31,7 @@
       "autoIncrement": true,
       "credentialsSource": "local",
       "env": {
-        "EXPO_PUBLIC_CONVEX_URL": "https://cool-kingfisher-293.convex.cloud"
+        "EXPO_PUBLIC_CONVEX_URL": "https://descriptive-swan-605.convex.cloud"
       },
       "channel": "production"
     }

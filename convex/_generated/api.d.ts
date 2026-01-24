@@ -1215,6 +1215,21 @@ export declare const internal: {
     >;
   };
   gmailAccountAuth: {
+    storeGmailAccountFromWorkos: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        accessToken: string;
+        avatarUrl?: string;
+        displayName?: string;
+        email: string;
+        expiresIn: number;
+        refreshToken?: string;
+        userId: Id<"users">;
+        workosRefreshToken?: string;
+      },
+      any
+    >;
     storeGmailAccountInternal: FunctionReference<
       "mutation",
       "internal",

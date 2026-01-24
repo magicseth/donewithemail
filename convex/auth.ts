@@ -100,9 +100,11 @@ export const authenticate = action({
 
     // If we have Google tokens, create/update a Gmail account entry
     // Store as WorkOS auth source since tokens came via WorkOS OAuth
+    // Use internal mutation since user's Convex auth context isn't established yet
     if (googleAccessToken && user.email) {
       try {
-        await ctx.runMutation(api.gmailAccountAuth.storeGmailAccount, {
+        await ctx.runMutation(internal.gmailAccountAuth.storeGmailAccountFromWorkos, {
+          userId,
           email: user.email,
           accessToken: googleAccessToken,
           refreshToken: googleRefreshToken,
@@ -111,7 +113,6 @@ export const authenticate = action({
             ? `${user.first_name} ${user.last_name || ""}`.trim()
             : undefined,
           avatarUrl: user.profile_picture_url,
-          authSource: "workos",
           workosRefreshToken: data.refresh_token, // WorkOS refresh token for refreshing Google tokens
         });
       } catch (error) {
