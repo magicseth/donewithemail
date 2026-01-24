@@ -117,14 +117,8 @@ interface BatchEmailRowProps {
   isRecordingConnected?: boolean;
   /** Live transcript while recording */
   transcript?: string;
-  /** Delay in ms before checkmark animates in. Used for cascade effect. */
-  switchAnimationDelay?: number;
-  /** If true, trigger the animation (used for scroll-into-view) */
-  triggerSwitchAnimation?: boolean;
   /** Toggle flag state (keep/needs review) */
   onPunt: () => void;
-  /** Mark this email as done immediately */
-  onMarkDone?: () => void;
   onAccept?: () => void;
   onQuickReply?: (reply: QuickReplyOption) => void;
   /** Called when mic button is pressed down (start recording) */
@@ -150,10 +144,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   isRecording = false,
   isRecordingConnected = false,
   transcript,
-  switchAnimationDelay = 0,
-  triggerSwitchAnimation = true,
   onPunt,
-  onMarkDone,
   onAccept,
   onQuickReply,
   onMicPressIn,
@@ -166,24 +157,6 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   compact = false,
 }: BatchEmailRowProps) {
   const [showPreview, setShowPreview] = useState(false);
-
-  // Animation state for checkmark appearance
-  const [hasAnimated, setHasAnimated] = useState(false);
-
-  // Trigger animation when component becomes visible
-  useEffect(() => {
-    if (isPunted) {
-      setHasAnimated(true); // Skip animation for flagged items
-      return;
-    }
-
-    if (triggerSwitchAnimation && !hasAnimated) {
-      const timer = setTimeout(() => {
-        setHasAnimated(true);
-      }, switchAnimationDelay);
-      return () => clearTimeout(timer);
-    }
-  }, [triggerSwitchAnimation, switchAnimationDelay, hasAnimated, isPunted]);
 
   // Track mic press state for native responder system
   const micPressActive = useRef(false);
@@ -290,20 +263,9 @@ export const BatchEmailRow = memo(function BatchEmailRow({
           )}
         </View>
 
-        {/* Action buttons - stop (unsubscribe), checkmark (done), flag (keep/needs review) */}
+        {/* Action buttons - flag for human review */}
         <View style={styles.actionButtons}>
-          {/* Checkmark - mark as done (gray until clicked) */}
-          {onMarkDone && hasAnimated && (
-            <TouchableOpacity
-              style={styles.iconButton}
-              onPress={onMarkDone}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={styles.checkmarkIconGray}>✓</Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Flag - toggle keep/needs review */}
+          {/* Flag - toggle flag for human review */}
           <TouchableOpacity
             style={[styles.iconButton, isPunted && styles.iconButtonActive]}
             onPress={onPunt}
@@ -593,12 +555,9 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   if (prevProps.expandReplyByDefault !== nextProps.expandReplyByDefault) return false;
   if (prevProps.isAccepting !== nextProps.isAccepting) return false;
   if (prevProps.isUnsubscribing !== nextProps.isUnsubscribing) return false;
-  if (prevProps.switchAnimationDelay !== nextProps.switchAnimationDelay) return false;
-  if (prevProps.triggerSwitchAnimation !== nextProps.triggerSwitchAnimation) return false;
   if (prevProps.compact !== nextProps.compact) return false;
 
   // For functions, only check if defined status changed (not reference)
-  if (!!prevProps.onMarkDone !== !!nextProps.onMarkDone) return false;
   if (!!prevProps.onAccept !== !!nextProps.onAccept) return false;
   if (!!prevProps.onQuickReply !== !!nextProps.onQuickReply) return false;
   if (!!prevProps.onMicPressIn !== !!nextProps.onMicPressIn) return false;
@@ -781,11 +740,6 @@ const styles = StyleSheet.create({
   },
   flagIconActive: {
     color: "#F59E0B",
-  },
-  checkmarkIconGray: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#9CA3AF",
   },
   stopIcon: {
     fontSize: 18,
