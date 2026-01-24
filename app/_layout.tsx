@@ -231,8 +231,11 @@ function AuthenticatedFeatures() {
         setShowChangelog(true);
       }
 
-      // Update last opened timestamp
-      updateLastOpened().catch((error) => {
+      // Update last opened timestamp and timezone
+      // The timezone is used by the AI summarizer to calculate relative dates correctly
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
+      // Type assertion needed because generated types are out of date until `convex dev` runs
+      (updateLastOpened as unknown as (args: { timezone?: string }) => Promise<void>)({ timezone }).catch((error) => {
         console.error("[Changelog] Failed to update lastOpenedAt:", error);
       });
     }
@@ -329,42 +332,42 @@ export default function RootLayout() {
           <DemoModeProvider>
             <ThemeProvider>
               <AuthErrorHandler>
-              <AuthenticatedFeaturesWrapper>
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    animation: "slide_from_right",
-                  }}
-                >
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  <Stack.Screen
-                    name="email/[id]"
-                    options={{
-                      presentation: "card",
-                      headerShown: true,
-                      headerTitle: "Email",
-                      headerBackTitle: "Back",
+                <AuthenticatedFeaturesWrapper>
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                      animation: "slide_from_right",
                     }}
-                  />
-                  <Stack.Screen
-                    name="person/[id]"
-                    options={{
-                      presentation: "card",
-                      headerShown: true,
-                      headerTitle: "Contact",
-                      headerBackTitle: "Back",
-                    }}
-                  />
-                  <Stack.Screen
-                    name="compose"
-                    options={{
-                      presentation: "modal",
-                      headerShown: true,
-                      headerTitle: "Compose",
-                    }}
-                  />
-                </Stack>
-              </AuthenticatedFeaturesWrapper>
+                  >
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                    <Stack.Screen
+                      name="email/[id]"
+                      options={{
+                        presentation: "card",
+                        headerShown: true,
+                        headerTitle: "Email",
+                        headerBackTitle: "Back",
+                      }}
+                    />
+                    <Stack.Screen
+                      name="person/[id]"
+                      options={{
+                        presentation: "card",
+                        headerShown: true,
+                        headerTitle: "Contact",
+                        headerBackTitle: "Back",
+                      }}
+                    />
+                    <Stack.Screen
+                      name="compose"
+                      options={{
+                        presentation: "modal",
+                        headerShown: true,
+                        headerTitle: "Compose",
+                      }}
+                    />
+                  </Stack>
+                </AuthenticatedFeaturesWrapper>
               </AuthErrorHandler>
             </ThemeProvider>
           </DemoModeProvider>

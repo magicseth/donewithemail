@@ -17,6 +17,10 @@ const anthropic = createAnthropic({
 const OPUS_MODEL = "claude-opus-4-5-20251101";
 const SONNET_MODEL = "claude-sonnet-4-20250514";
 
+// Retry configuration
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY_MS = 1000; // 1 second
+
 // Usage stats type (aligned with neutral-cost API)
 interface UsageStats {
   promptTokens: number;
@@ -24,44 +28,125 @@ interface UsageStats {
   totalTokens: number;
 }
 
-// Generate text with Opus, falling back to Sonnet on overload
+// Check if an error is retryable (server errors, rate limits, timeouts)
+function isRetryableError(error: unknown): boolean {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  // Retry on: 500-series errors, rate limits (429), timeouts, network errors
+  return (
+    errorMessage.includes("500") ||
+    errorMessage.includes("502") ||
+    errorMessage.includes("503") ||
+    errorMessage.includes("504") ||
+    errorMessage.includes("429") ||
+    errorMessage.includes("rate limit") ||
+    errorMessage.includes("Rate limit") ||
+    errorMessage.includes("timeout") ||
+    errorMessage.includes("Timeout") ||
+    errorMessage.includes("ETIMEDOUT") ||
+    errorMessage.includes("ECONNRESET") ||
+    errorMessage.includes("network") ||
+    errorMessage.includes("Network") ||
+    errorMessage.includes("Internal Server Error") ||
+    errorMessage.includes("Service Unavailable") ||
+    errorMessage.includes("Bad Gateway")
+  );
+}
+
+// Sleep helper for exponential backoff
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Get "today's date" formatted for the AI prompt, using the user's timezone.
+ * This fixes off-by-one errors when users are in different timezones than UTC.
+ * @param timezone - IANA timezone string (e.g., "America/Los_Angeles")
+ * @returns Formatted date string like "Saturday, 2025-01-18"
+ */
+function getTodayDateForPrompt(timezone?: string): string {
+  const now = new Date();
+
+  // Get the date in the user's timezone (or system timezone if not provided)
+  const dateStr = timezone
+    ? now.toLocaleDateString("en-CA", { timeZone: timezone }) // en-CA gives YYYY-MM-DD
+    : now.toISOString().split("T")[0];
+
+  const dayOfWeek = timezone
+    ? now.toLocaleDateString("en-US", { weekday: "long", timeZone: timezone })
+    : now.toLocaleDateString("en-US", { weekday: "long" });
+
+  return `${dayOfWeek}, ${dateStr}`;
+}
+
+// Generate text with Opus, falling back to Sonnet on overload, with retry logic
 async function generateTextWithFallback(prompt: string): Promise<{ text: string; model: string; usage: UsageStats }> {
-  try {
-    const result = await generateText({
-      model: anthropic(OPUS_MODEL),
-      prompt,
-    });
-    return {
-      text: result.text,
-      model: OPUS_MODEL,
-      usage: {
-        promptTokens: result.usage?.inputTokens ?? 0,
-        completionTokens: result.usage?.outputTokens ?? 0,
-        totalTokens: result.usage?.totalTokens ?? 0,
-      },
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    // Check if it's an overload error
-    if (errorMessage.includes("Overloaded") || errorMessage.includes("overloaded") || errorMessage.includes("529")) {
-      console.log(`[Summarize] Opus overloaded, falling back to Sonnet`);
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      // Try Opus first
       const result = await generateText({
-        model: anthropic(SONNET_MODEL),
+        model: anthropic(OPUS_MODEL),
         prompt,
       });
       return {
         text: result.text,
-        model: SONNET_MODEL,
+        model: OPUS_MODEL,
         usage: {
           promptTokens: result.usage?.inputTokens ?? 0,
           completionTokens: result.usage?.outputTokens ?? 0,
           totalTokens: result.usage?.totalTokens ?? 0,
         },
       };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Check if it's an overload error - fall back to Sonnet immediately
+      if (errorMessage.includes("Overloaded") || errorMessage.includes("overloaded") || errorMessage.includes("529")) {
+        console.log(`[Summarize] Opus overloaded, falling back to Sonnet`);
+        try {
+          const result = await generateText({
+            model: anthropic(SONNET_MODEL),
+            prompt,
+          });
+          return {
+            text: result.text,
+            model: SONNET_MODEL,
+            usage: {
+              promptTokens: result.usage?.inputTokens ?? 0,
+              completionTokens: result.usage?.outputTokens ?? 0,
+              totalTokens: result.usage?.totalTokens ?? 0,
+            },
+          };
+        } catch (sonnetError) {
+          // If Sonnet also fails with a retryable error, continue retry loop
+          if (isRetryableError(sonnetError)) {
+            lastError = sonnetError instanceof Error ? sonnetError : new Error(String(sonnetError));
+            const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
+            console.log(`[Summarize] Sonnet failed with retryable error, attempt ${attempt + 1}/${MAX_RETRIES}, retrying in ${delay}ms: ${lastError.message}`);
+            await sleep(delay);
+            continue;
+          }
+          throw sonnetError;
+        }
+      }
+
+      // Check if this is a retryable error
+      if (isRetryableError(error)) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
+        console.log(`[Summarize] Retryable error, attempt ${attempt + 1}/${MAX_RETRIES}, retrying in ${delay}ms: ${lastError.message}`);
+        await sleep(delay);
+        continue;
+      }
+
+      // Non-retryable error, throw immediately
+      throw error;
     }
-    // Re-throw other errors
-    throw error;
   }
+
+  // All retries exhausted
+  throw lastError || new Error("All retry attempts failed");
 }
 
 // Convert HTML to plain text for AI summarization
@@ -209,6 +294,8 @@ interface SummarizeResult {
   suggestedFacts?: string[];
   // Filenames of important attachments that should be shown in inbox
   importantAttachments?: string[];
+  // Whether this is a marketing/promotional email (vs personal email from individual)
+  isMarketing?: boolean;
 }
 
 export const summarizeEmail = action({
@@ -256,9 +343,8 @@ ${attachmentList ? `\n\nAttachments:\n${attachmentList}` : ''}
 `.trim();
 
     // Call Anthropic via AI SDK with enhanced prompt (Opus with Sonnet fallback)
-    const now = new Date();
-    const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
-    const today = `${dayOfWeek}, ${now.toISOString().split("T")[0]}`; // e.g., "Saturday, 2025-01-18"
+    // Use user's timezone for "today's date" to avoid off-by-one errors
+    const today = getTodayDateForPrompt(email.userTimezone);
     const { text, model, usage } = await generateTextWithFallback(`Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
 
 TODAY'S DATE: ${today}
@@ -333,6 +419,11 @@ FIELDS:
    - Maximum 2 attachments in the array
    - Use EXACT filenames from the Attachments list above
    - If no attachments are important, omit this field or return empty array
+13. isMarketing: REQUIRED boolean. Classify whether this email is marketing/promotional:
+   - true: Marketing emails, promotional offers, newsletters, automated transactional (receipts, shipping updates), mass emails from companies, cold outreach, sales pitches
+   - false: Personal emails from real individuals who know the recipient, 1:1 communication from colleagues, friends, family, known business contacts
+   - Key signals for marketing: company sender (noreply@, marketing@, sales@), promotional language ("limited time", "% off", "sale"), mass email formatting, unsubscribe links
+   - This field is CRITICAL for notification filtering - marketing emails should NEVER trigger push notifications
 
 Email:
 ${emailContent}
@@ -416,6 +507,7 @@ Respond with only valid JSON, no markdown or explanation.`);
       deadline: sanitizedDeadline,
       deadlineDescription: sanitizedDeadlineDescription,
       importantAttachmentIds,
+      isMarketing: result.isMarketing,
     } as any);
 
     // Track AI usage cost per user
@@ -491,33 +583,34 @@ export const summarizeByExternalIds = internalAction({
     // Process all emails in parallel
     const results = await Promise.all(
       args.externalIds.map(async (externalId): Promise<ResultType> => {
-        try {
-          // Find email by external ID
-          const email = await ctx.runQuery(internal.summarize.getEmailByExternalId, {
+        // Find email by external ID first (outside inner try-catch so we can create fallback summary)
+        const email = await ctx.runQuery(internal.summarize.getEmailByExternalId, {
+          externalId,
+        });
+
+        if (!email) {
+          return { externalId, success: false, error: "Email not found in DB" };
+        }
+
+        // Skip if already summarized
+        if (email.aiProcessedAt) {
+          return {
             externalId,
-          });
+            success: true,
+            result: {
+              summary: email.summary || "",
+              urgencyScore: email.urgencyScore || 0,
+              urgencyReason: email.urgencyReason || "",
+              suggestedReply: email.suggestedReply,
+              actionRequired: email.actionRequired,
+              actionDescription: email.actionDescription,
+              quickReplies: email.quickReplies,
+              calendarEvent: email.calendarEvent,
+            },
+          };
+        }
 
-          if (!email) {
-            return { externalId, success: false, error: "Email not found in DB" };
-          }
-
-          // Skip if already summarized
-          if (email.aiProcessedAt) {
-            return {
-              externalId,
-              success: true,
-              result: {
-                summary: email.summary || "",
-                urgencyScore: email.urgencyScore || 0,
-                urgencyReason: email.urgencyReason || "",
-                suggestedReply: email.suggestedReply,
-                actionRequired: email.actionRequired,
-                actionDescription: email.actionDescription,
-                quickReplies: email.quickReplies,
-                calendarEvent: email.calendarEvent,
-              },
-            };
-          }
+        try {
 
           // Build context-rich prompt - use full body, convert HTML to text
           const rawBody = email.bodyFull || email.bodyPreview || "";
@@ -567,9 +660,8 @@ Subject: ${email.subject}${recentContext}${factsContext}
 ${bodyText}`.trim();
 
           // Call Anthropic via AI SDK with enhanced prompt (Opus with Sonnet fallback)
-          const now = new Date();
-          const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
-          const today = `${dayOfWeek}, ${now.toISOString().split("T")[0]}`; // e.g., "Saturday, 2025-01-18"
+          // Use user's timezone for "today's date" to avoid off-by-one errors
+          const today = getTodayDateForPrompt(email.userTimezone);
           const { text, model, usage } = await generateTextWithFallback(`Analyze this email and return a JSON response. Your goal is to help the user quickly decide what to do with this email.
 
 TODAY'S DATE: ${today}
@@ -628,11 +720,16 @@ FIELDS:
    - Spam calendar invites → likely decline
    - Events at inconvenient times or conflicting with work → likely decline
    Only include this field when calendarEvent is present.
-11. suggestedFacts: Array of NEW facts about the sender learned from this email. Focus on:
+12. suggestedFacts: Array of NEW facts about the sender learned from this email. Focus on:
    - Professional role/title (e.g., "Works at Acme Corp as VP of Sales")
    - Personal relationships (e.g., "Has a daughter named Emma")
    - Location/timezone (e.g., "Based in Seattle")
    Only include clearly stated facts not already in "Known facts about sender". Return empty array if none.
+13. isMarketing: REQUIRED boolean. Classify whether this email is marketing/promotional:
+   - true: Marketing emails, promotional offers, newsletters, automated transactional (receipts, shipping updates), mass emails from companies, cold outreach, sales pitches
+   - false: Personal emails from real individuals who know the recipient, 1:1 communication from colleagues, friends, family, known business contacts
+   - Key signals for marketing: company sender (noreply@, marketing@, sales@), promotional language ("limited time", "% off", "sale"), mass email formatting, unsubscribe links
+   - This field is CRITICAL for notification filtering - marketing emails should NEVER trigger push notifications
 
 Email:
 ${emailContent}
@@ -701,6 +798,7 @@ Respond with only valid JSON, no markdown or explanation.`);
             meetingRequest: result.meetingRequest || undefined,
             deadline: sanitizedDeadline,
             deadlineDescription: sanitizedDeadlineDescription,
+            isMarketing: result.isMarketing,
           } as any);
 
           // Track AI usage cost per user
@@ -733,10 +831,30 @@ Respond with only valid JSON, no markdown or explanation.`);
 
           return { externalId, success: true, result, factsToSave };
         } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          console.error(`[Summarize] Failed after retries for ${externalId}: ${errorMessage}`);
+
+          // Create a fallback summary so the email moves to inbox instead of being stuck
+          // This marks the email as "processed" (with a failure placeholder) so it appears in inbox
+          if (email) {
+            try {
+              await ctx.runMutation(internal.summarize.updateEmailSummary, {
+                emailId: email._id,
+                summary: "Unable to analyze email. Tap to view.",
+                urgencyScore: 50, // Neutral urgency - will appear in inbox
+                urgencyReason: `AI analysis failed: ${errorMessage}`,
+                actionRequired: "fyi" as const,
+              });
+              console.log(`[Summarize] Created fallback summary for ${externalId}`);
+            } catch (fallbackError) {
+              console.error(`[Summarize] Failed to create fallback summary for ${externalId}:`, fallbackError);
+            }
+          }
+
           return {
             externalId,
             success: false,
-            error: error instanceof Error ? error.message : "Unknown error",
+            error: errorMessage,
           };
         }
       })

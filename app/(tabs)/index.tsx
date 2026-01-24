@@ -13,7 +13,7 @@ import {
   KeyboardAvoidingView,
 } from "react-native";
 import { router, Stack, useFocusEffect } from "expo-router";
-import { getInboxTabPressSignal, setInboxFocused } from "./_layout";
+import { setInboxFocused, setInboxRetapCallback } from "./_layout";
 import { useAction } from "convex/react";
 import { useAuth } from "../../lib/authContext";
 import { useDemoMode } from "../../lib/demoModeContext";
@@ -110,27 +110,22 @@ export default function InboxScreen() {
   const { playStopSound } = useMicSounds();
   const sendEmailAction = useAction(api.gmailSend.sendReply);
 
-  // Track the last processed tab press signal to detect explicit tab re-taps
-  const lastTabPressSignal = useRef(getInboxTabPressSignal());
-
-  // Track focus state for the tab press detection in _layout.tsx
-  // and close category only when user re-taps inbox tab (not on initial navigation from another tab)
+  // Track focus state and register callback for when inbox tab is re-tapped
+  // This closes the category when re-tapping inbox, but preserves state when switching from another tab
   useFocusEffect(
     useCallback(() => {
       // Mark inbox as focused when this screen gains focus
       setInboxFocused(true);
 
-      // Check if this was triggered by a re-tap (signal incremented)
-      const currentSignal = getInboxTabPressSignal();
-      if (currentSignal > lastTabPressSignal.current) {
-        // This is an explicit tab re-tap - close the category
-        lastTabPressSignal.current = currentSignal;
+      // Register callback to close category on re-tap
+      setInboxRetapCallback(() => {
         batchTriageRef.current?.closeCategory();
-      }
+      });
 
-      // Cleanup: mark inbox as unfocused when screen loses focus
+      // Cleanup: mark inbox as unfocused and remove callback when screen loses focus
       return () => {
         setInboxFocused(false);
+        setInboxRetapCallback(null);
       };
     }, [])
   );

@@ -74,6 +74,31 @@ export declare const api: {
       any
     >;
   };
+  browserAgent: {
+    continueBrowserChat: FunctionReference<
+      "action",
+      "public",
+      {
+        message: string;
+        pageContent?: string;
+        pageTitle?: string;
+        pageUrl?: string;
+        threadId: string;
+      },
+      any
+    >;
+    startBrowserChat: FunctionReference<
+      "action",
+      "public",
+      {
+        message: string;
+        pageContent?: string;
+        pageTitle?: string;
+        pageUrl?: string;
+      },
+      any
+    >;
+  };
   calendar: {
     addToCalendar: FunctionReference<
       "action",
@@ -127,7 +152,12 @@ export declare const api: {
       any
     >;
     getLastOpened: FunctionReference<"query", "public", {}, any>;
-    updateLastOpened: FunctionReference<"mutation", "public", {}, any>;
+    updateLastOpened: FunctionReference<
+      "mutation",
+      "public",
+      { timezone?: string },
+      any
+    >;
   };
   chatHistory: {
     deleteThread: FunctionReference<
@@ -2019,6 +2049,7 @@ export declare const internal: {
         deadlineDescription?: string;
         emailId: Id<"emails">;
         importantAttachmentIds?: Array<Id<"attachments">>;
+        isMarketing?: boolean;
         meetingRequest?: {
           isMeetingRequest: boolean;
           proposedTimes?: Array<{ endTime: string; startTime: string }>;

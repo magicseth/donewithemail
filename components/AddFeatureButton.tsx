@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
   TextInput,
+  ScrollView,
 } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
@@ -166,69 +167,74 @@ export function AddFeatureButton() {
         onRequestClose={handleCancelFeatureConfirm}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {isRecordingFeature ? "Recording Voice..." : "Confirm Feature Request"}
-            </Text>
-            <Text style={styles.modalMessage}>
-              {isRecordingFeature
-                ? "Speak your feature request. Release to finish."
-                : "Review and edit your request below:"}
-            </Text>
+          <ScrollView
+            contentContainerStyle={styles.modalScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>
+                {isRecordingFeature ? "Recording Voice..." : "Confirm Feature Request"}
+              </Text>
+              <Text style={styles.modalMessage}>
+                {isRecordingFeature
+                  ? "Speak your feature request. Release to finish."
+                  : "Review and edit your request below:"}
+              </Text>
 
-            {/* Editable transcript field */}
-            <TextInput
-              style={[
-                styles.modalTranscriptInput,
-                isRecordingFeature && styles.modalTranscriptInputRecording,
-              ]}
-              value={editableTranscript}
-              onChangeText={setEditableTranscript}
-              placeholder={isRecordingFeature ? "Listening..." : "Enter your feature request"}
-              placeholderTextColor="#999"
-              multiline
-              editable={!isRecordingFeature}
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
+              {/* Editable transcript field */}
+              <TextInput
+                style={[
+                  styles.modalTranscriptInput,
+                  isRecordingFeature && styles.modalTranscriptInputRecording,
+                ]}
+                value={editableTranscript}
+                onChangeText={setEditableTranscript}
+                placeholder={isRecordingFeature ? "Listening..." : "Enter your feature request"}
+                placeholderTextColor="#999"
+                multiline
+                editable={!isRecordingFeature}
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
 
-            {!isRecordingFeature && (
-              <>
-                <TouchableOpacity
-                  style={styles.checkboxRow}
-                  onPress={() => setIncludeDebugLogs(!includeDebugLogs)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.checkbox, includeDebugLogs && styles.checkboxChecked]}>
-                    {includeDebugLogs && <Text style={styles.checkmark}>✓</Text>}
+              {!isRecordingFeature && (
+                <>
+                  <TouchableOpacity
+                    style={styles.checkboxRow}
+                    onPress={() => setIncludeDebugLogs(!includeDebugLogs)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.checkbox, includeDebugLogs && styles.checkboxChecked]}>
+                      {includeDebugLogs && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.checkboxLabel}>Include debug logs ({logs.length})</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.modalButtonCancel]}
+                      onPress={handleCancelFeatureConfirm}
+                    >
+                      <Text style={styles.modalButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.modalButtonRetry]}
+                      onPress={handleRetryRecording}
+                    >
+                      <Text style={styles.modalButtonText}>Retry</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.modalButtonSubmit, isSubmittingFeature && styles.modalButtonDisabled]}
+                      onPress={handleConfirmFeatureSubmit}
+                      disabled={!editableTranscript.trim() || isSubmittingFeature}
+                    >
+                      <Text style={styles.modalButtonTextLight}>Submit</Text>
+                    </TouchableOpacity>
                   </View>
-                  <Text style={styles.checkboxLabel}>Include debug logs ({logs.length})</Text>
-                </TouchableOpacity>
-
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity
-                    style={[styles.modalButton, styles.modalButtonCancel]}
-                    onPress={handleCancelFeatureConfirm}
-                  >
-                    <Text style={styles.modalButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalButton, styles.modalButtonRetry]}
-                    onPress={handleRetryRecording}
-                  >
-                    <Text style={styles.modalButtonText}>Retry</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalButton, styles.modalButtonSubmit]}
-                    onPress={handleConfirmFeatureSubmit}
-                    disabled={!editableTranscript.trim()}
-                  >
-                    <Text style={styles.modalButtonTextLight}>Submit</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </View>
+                </>
+              )}
+            </View>
+          </ScrollView>
         </View>
       </Modal>
 
@@ -298,6 +304,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
+  },
+  modalScrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
   },
   modalContent: {
     backgroundColor: "#fff",
@@ -394,6 +406,10 @@ const styles = StyleSheet.create({
   },
   modalButtonSubmit: {
     backgroundColor: "#6366F1",
+  },
+  modalButtonDisabled: {
+    backgroundColor: "#A5A6F6",
+    opacity: 0.7,
   },
   modalButtonText: {
     color: "#333",

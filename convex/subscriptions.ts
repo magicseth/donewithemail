@@ -279,9 +279,13 @@ export const batchUnsubscribeMy = action({
                 "Content-Type": "application/x-www-form-urlencoded",
               },
               body: "List-Unsubscribe=One-Click",
+              redirect: "follow", // Explicitly follow redirects
             });
 
-            if (response.ok || response.status === 202) {
+            // Accept any 2xx status code or common success codes
+            // Some servers return 201 Created, 204 No Content, or redirect to a success page
+            const isSuccess = response.ok || response.status === 202 || response.status === 201 || response.status === 204;
+            if (isSuccess) {
               await ctx.runMutation(internal.subscriptionsHelpers.updateStatus, {
                 subscriptionId,
                 status: "unsubscribed",
@@ -294,6 +298,7 @@ export const batchUnsubscribeMy = action({
               });
               completed.push(subscriptionId);
             } else {
+              console.log(`[Unsubscribe] HTTP POST failed for ${subscription.senderEmail}: status ${response.status}`);
               manualRequired.push({ id: subscriptionId, url: parsed.httpUrl });
               await ctx.runMutation(internal.subscriptionsHelpers.updateStatus, {
                 subscriptionId,
@@ -305,7 +310,8 @@ export const batchUnsubscribeMy = action({
                 senderEmail: subscription.senderEmail,
               });
             }
-          } catch {
+          } catch (error) {
+            console.error(`[Unsubscribe] HTTP POST error for ${subscription.senderEmail}:`, error);
             manualRequired.push({ id: subscriptionId, url: parsed.httpUrl });
             await ctx.runMutation(internal.subscriptionsHelpers.updateStatus, {
               subscriptionId,
@@ -352,6 +358,7 @@ export const batchUnsubscribeMy = action({
             );
 
             if (response.ok) {
+              console.log(`[Unsubscribe] Mailto email sent for ${subscription.senderEmail}`);
               await ctx.runMutation(internal.subscriptionsHelpers.updateStatus, {
                 subscriptionId,
                 status: "unsubscribed",
@@ -364,13 +371,17 @@ export const batchUnsubscribeMy = action({
               });
               completed.push(subscriptionId);
             } else {
+              // Log detailed error info for debugging
+              const errorText = await response.text().catch(() => "unknown");
+              console.error(`[Unsubscribe] Gmail API error for ${subscription.senderEmail}: status ${response.status}, body: ${errorText}`);
               await ctx.runMutation(internal.subscriptionsHelpers.updateStatus, {
                 subscriptionId,
                 status: "failed",
               });
               failed.push(subscriptionId);
             }
-          } catch {
+          } catch (error) {
+            console.error(`[Unsubscribe] Mailto error for ${subscription.senderEmail}:`, error);
             await ctx.runMutation(internal.subscriptionsHelpers.updateStatus, {
               subscriptionId,
               status: "failed",

@@ -68,6 +68,9 @@ export const getEmailForSummary = internalQuery({
     // Get sender info
     const contact = await ctx.db.get(email.from);
 
+    // Get user info for timezone
+    const user = await ctx.db.get(email.userId);
+
     // Get email body from separate table (or fallback to legacy field)
     const emailBody = await ctx.db
       .query("emailBodies")
@@ -185,6 +188,9 @@ export const getEmailForSummary = internalQuery({
       calendarEvent,
       aiProcessedAt: summary?.createdAt,
       attachments: decryptedAttachments,
+      // User's timezone for AI summarizer date calculations (IANA format)
+      // Type assertion needed because generated types are out of date until `convex dev` runs
+      userTimezone: (user as { timezone?: string } | null)?.timezone,
     };
   },
 });
@@ -323,6 +329,9 @@ export const getEmailByExternalId = internalQuery({
       senderEmailCount: fromContact?.emailCount || 0,
       userEmail: user?.email,
       userName,
+      // User's timezone for AI summarizer date calculations (IANA format)
+      // Type assertion needed because generated types are out of date until `convex dev` runs
+      userTimezone: (user as { timezone?: string } | null)?.timezone,
       toEmails: toContacts.filter(Boolean).map((c) => c?.email),
       recentFromSender,
       summary,
@@ -601,6 +610,7 @@ export const updateEmailSummary = internalMutation({
     deadline: v.optional(v.string()),
     deadlineDescription: v.optional(v.string()),
     importantAttachmentIds: v.optional(v.array(v.id("attachments"))),
+    isMarketing: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     // Get the email to find the user for encryption
@@ -658,6 +668,7 @@ export const updateEmailSummary = internalMutation({
       deadline: args.deadline,
       deadlineDescription: encryptedDeadlineDescription,
       importantAttachmentIds: args.importantAttachmentIds,
+      isMarketing: args.isMarketing,
       createdAt: Date.now(),
     };
 

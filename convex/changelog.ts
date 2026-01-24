@@ -50,12 +50,15 @@ export const getAllChangelogs = query({
 });
 
 /**
- * Update user's last opened timestamp.
+ * Update user's last opened timestamp and timezone.
  * Called when the app starts to track when the user last opened the app.
+ * The timezone is stored so the AI summarizer can calculate relative dates correctly.
  */
 export const updateLastOpened = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    timezone: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       throw new Error("Not authenticated");
@@ -84,9 +87,16 @@ export const updateLastOpened = mutation({
       return;
     }
 
-    await ctx.db.patch(user._id, {
+    const updates: { lastOpenedAt: number; timezone?: string } = {
       lastOpenedAt: Date.now(),
-    });
+    };
+
+    // Update timezone if provided (IANA format, e.g., "America/Los_Angeles")
+    if (args.timezone) {
+      updates.timezone = args.timezone;
+    }
+
+    await ctx.db.patch(user._id, updates);
   },
 });
 

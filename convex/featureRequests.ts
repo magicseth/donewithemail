@@ -104,7 +104,7 @@ export const submit = mutation({
     const id = await ctx.db.insert("featureRequests", {
       userId: user._id,
       transcript: encryptedTranscript,
-      status: "pending",
+      status: "pending" as const,
       createdAt: Date.now(),
       debugLogs: encryptedDebugLogs,
     });

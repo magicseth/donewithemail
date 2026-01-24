@@ -65,7 +65,10 @@ function buildEmailMessage(
     headers.push(`References: ${inReplyTo}`);
   }
 
-  const message = headers.join("\r\n") + "\r\n\r\n" + body;
+  // Add footer to email body
+  const bodyWithFooter = body + "\n\n--\ndonewith.email";
+
+  const message = headers.join("\r\n") + "\r\n\r\n" + bodyWithFooter;
 
   // Base64url encode
   const encoded = Buffer.from(message)

@@ -38,8 +38,6 @@ interface SenderGroupHeaderProps {
   onUnsubscribe?: () => void;
   /** Whether unsubscribe is in progress */
   isUnsubscribing?: boolean;
-  /** Mark all emails from this sender as done */
-  onMarkAllDone?: () => void;
   /** Toggle flag on all emails from this sender */
   onToggleFlagAll?: () => void;
   /** Open the email when tapped (only if there's one email) */
@@ -55,7 +53,6 @@ function SenderGroupHeader({
   isSubscription,
   onUnsubscribe,
   isUnsubscribing,
-  onMarkAllDone,
   onToggleFlagAll,
   onPress,
 }: SenderGroupHeaderProps) {
@@ -102,15 +99,6 @@ function SenderGroupHeader({
             ) : (
               <Text style={senderStyles.unsubscribeText}>Unsub</Text>
             )}
-          </TouchableOpacity>
-        )}
-        {showBulkActions && onMarkAllDone && (
-          <TouchableOpacity
-            style={senderStyles.iconButton}
-            onPress={onMarkAllDone}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={senderStyles.checkmarkIcon}>✓</Text>
           </TouchableOpacity>
         )}
         {showBulkActions && onToggleFlagAll && (
@@ -190,11 +178,6 @@ const senderStyles = StyleSheet.create({
   },
   iconButtonActive: {
     backgroundColor: "#FEF3C7",
-  },
-  checkmarkIcon: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#9CA3AF",  // Gray until clicked
   },
   flagIcon: {
     fontSize: 14,
@@ -291,12 +274,8 @@ interface BatchCategoryCardProps {
   emails: BatchEmailPreview[];
   puntedEmails: Set<string>;
   onPuntEmail: (emailId: string) => void;
-  /** Mark a single email as done */
-  onMarkEmailDone?: (emailId: string) => void;
   /** Mark all non-flagged emails in category as done */
   onMarkAllDone: () => void;
-  /** Mark all emails from a specific sender as done */
-  onMarkSenderDone?: (senderEmail: string) => void;
   /** Toggle flag on all emails from a specific sender */
   onToggleSenderFlag?: (senderEmail: string) => void;
   onAcceptCalendar?: (emailId: string) => void;
@@ -329,9 +308,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
   emails,
   puntedEmails,
   onPuntEmail,
-  onMarkEmailDone,
   onMarkAllDone,
-  onMarkSenderDone,
   onToggleSenderFlag,
   onAcceptCalendar,
   onQuickReply,
@@ -501,7 +478,6 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                       isSubscription={group.isSubscription}
                       onUnsubscribe={onUnsubscribe && group.subscriptionEmailId ? () => onUnsubscribe(group.subscriptionEmailId!) : undefined}
                       isUnsubscribing={group.subscriptionEmailId ? unsubscribingIds?.has(group.subscriptionEmailId) : false}
-                      onMarkAllDone={onMarkSenderDone ? () => onMarkSenderDone(group.senderEmail) : undefined}
                       onToggleFlagAll={onToggleSenderFlag ? () => onToggleSenderFlag(group.senderEmail) : undefined}
                       onPress={group.emails.length === 1 ? () => router.push(`/email/${group.emails[0]._id}`) : undefined}
                     />
@@ -517,10 +493,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                           isRecording={recordingForId === email._id}
                           isRecordingConnected={isRecordingConnected}
                           transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
-                          switchAnimationDelay={200 + globalIndex * 150}
-                          triggerSwitchAnimation={isExpanded}
                           onPunt={() => onPuntEmail(email._id)}
-                          onMarkDone={onMarkEmailDone ? () => onMarkEmailDone(email._id) : undefined}
                           onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
                           onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
                           onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id, { _id: email._id, subject: email.subject, fromContact: email.fromContact }) : undefined}
@@ -578,16 +551,12 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                     isSubscription={section.isSubscription}
                     onUnsubscribe={onUnsubscribe && section.subscriptionEmailId ? () => onUnsubscribe(section.subscriptionEmailId!) : undefined}
                     isUnsubscribing={section.subscriptionEmailId ? unsubscribingIds?.has(section.subscriptionEmailId) : false}
-                    onMarkAllDone={onMarkSenderDone ? () => onMarkSenderDone(section.senderEmail) : undefined}
                     onToggleFlagAll={onToggleSenderFlag ? () => onToggleSenderFlag(section.senderEmail) : undefined}
                     onPress={section.emails.length === 1 ? () => router.push(`/email/${section.emails[0]._id}`) : undefined}
                   />
                 </View>
               )}
               renderItem={({ item: email, index, section }) => {
-                const sectionIndex = senderGroups.findIndex(g => g.senderEmail === section.senderEmail);
-                const prevItemsCount = senderGroups.slice(0, sectionIndex).reduce((sum, g) => sum + g.emails.length, 0);
-                const globalIndex = prevItemsCount + index;
                 const isLastInSection = index === section.emails.length - 1;
                 return (
                   <View style={[styles.senderGroupItem, isLastInSection && styles.senderGroupItemLast]}>
@@ -599,10 +568,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                       isRecording={recordingForId === email._id}
                       isRecordingConnected={isRecordingConnected}
                       transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
-                      switchAnimationDelay={200 + globalIndex * 150}
-                      triggerSwitchAnimation={isExpanded}
                       onPunt={() => onPuntEmail(email._id)}
-                      onMarkDone={onMarkEmailDone ? () => onMarkEmailDone(email._id) : undefined}
                       onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
                       onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
                       onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id, { _id: email._id, subject: email.subject, fromContact: email.fromContact }) : undefined}

@@ -125,7 +125,6 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
     puntedEmails,
     togglePuntEmail,
     markCategoryDone,
-    markEmailDone,
     acceptCalendar,
     unsubscribe,
     untriage,
@@ -296,48 +295,6 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
     showToast("Unsubscribed", "success", emailId);
   }, [unsubscribe, showToast]);
 
-  // Handle mark single email as done
-  const handleMarkEmailDone = useCallback(async (emailId: string) => {
-    try {
-      await markEmailDone(emailId);
-      showToast("Marked as done", "success", emailId);
-    } catch (err) {
-      showToast("Failed to mark done", "error");
-    }
-  }, [markEmailDone, showToast]);
-
-  // Handle mark all emails from a sender as done
-  const handleMarkSenderDone = useCallback(async (senderEmail: string) => {
-    if (!expandedCategory) return;
-
-    // Find all emails from this sender in the expanded category
-    const categoryEmails = expandedCategory ? (() => {
-      const map: Record<BatchCategory, typeof categories.done> = {
-        done: categories.done,
-        lowConfidence: categories.lowConfidence,
-        actionNeeded: categories.actionNeeded,
-        humanWaiting: categories.humanWaiting,
-        calendar: categories.calendar,
-        pending: categories.pending,
-      };
-      return map[expandedCategory];
-    })() : [];
-
-    const senderEmails = categoryEmails.filter(
-      e => (e.fromContact?.email || "unknown") === senderEmail
-    );
-
-    // Mark all as not punted (so they get triaged as done)
-    for (const email of senderEmails) {
-      if (puntedEmails.has(email._id)) {
-        togglePuntEmail(email._id);
-      }
-    }
-
-    // Then trigger category done (this will triage all unpunted)
-    showToast(`${senderEmails.length} emails marked done`, "success");
-  }, [expandedCategory, categories, puntedEmails, togglePuntEmail, showToast]);
-
   // Handle toggle flag on all emails from a sender
   const handleToggleSenderFlag = useCallback((senderEmail: string) => {
     if (!expandedCategory) return;
@@ -465,8 +422,7 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("done")}
-          onMarkSenderDone={handleMarkSenderDone}
-          onToggleSenderFlag={handleToggleSenderFlag}
+                    onToggleSenderFlag={handleToggleSenderFlag}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isExpanded={false}
@@ -482,8 +438,7 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("lowConfidence")}
-          onMarkSenderDone={handleMarkSenderDone}
-          onToggleSenderFlag={handleToggleSenderFlag}
+                    onToggleSenderFlag={handleToggleSenderFlag}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isExpanded={false}
@@ -499,8 +454,7 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("actionNeeded")}
-          onMarkSenderDone={handleMarkSenderDone}
-          onToggleSenderFlag={handleToggleSenderFlag}
+                    onToggleSenderFlag={handleToggleSenderFlag}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isExpanded={false}
@@ -516,8 +470,7 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("humanWaiting")}
-          onMarkSenderDone={handleMarkSenderDone}
-          onToggleSenderFlag={handleToggleSenderFlag}
+                    onToggleSenderFlag={handleToggleSenderFlag}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isExpanded={false}
@@ -533,8 +486,7 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
           onMarkAllDone={() => handleMarkCategoryDone("calendar")}
-          onMarkSenderDone={handleMarkSenderDone}
-          onToggleSenderFlag={handleToggleSenderFlag}
+                    onToggleSenderFlag={handleToggleSenderFlag}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isExpanded={false}
@@ -551,8 +503,7 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
             puntedEmails={puntedEmails}
             onPuntEmail={togglePuntEmail}
             onMarkAllDone={() => handleMarkCategoryDone("pending")}
-            onMarkSenderDone={handleMarkSenderDone}
-            onToggleSenderFlag={handleToggleSenderFlag}
+                        onToggleSenderFlag={handleToggleSenderFlag}
             onUnsubscribe={handleUnsubscribe}
             unsubscribingIds={unsubscribingIds}
             isExpanded={false}
@@ -576,9 +527,7 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
             emails={expandedEmails}
             puntedEmails={puntedEmails}
             onPuntEmail={togglePuntEmail}
-            onMarkEmailDone={handleMarkEmailDone}
             onMarkAllDone={() => handleMarkCategoryDone(expandedCategory)}
-            onMarkSenderDone={handleMarkSenderDone}
             onToggleSenderFlag={handleToggleSenderFlag}
             onAcceptCalendar={handleAcceptCalendar}
             onQuickReply={onQuickReply}
