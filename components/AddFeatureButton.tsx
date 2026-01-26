@@ -291,7 +291,7 @@ export function AddFeatureButton() {
                     activeOpacity={0.7}
                   >
                     <View style={[styles.checkbox, includeDebugLogs && styles.checkboxChecked]}>
-                      {includeDebugLogs && <Text style={styles.checkmark}>✓</Text>}
+                      {includeDebugLogs && <Text style={styles.checkmark}>☑️</Text>}
                     </View>
                     <Text style={styles.checkboxLabel}>Include debug logs ({logs.length})</Text>
                   </TouchableOpacity>
