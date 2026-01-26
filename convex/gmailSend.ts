@@ -211,26 +211,34 @@ export const sendEmail = action({
     let references: string | undefined;
 
     if (args.replyToMessageId) {
-      // Fetch original message to get thread ID, Message-ID and References headers
-      const msgResponse = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${args.replyToMessageId}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
+      // replyToMessageId is a Convex document ID, not a Gmail message ID
+      // First look up the email to get its externalId (Gmail message ID)
+      const email = await ctx.runQuery(internal.emails.getEmailById, {
+        emailId: args.replyToMessageId,
+      });
 
-      if (msgResponse.ok) {
-        const msgData = await msgResponse.json();
-        threadId = msgData.threadId;
-
-        const messageIdHeader = msgData.payload?.headers?.find(
-          (h: { name: string; value: string }) => h.name.toLowerCase() === "message-id"
+      if (email?.externalId) {
+        // Fetch original message from Gmail API using the external ID
+        const msgResponse = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${email.externalId}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
         );
-        inReplyTo = messageIdHeader?.value;
 
-        // Get the References header from the parent email for proper threading
-        const referencesHeader = msgData.payload?.headers?.find(
-          (h: { name: string; value: string }) => h.name.toLowerCase() === "references"
-        );
-        references = referencesHeader?.value;
+        if (msgResponse.ok) {
+          const msgData = await msgResponse.json();
+          threadId = msgData.threadId;
+
+          const messageIdHeader = msgData.payload?.headers?.find(
+            (h: { name: string; value: string }) => h.name.toLowerCase() === "message-id"
+          );
+          inReplyTo = messageIdHeader?.value;
+
+          // Get the References header from the parent email for proper threading
+          const referencesHeader = msgData.payload?.headers?.find(
+            (h: { name: string; value: string }) => h.name.toLowerCase() === "references"
+          );
+          references = referencesHeader?.value;
+        }
       }
     }
 
