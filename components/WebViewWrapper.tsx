@@ -27,16 +27,16 @@ export function WebViewWrapper({ html, style }: WebViewWrapperProps) {
     }
   }, []);
 
-  // Web: render iframe that fills available space
-  // Use calc to account for header (~56px) and action bar (~80px)
+  // Web: render iframe that fills remaining viewport space
+  // Use 70vh as minHeight to ensure the iframe is large enough to show email content
+  // while still being scrollable if the page has other content above
   if (Platform.OS === "web") {
     return (
       <iframe
         srcDoc={html}
         style={{
           width: "100%",
-          minHeight: 400,
-          height: "calc(100vh - 300px)",
+          minHeight: "70vh",
           border: "1px solid #eee",
           borderRadius: 8,
           backgroundColor: "#fff",
