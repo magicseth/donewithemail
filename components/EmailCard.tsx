@@ -553,9 +553,10 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   bodyContainerHtml: {
-    // On web, ensure the container has enough height for the HTML iframe
-    // minHeight doesn't work well with flex in ScrollView, so we use a fixed minimum
-    minHeight: 500,
+    // On web, expand to fill available space down to the footer
+    // flexGrow: 1 works because the parent ScrollView has contentContainerStyle={{ flexGrow: 1 }}
+    flexGrow: 1,
+    minHeight: 300,
   },
   bodyText: {
     fontSize: 16,

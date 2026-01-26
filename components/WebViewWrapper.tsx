@@ -28,22 +28,24 @@ export function WebViewWrapper({ html, style }: WebViewWrapperProps) {
   }, []);
 
   // Web: render iframe that fills its container
-  // The parent container (bodyContainerHtml in EmailCard) sets the minimum height
-  // so we just need to fill 100% of that space
+  // The parent container (bodyContainerHtml in EmailCard) uses flexGrow: 1
+  // Wrap iframe in a div that also uses flexGrow to fill available space
   if (Platform.OS === "web") {
     return (
-      <iframe
-        srcDoc={html}
-        style={{
-          width: "100%",
-          height: "100%",
-          minHeight: 500,
-          border: "1px solid #eee",
-          borderRadius: 8,
-          backgroundColor: "#fff",
-        }}
-        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-scripts"
-      />
+      <div style={{ display: "flex", flexGrow: 1, flexDirection: "column", minHeight: 300 }}>
+        <iframe
+          srcDoc={html}
+          style={{
+            width: "100%",
+            flexGrow: 1,
+            minHeight: 300,
+            border: "1px solid #eee",
+            borderRadius: 8,
+            backgroundColor: "#fff",
+          }}
+          sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-scripts"
+        />
+      </div>
     );
   }
 

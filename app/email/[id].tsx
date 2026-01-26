@@ -571,7 +571,7 @@ export default function EmailDetailScreen() {
         }}
       />
 
-      <ScrollView style={styles.container}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
         {/* Thread header if multiple emails */}
         {threadEmails && threadEmails.length > 1 && (
           <View style={styles.threadHeader}>
@@ -755,6 +755,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   loadingContainer: {
     flex: 1,
