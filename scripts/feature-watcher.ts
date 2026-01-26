@@ -94,15 +94,26 @@ if (!fs.existsSync(WORKTREE_BASE)) {
   fs.mkdirSync(WORKTREE_BASE, { recursive: true });
 }
 
-async function processFeatureRequest(request: {
-  _id: string;
-  transcript: string;
-  debugLogs?: string;
-}) {
+/**
+ * Download an image from a URL to a local file
+ */
+async function downloadImage(url: string, destPath: string): Promise<void> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
+  }
+  const buffer = await response.arrayBuffer();
+  fs.writeFileSync(destPath, Buffer.from(buffer));
+}
+
+async function processFeatureRequest(request: PendingRequest) {
   const workDir = path.join(WORKTREE_BASE, `feature-${request._id}`);
 
   console.log(`\n📝 Processing feature request: ${request._id}`);
   console.log(`   Transcript: "${request.transcript}"`);
+  if (request.screenshotUrl) {
+    console.log(`   Screenshot: Yes (with ${request.screenshotAnnotations ? JSON.parse(request.screenshotAnnotations).length : 0} annotation(s))`);
+  }
 
   const updateProgress = async (
     step: "cloning" | "implementing" | "pushing" | "merging" | "deploying_backend" | "uploading" | "ready",
@@ -159,10 +170,48 @@ async function processFeatureRequest(request: {
       ? `\n\n## Debug Logs from App\nThese logs were captured when the user submitted this request. Use them to diagnose issues:\n\`\`\`\n${request.debugLogs}\n\`\`\`\n`
       : "";
 
+    // Download and prepare screenshot if available
+    let screenshotPath: string | null = null;
+    let screenshotSection = "";
+    if (request.screenshotUrl) {
+      try {
+        screenshotPath = path.join(workDir, `screenshot-${request._id}.png`);
+        console.log(`\n📸 Downloading screenshot to ${screenshotPath}...`);
+        await downloadImage(request.screenshotUrl, screenshotPath);
+        console.log(`   ✓ Screenshot downloaded`);
+
+        // Parse annotation dots if present
+        let annotationDescription = "";
+        if (request.screenshotAnnotations) {
+          try {
+            const dots: AnnotationDot[] = JSON.parse(request.screenshotAnnotations);
+            if (dots.length > 0) {
+              annotationDescription = `\n\nThe user has marked ${dots.length} location(s) with red dots on the screenshot:\n`;
+              dots.forEach((dot, i) => {
+                annotationDescription += `- Dot ${i + 1}: at approximately ${Math.round(dot.x)}% from left, ${Math.round(dot.y)}% from top\n`;
+              });
+              annotationDescription += `\nThese red dots indicate the specific area(s) the user wants you to focus on or fix.`;
+            }
+          } catch (e) {
+            console.log(`   ⚠️ Could not parse screenshot annotations: ${e}`);
+          }
+        }
+
+        screenshotSection = `\n\n## Screenshot
+The user has included a screenshot of the app. IMPORTANT: You MUST view this screenshot file to understand the visual context of their request:
+${screenshotPath}
+${annotationDescription}
+
+Please read this image file to see what the user is referring to.`;
+      } catch (e) {
+        console.log(`   ⚠️ Could not download screenshot: ${e}`);
+      }
+    }
+
     const prompt = `You are helping with a React Native Expo app. A user submitted this request via voice:
 
 "${request.transcript}"
-${debugLogsSection}
+${screenshotSection}${debugLogsSection}
 IMPORTANT: First, determine what type of request this is:
 
 1. **Bug fix / Investigation**: If the request mentions "fix", "bug", "issue", "problem", "not working", "broken", "investigate", "check logs", or describes unexpected behavior:
@@ -192,7 +241,9 @@ Important: Do not consider the task complete until convex dev and tsc both pass 
 
     console.log(`\n📋 Prompt being sent to Claude Code:\n${"─".repeat(60)}\n${prompt}\n${"─".repeat(60)}\n`);
 
-    let claudeResult = await runClaudeCode(workDir, prompt);
+    // Pass screenshot path to Claude if available
+    const imagePaths = screenshotPath ? [screenshotPath] : undefined;
+    let claudeResult = await runClaudeCode(workDir, prompt, imagePaths);
     let attempts = 1;
     const maxAttempts = 3;
 
@@ -467,7 +518,7 @@ interface ClaudeResult {
   exitCode: number;
 }
 
-function runClaudeCode(cwd: string, prompt: string): Promise<ClaudeResult> {
+function runClaudeCode(cwd: string, prompt: string, imagePaths?: string[]): Promise<ClaudeResult> {
   return new Promise((resolve, reject) => {
     // Write prompt to a temp file to avoid shell escaping issues
     const promptFile = path.join(os.tmpdir(), `claude-prompt-${Date.now()}.txt`);
@@ -475,7 +526,16 @@ function runClaudeCode(cwd: string, prompt: string): Promise<ClaudeResult> {
 
     let fullOutput = "";
 
-    const claude = spawn("claude", ["-p", promptFile, "--dangerously-skip-permissions"], {
+    // Build command args - include image files if provided
+    const args = ["-p", promptFile];
+    if (imagePaths && imagePaths.length > 0) {
+      for (const imgPath of imagePaths) {
+        args.push(imgPath);
+      }
+    }
+    args.push("--dangerously-skip-permissions");
+
+    const claude = spawn("claude", args, {
       cwd,
       stdio: ["inherit", "pipe", "pipe"],
       env: {
@@ -559,6 +619,14 @@ interface PendingRequest {
   _id: string;
   transcript: string;
   debugLogs?: string;
+  screenshotUrl?: string | null;
+  screenshotAnnotations?: string | null; // JSON string of AnnotationDot[]
+}
+
+interface AnnotationDot {
+  id: string;
+  x: number;  // percentage (0-100)
+  y: number;  // percentage (0-100)
 }
 
 interface CombinationResult {
