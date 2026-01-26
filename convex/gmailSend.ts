@@ -56,6 +56,7 @@ function buildEmailMessage(
   body: string,
   threadId?: string,
   inReplyTo?: string,
+  references?: string,
   attachments?: Attachment[]
 ): string {
   // Add footer to email body
@@ -73,7 +74,13 @@ function buildEmailMessage(
 
     if (inReplyTo) {
       headers.push(`In-Reply-To: ${inReplyTo}`);
-      headers.push(`References: ${inReplyTo}`);
+      // References should include the full chain from parent + parent's Message-ID
+      // This is required for proper threading in the recipient's email client
+      if (references) {
+        headers.push(`References: ${references} ${inReplyTo}`);
+      } else {
+        headers.push(`References: ${inReplyTo}`);
+      }
     }
 
     const message = headers.join("\r\n") + "\r\n\r\n" + bodyWithFooter;
@@ -98,7 +105,12 @@ function buildEmailMessage(
 
   if (inReplyTo) {
     headers.push(`In-Reply-To: ${inReplyTo}`);
-    headers.push(`References: ${inReplyTo}`);
+    // References should include the full chain from parent + parent's Message-ID
+    if (references) {
+      headers.push(`References: ${references} ${inReplyTo}`);
+    } else {
+      headers.push(`References: ${inReplyTo}`);
+    }
   }
 
   // Build message parts
@@ -193,14 +205,15 @@ export const sendEmail = action({
       accessToken = accountTokens.accessToken;
     }
 
-    // Get thread ID and message ID if this is a reply
+    // Get thread ID, message ID, and references if this is a reply
     let threadId: string | undefined;
     let inReplyTo: string | undefined;
+    let references: string | undefined;
 
     if (args.replyToMessageId) {
-      // Fetch original message to get thread ID and Message-ID header
+      // Fetch original message to get thread ID, Message-ID and References headers
       const msgResponse = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${args.replyToMessageId}?format=metadata&metadataHeaders=Message-ID`,
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${args.replyToMessageId}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References`,
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
 
@@ -212,6 +225,12 @@ export const sendEmail = action({
           (h: { name: string; value: string }) => h.name.toLowerCase() === "message-id"
         );
         inReplyTo = messageIdHeader?.value;
+
+        // Get the References header from the parent email for proper threading
+        const referencesHeader = msgData.payload?.headers?.find(
+          (h: { name: string; value: string }) => h.name.toLowerCase() === "references"
+        );
+        references = referencesHeader?.value;
       }
     }
 
@@ -244,6 +263,7 @@ export const sendEmail = action({
       args.body,
       threadId,
       inReplyTo,
+      references,
       attachmentData
     );
 
@@ -324,9 +344,10 @@ export const sendReply = action({
       accessToken = accountTokens.accessToken;
     }
 
-    // Get thread ID and message ID if this is a reply to a known email
+    // Get thread ID, message ID, and references if this is a reply to a known email
     let threadId: string | undefined;
     let messageIdHeader: string | undefined;
+    let references: string | undefined;
 
     if (args.inReplyTo) {
       // Get the email from our database to find its external ID
@@ -335,9 +356,9 @@ export const sendReply = action({
       });
 
       if (email?.externalId) {
-        // Fetch original message to get thread ID and Message-ID header
+        // Fetch original message to get thread ID, Message-ID and References headers
         const msgResponse = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${email.externalId}?format=metadata&metadataHeaders=Message-ID`,
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${email.externalId}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=References`,
           { headers: { Authorization: `Bearer ${accessToken}` } }
         );
 
@@ -349,6 +370,12 @@ export const sendReply = action({
             (h: { name: string; value: string }) => h.name.toLowerCase() === "message-id"
           );
           messageIdHeader = header?.value;
+
+          // Get the References header from the parent email for proper threading
+          const referencesHeader = msgData.payload?.headers?.find(
+            (h: { name: string; value: string }) => h.name.toLowerCase() === "references"
+          );
+          references = referencesHeader?.value;
         }
       }
     }
@@ -360,7 +387,8 @@ export const sendReply = action({
       args.subject,
       args.body,
       threadId,
-      messageIdHeader
+      messageIdHeader,
+      references
     );
 
     // Send via Gmail API
