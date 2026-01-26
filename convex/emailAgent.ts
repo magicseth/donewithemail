@@ -60,8 +60,28 @@ export const startChat = action({
 
       console.log(`[EmailAgent] Got response (full):`, result.text);
       console.log(`[EmailAgent] Steps:`, result.steps?.length ?? 0);
-      console.log(`[EmailAgent] Tool calls:`, result.toolCalls?.length ?? 0);
-      console.log(`[EmailAgent] Tool results:`, result.toolResults?.length ?? 0);
+      console.log(`[EmailAgent] Tool calls (last step):`, result.toolCalls?.length ?? 0);
+      console.log(`[EmailAgent] Tool results (last step):`, result.toolResults?.length ?? 0);
+
+      // Collect all tool results from all steps (not just the last step)
+      // AI SDK v5 uses 'input' and 'output' instead of 'args' and 'result'
+      const allToolResults: any[] = [];
+      if (result.steps) {
+        for (const step of result.steps) {
+          if (step.toolResults && step.toolResults.length > 0) {
+            for (const toolResult of step.toolResults) {
+              // Cast to any to access input/output since TypeScript union types are tricky
+              const tr = toolResult as any;
+              allToolResults.push({
+                toolName: tr.toolName,
+                args: tr.input ?? tr.args,
+                result: tr.output ?? tr.result,
+              });
+            }
+          }
+        }
+      }
+      console.log(`[EmailAgent] All tool results from all steps:`, allToolResults.length);
 
       // Track AI cost
       try {
@@ -90,7 +110,7 @@ export const startChat = action({
       return {
         threadId,
         response: result.text,
-        toolResults: result.toolResults,
+        toolResults: allToolResults,
       };
     } catch (error) {
       console.error(`[EmailAgent] Error generating response:`, error);
@@ -115,6 +135,25 @@ export const continueChat = action({
       { threadId: args.threadId, userId: user._id },
       { prompt: args.message, stopWhen: stepCountIs(5) } as any
     );
+
+    // Collect all tool results from all steps (not just the last step)
+    // AI SDK v5 uses 'input' and 'output' instead of 'args' and 'result'
+    const allToolResults: any[] = [];
+    if (result.steps) {
+      for (const step of result.steps) {
+        if (step.toolResults && step.toolResults.length > 0) {
+          for (const toolResult of step.toolResults) {
+            // Cast to any to access input/output since TypeScript union types are tricky
+            const tr = toolResult as any;
+            allToolResults.push({
+              toolName: tr.toolName,
+              args: tr.input ?? tr.args,
+              result: tr.output ?? tr.result,
+            });
+          }
+        }
+      }
+    }
 
     // Track AI cost
     try {
@@ -141,7 +180,7 @@ export const continueChat = action({
 
     return {
       response: result.text,
-      toolResults: result.toolResults,
+      toolResults: allToolResults,
     };
   },
 });
