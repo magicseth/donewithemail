@@ -1233,6 +1233,18 @@ export declare const internal: {
       { externalIds: Array<string>; threshold: number },
       any
     >;
+    getVIPContactEmails: FunctionReference<
+      "query",
+      "internal",
+      { externalIds: Array<string> },
+      any
+    >;
+    getVIPEmailDetails: FunctionReference<
+      "query",
+      "internal",
+      { externalIds: Array<string> },
+      any
+    >;
   };
   featureRequests: {
     debugListRecent: FunctionReference<
@@ -1759,6 +1771,18 @@ export declare const internal: {
       "internal",
       {
         emailCount: number;
+        senderName?: string;
+        subject?: string;
+        userId: Id<"users">;
+      },
+      any
+    >;
+    sendVIPContactNotification: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        emailId?: Id<"emails">;
+        senderAvatarUrl?: string;
         senderName?: string;
         subject?: string;
         userId: Id<"users">;
