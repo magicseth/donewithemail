@@ -177,7 +177,11 @@ export default function EmailDetailScreen() {
 
   const handleReply = useCallback(() => {
     if (!email) return;
-    const replyTo = email.fromContact?.email || "";
+    // For outgoing emails (sent by user), reply to the recipient instead of sender
+    // For incoming emails, reply to the sender (normal behavior)
+    const replyTo = email.direction === "outgoing"
+      ? ((email as any).toContacts?.[0]?.email || email.fromContact?.email || "")
+      : (email.fromContact?.email || "");
     const subject = email.subject.startsWith("Re:")
       ? email.subject
       : `Re: ${email.subject}`;
@@ -194,7 +198,11 @@ export default function EmailDetailScreen() {
 
   const handleReplyWithBody = useCallback((body: string) => {
     if (!email) return;
-    const replyTo = email.fromContact?.email || "";
+    // For outgoing emails (sent by user), reply to the recipient instead of sender
+    // For incoming emails, reply to the sender (normal behavior)
+    const replyTo = email.direction === "outgoing"
+      ? ((email as any).toContacts?.[0]?.email || email.fromContact?.email || "")
+      : (email.fromContact?.email || "");
     const subject = email.subject.startsWith("Re:")
       ? email.subject
       : `Re: ${email.subject}`;
