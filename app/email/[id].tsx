@@ -19,6 +19,7 @@ import { useAuth } from "../../lib/authContext";
 import { Id } from "../../convex/_generated/dataModel";
 import { AttachmentData } from "../../components/AttachmentList";
 import { VoiceRecordButton } from "../../components/VoiceRecordButton";
+import { AddFeatureButton } from "../../components/AddFeatureButton";
 import { decodeHtmlEntities } from "../../components/inbox/utils";
 
 function showAlert(title: string, message: string) {
@@ -564,6 +565,7 @@ export default function EmailDetailScreen() {
               <TouchableOpacity onPress={handleArchive} style={styles.headerButton}>
                 <Text style={styles.headerButtonText}>Archive</Text>
               </TouchableOpacity>
+              <AddFeatureButton />
             </View>
           ),
         }}
