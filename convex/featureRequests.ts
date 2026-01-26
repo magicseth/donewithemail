@@ -802,6 +802,9 @@ export const addClarification = mutation({
       createdAt: Date.now(),
       // Copy debug logs if they exist
       debugLogs: request.debugLogs,
+      // Copy screenshot if it exists (so clarifications maintain visual context)
+      screenshotStorageId: request.screenshotStorageId,
+      screenshotAnnotations: request.screenshotAnnotations,
     });
 
     return { id: clarificationRequestId };
