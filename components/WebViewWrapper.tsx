@@ -27,15 +27,16 @@ export function WebViewWrapper({ html, style }: WebViewWrapperProps) {
     }
   }, []);
 
-  // Web: render iframe with scrollable content
+  // Web: render iframe that fills available space
+  // Use calc to account for header (~56px) and action bar (~80px)
   if (Platform.OS === "web") {
     return (
       <iframe
         srcDoc={html}
         style={{
           width: "100%",
-          height: 500,
-          maxHeight: "60vh",
+          minHeight: 400,
+          height: "calc(100vh - 300px)",
           border: "1px solid #eee",
           borderRadius: 8,
           backgroundColor: "#fff",
