@@ -123,6 +123,42 @@ export const sendHighPriorityNotification = internalMutation({
   },
 });
 
+// Send notification for VIP contact emails (bypass urgency threshold)
+export const sendVIPContactNotification = internalMutation({
+  args: {
+    userId: v.id("users"),
+    subject: v.optional(v.string()),
+    senderName: v.optional(v.string()),
+    senderAvatarUrl: v.optional(v.string()),
+    emailId: v.optional(v.id("emails")),
+  },
+  handler: async (ctx, args) => {
+    console.log(`[Notification] Sending VIP contact notification for ${args.senderName || "VIP contact"}`);
+
+    const title = args.senderName || "VIP Contact";
+    const body = args.subject;
+
+    const notificationPayload = {
+      userId: args.userId,
+      notification: {
+        title,
+        body,
+        mutableContent: args.senderAvatarUrl ? true : undefined,
+        data: {
+          type: "vip_email",
+          emailId: args.emailId,
+          senderAvatar: args.senderAvatarUrl,
+          senderName: args.senderName,
+        },
+      },
+    };
+
+    console.log(`[Notification] VIP payload:`, JSON.stringify(notificationPayload, null, 2));
+
+    await pushNotifications.sendPushNotification(ctx, notificationPayload);
+  },
+});
+
 // =============================================================================
 // Authenticated Mutations (require valid JWT)
 // =============================================================================

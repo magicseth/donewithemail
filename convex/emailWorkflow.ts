@@ -18,9 +18,10 @@ export const processNewEmails = workflow.define({
     stored: v.number(),
     summarized: v.number(),
     highPriorityCount: v.number(),
+    vipNotificationSent: v.boolean(),
     notificationSent: v.boolean(),
   }),
-  handler: async (step, args): Promise<{ stored: number; summarized: number; highPriorityCount: number; notificationSent: boolean }> => {
+  handler: async (step, args): Promise<{ stored: number; summarized: number; highPriorityCount: number; vipNotificationSent: boolean; notificationSent: boolean }> => {
     // Step 1: Fetch and store emails from Gmail
     const fetchResult = await step.runAction(
       internal.gmailSync.fetchAndStoreEmailsByIds,
@@ -39,6 +40,7 @@ export const processNewEmails = workflow.define({
         stored: 0,
         summarized: 0,
         highPriorityCount: 0,
+        vipNotificationSent: false,
         notificationSent: false,
       };
     }
@@ -52,14 +54,50 @@ export const processNewEmails = workflow.define({
       }
     );
 
-    // Step 3: Check if any email is high priority
+    // Step 3: Check for VIP contacts and send immediate notification
+    const vipExternalIds = await step.runQuery(
+      internal.emailWorkflowHelpers.getVIPContactEmails,
+      { externalIds: fetchResult.stored }
+    );
+
+    let vipNotificationSent = false;
+    if (vipExternalIds.length > 0) {
+      // Filter out subscriptions/marketing even for VIP contacts
+      const filteredVipIds = await step.runQuery(
+        internal.emailWorkflowHelpers.filterOutSubscriptions,
+        { externalIds: vipExternalIds }
+      );
+
+      if (filteredVipIds.length > 0) {
+        // Get details of the VIP email for notification
+        const vipEmailDetails = await step.runQuery(
+          internal.emailWorkflowHelpers.getVIPEmailDetails,
+          { externalIds: filteredVipIds }
+        );
+
+        if (vipEmailDetails) {
+          await step.runMutation(internal.notifications.sendVIPContactNotification, {
+            userId: args.userId,
+            subject: vipEmailDetails.subject,
+            senderName: vipEmailDetails.senderName,
+            senderAvatarUrl: vipEmailDetails.senderAvatarUrl,
+            emailId: vipEmailDetails.emailId,
+          });
+          vipNotificationSent = true;
+          console.log(`[VIP] Sent notification for VIP contact: ${vipEmailDetails.senderName}`);
+        }
+      }
+    }
+
+    // Step 5: Check if any non-VIP email is high priority (avoid duplicate notifications)
     const highPriorityExternalIds: string[] = [];
     let highestUrgency = 0;
 
     for (const result of summarizeResults) {
       if (result.success && result.result) {
         const urgency = result.result.urgencyScore;
-        if (urgency >= HIGH_PRIORITY_THRESHOLD) {
+        // Only consider high-priority if not already notified as VIP
+        if (urgency >= HIGH_PRIORITY_THRESHOLD && !vipExternalIds.includes(result.externalId)) {
           highPriorityExternalIds.push(result.externalId);
           if (urgency > highestUrgency) {
             highestUrgency = urgency;
@@ -79,7 +117,7 @@ export const processNewEmails = workflow.define({
 
     const highPriorityCount = filteredExternalIds.length;
 
-    // Step 4: Send notification only if there are high priority non-subscription emails
+    // Step 6: Send notification only if there are high priority non-subscription emails
     if (highPriorityCount > 0) {
       // Get details of the most urgent email for the notification
       const emailDetails = await step.runQuery(
@@ -106,7 +144,8 @@ export const processNewEmails = workflow.define({
       stored: fetchResult.stored.length,
       summarized: summarizeResults.length,
       highPriorityCount,
-      notificationSent: highPriorityCount > 0,
+      vipNotificationSent,
+      notificationSent: highPriorityCount > 0 || vipNotificationSent,
     };
   },
 });

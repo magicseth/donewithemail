@@ -104,6 +104,89 @@ export const getMostUrgentEmailDetails = internalQuery({
   },
 });
 
+// Get emails from VIP contacts (relationship === "vip")
+export const getVIPContactEmails = internalQuery({
+  args: { externalIds: v.array(v.string()) },
+  handler: async (ctx, args): Promise<string[]> => {
+    const vipExternalIds: string[] = [];
+    for (const externalId of args.externalIds) {
+      const email = await ctx.db
+        .query("emails")
+        .withIndex("by_external_id", (q) =>
+          q.eq("externalId", externalId).eq("provider", "gmail")
+        )
+        .first();
+
+      if (!email) continue;
+
+      // Get the sender contact
+      const contact = await ctx.db.get(email.from);
+      if (contact?.relationship === "vip") {
+        console.log(`[VIP] Found email from VIP contact: ${contact.email}`);
+        vipExternalIds.push(externalId);
+      }
+    }
+    return vipExternalIds;
+  },
+});
+
+// Get details of a VIP email for notification
+export const getVIPEmailDetails = internalQuery({
+  args: {
+    externalIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Return the first VIP email details (most recent)
+    for (const externalId of args.externalIds) {
+      const email = await ctx.db
+        .query("emails")
+        .withIndex("by_external_id", (q) =>
+          q.eq("externalId", externalId).eq("provider", "gmail")
+        )
+        .first();
+
+      if (!email) continue;
+
+      // Get sender info
+      const contact = await ctx.db.get(email.from);
+
+      // Get PII helper for decryption
+      const pii = await encryptedPii.forUserQuery(ctx, email.userId);
+
+      // Decrypt subject and contact name
+      let subject = "";
+      let contactName: string | undefined;
+      if (pii) {
+        subject = await pii.decrypt(email.subject) ?? "";
+        if (contact?.name) {
+          contactName = await pii.decrypt(contact.name) ?? undefined;
+        }
+      }
+
+      // Get avatar URL
+      let avatarUrl: string | undefined;
+      if (contact?.avatarStorageId) {
+        avatarUrl = await ctx.storage.getUrl(contact.avatarStorageId) ?? undefined;
+      }
+      if (!avatarUrl && contact?.avatarUrl) {
+        avatarUrl = contact.avatarUrl;
+      }
+      if (!avatarUrl && contact?.email) {
+        avatarUrl = getFallbackAvatarUrl(contactName, contact.email);
+      }
+
+      return {
+        emailId: email._id,
+        subject,
+        senderName: contactName || contact?.email,
+        senderAvatarUrl: avatarUrl,
+      };
+    }
+
+    return null;
+  },
+});
+
 // Filter out subscription/newsletter/marketing emails from a list of external IDs
 export const filterOutSubscriptions = internalQuery({
   args: { externalIds: v.array(v.string()) },
