@@ -490,6 +490,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                           isPunted={puntedEmails.has(email._id) || !!email.isInTodo}
                           isSubscription={email.isSubscription}
                           expandReplyByDefault={category === "humanWaiting"}
+                          useCheckmarkIcon={category === "humanWaiting"}
                           isRecording={recordingForId === email._id}
                           isRecordingConnected={isRecordingConnected}
                           transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
@@ -565,6 +566,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                       isPunted={puntedEmails.has(email._id) || !!email.isInTodo}
                       isSubscription={email.isSubscription}
                       expandReplyByDefault={category === "humanWaiting"}
+                      useCheckmarkIcon={category === "humanWaiting"}
                       isRecording={recordingForId === email._id}
                       isRecordingConnected={isRecordingConnected}
                       transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}

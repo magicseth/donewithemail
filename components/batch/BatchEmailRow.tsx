@@ -117,6 +117,8 @@ interface BatchEmailRowProps {
   isRecordingConnected?: boolean;
   /** Live transcript while recording */
   transcript?: string;
+  /** If true, show checkmark icon instead of flag (for marking as done) */
+  useCheckmarkIcon?: boolean;
   /** Toggle flag state (keep/needs review) */
   onPunt: () => void;
   onAccept?: () => void;
@@ -144,6 +146,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   isRecording = false,
   isRecordingConnected = false,
   transcript,
+  useCheckmarkIcon = false,
   onPunt,
   onAccept,
   onQuickReply,
@@ -263,16 +266,24 @@ export const BatchEmailRow = memo(function BatchEmailRow({
           )}
         </View>
 
-        {/* Action buttons - flag for human review */}
+        {/* Action buttons - flag for human review or checkmark for done */}
         <View style={styles.actionButtons}>
-          {/* Flag - toggle flag for human review */}
+          {/* Toggle button - checkmark for done (humanWaiting) or flag for review (other categories) */}
           <TouchableOpacity
-            style={[styles.iconButton, isPunted && styles.iconButtonActive]}
+            style={[
+              styles.iconButton,
+              isPunted && (useCheckmarkIcon ? styles.iconButtonDone : styles.iconButtonActive),
+            ]}
             onPress={onPunt}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Text style={[styles.flagIcon, isPunted && styles.flagIconActive]}>
-              {isPunted ? "🚩" : "⚑"}
+            <Text style={[
+              useCheckmarkIcon ? styles.checkIcon : styles.flagIcon,
+              isPunted && (useCheckmarkIcon ? styles.checkIconActive : styles.flagIconActive),
+            ]}>
+              {useCheckmarkIcon
+                ? (isPunted ? "✓" : "○")
+                : (isPunted ? "🚩" : "⚑")}
             </Text>
           </TouchableOpacity>
         </View>
@@ -553,6 +564,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   if (prevProps.isPunted !== nextProps.isPunted) return false;
   if (prevProps.isSubscription !== nextProps.isSubscription) return false;
   if (prevProps.expandReplyByDefault !== nextProps.expandReplyByDefault) return false;
+  if (prevProps.useCheckmarkIcon !== nextProps.useCheckmarkIcon) return false;
   if (prevProps.isAccepting !== nextProps.isAccepting) return false;
   if (prevProps.isUnsubscribing !== nextProps.isUnsubscribing) return false;
   if (prevProps.compact !== nextProps.compact) return false;
@@ -734,12 +746,23 @@ const styles = StyleSheet.create({
   iconButtonActive: {
     backgroundColor: "#FEF3C7",
   },
+  iconButtonDone: {
+    backgroundColor: "#DCFCE7",
+  },
   flagIcon: {
     fontSize: 16,
     color: "#9CA3AF",
   },
   flagIconActive: {
     color: "#F59E0B",
+  },
+  checkIcon: {
+    fontSize: 16,
+    color: "#9CA3AF",
+    fontWeight: "600",
+  },
+  checkIconActive: {
+    color: "#10B981",
   },
   stopIcon: {
     fontSize: 18,
