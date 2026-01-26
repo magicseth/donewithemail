@@ -360,6 +360,12 @@ export declare const api: {
       { message: string; threadId: string },
       any
     >;
+    searchEmailsForUI: FunctionReference<
+      "action",
+      "public",
+      { query: string },
+      any
+    >;
     startChat: FunctionReference<"action", "public", { message: string }, any>;
   };
   emails: {

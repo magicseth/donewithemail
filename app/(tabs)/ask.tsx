@@ -69,6 +69,7 @@ export default function AskScreen() {
 
   const startChat = useAction(api.emailAgent.startChat);
   const continueChat = useAction(api.emailAgent.continueChat);
+  const searchEmailsForUI = useAction(api.emailAgent.searchEmailsForUI);
   const listThreads = useAction(api.chatHistory.listThreads);
   const deleteThread = useAction(api.chatHistory.deleteThread);
   const getThreadMessages = useAction(api.chatHistory.getThreadMessages);
@@ -117,85 +118,77 @@ export default function AskScreen() {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
-    setProcessingStages([]);
+    setProcessingStages(["Searching emails..."]);
     setRelevantEmails([]);
 
     try {
-      let response: string;
-      let toolResults: any[] | undefined;
+      // Start both the quick search and the full AI response in parallel
+      // The quick search shows emails immediately while AI generates response
+      const searchPromise = searchEmailsForUI({ query: trimmedInput });
 
-      // Show initial searching stage
-      setProcessingStages(["Searching emails..."]);
+      const aiPromise = threadId
+        ? continueChat({ threadId, message: trimmedInput })
+        : startChat({ message: trimmedInput });
 
-      if (threadId) {
-        // Continue existing thread
-        const result = await continueChat({
-          threadId,
-          message: trimmedInput,
-        });
-        response = result.response;
-        toolResults = result.toolResults;
+      // Wait for search results first (should be fast)
+      const searchResult = await searchPromise;
+
+      // Show the emails immediately
+      if (searchResult.emails.length > 0) {
+        const emails = searchResult.emails.map((email: any) => ({
+          emailId: email.emailId,
+          subject: email.subject,
+          from: email.from,
+        }));
+        setRelevantEmails(emails);
+        setProcessingStages([
+          "Searching emails...",
+          `Found ${emails.length} relevant email${emails.length > 1 ? 's' : ''}`,
+          "Generating response...",
+        ]);
       } else {
-        // Start new thread
-        const result = await startChat({
-          message: trimmedInput,
-        });
-        setThreadId(result.threadId);
-        response = result.response;
-        toolResults = result.toolResults;
+        setProcessingStages(["Searching emails...", "Generating response..."]);
       }
 
-      // Process tool results to extract and display relevant emails
+      // Now wait for AI response
+      const result = await aiPromise;
+
+      // Handle thread ID for new chats
+      if (!threadId && 'threadId' in result) {
+        setThreadId(result.threadId);
+      }
+
+      const response = result.response;
+      const toolResults = result.toolResults;
+
+      // Process tool results to extract calendar events and build final email list
       let calendarEvent: CalendarEventInfo | undefined;
       let relevantEmailsList: RelevantEmail[] = [];
+
+      // First, use the quick search results as the base
+      if (searchResult.emails.length > 0) {
+        relevantEmailsList = searchResult.emails.map((email: any) => ({
+          emailId: email.emailId,
+          subject: email.subject,
+          from: email.from,
+        }));
+      }
+
+      // Then check tool results for additional data (calendar events, etc.)
       if (toolResults && toolResults.length > 0) {
-        const emails: Array<{ subject: string; from: string }> = [];
-        const stages: string[] = ["Searching emails..."];
-
         toolResults.forEach((toolResult: any) => {
-          if (toolResult.result?.emails && Array.isArray(toolResult.result.emails)) {
-            // Extract emails from search results
-            toolResult.result.emails.forEach((email: any) => {
-              if (email.subject && email.from && email.emailId) {
-                const emailData = {
-                  emailId: email.emailId,
-                  subject: email.subject,
-                  from: email.from,
-                };
-                emails.push(emailData);
-                relevantEmailsList.push(emailData);
-              }
-            });
-            if (emails.length > 0) {
-              setRelevantEmails(emails);
-              stages.push(`Found ${emails.length} relevant email${emails.length > 1 ? 's' : ''}`);
-            }
-          }
-
-          // Detect other tool calls
-          if (toolResult.toolName === "getEmailDetails") {
-            stages.push("Analyzing email content...");
-            // Check if the email has calendar event data
-            if (toolResult.result?.calendarEvent) {
-              calendarEvent = {
-                title: toolResult.result.calendarEvent.title,
-                startTime: toolResult.result.calendarEvent.startTime,
-                endTime: toolResult.result.calendarEvent.endTime,
-                location: toolResult.result.calendarEvent.location,
-                description: toolResult.result.calendarEvent.description,
-                emailId: toolResult.args?.emailId,
-              };
-            }
-          } else if (toolResult.toolName === "createCalendarEvent") {
-            stages.push("Creating calendar event...");
+          // Check for calendar event data from getEmailDetails
+          if (toolResult.toolName === "getEmailDetails" && toolResult.result?.calendarEvent) {
+            calendarEvent = {
+              title: toolResult.result.calendarEvent.title,
+              startTime: toolResult.result.calendarEvent.startTime,
+              endTime: toolResult.result.calendarEvent.endTime,
+              location: toolResult.result.calendarEvent.location,
+              description: toolResult.result.calendarEvent.description,
+              emailId: toolResult.args?.emailId,
+            };
           }
         });
-
-        stages.push("Generating response...");
-        setProcessingStages(stages);
-
-        // Give user time to see the stages
-        await new Promise(resolve => setTimeout(resolve, 800));
       }
 
       // Add assistant message
@@ -222,7 +215,7 @@ export default function AskScreen() {
       setProcessingStages([]);
       setRelevantEmails([]);
     }
-  }, [input, isLoading, threadId, startChat, continueChat]);
+  }, [input, isLoading, threadId, startChat, continueChat, searchEmailsForUI]);
 
   const handleNewChat = useCallback(() => {
     setMessages([]);

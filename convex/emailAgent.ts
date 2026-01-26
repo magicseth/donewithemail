@@ -185,6 +185,41 @@ export const continueChat = action({
   },
 });
 
+// Search emails for UI - allows the UI to get search results before the AI response
+// This is used to show relevant emails immediately while the AI generates its response
+export const searchEmailsForUI = action({
+  args: {
+    query: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ emails: Array<{ emailId: string; subject: string; from: string; receivedAt: string }> }> => {
+    const user = await getAuthenticatedUser(ctx);
+
+    console.log(`[SearchEmailsForUI] Query: "${args.query}", userId: ${user._id}`);
+
+    try {
+      const results = await ctx.runAction(internal.emailEmbeddings.searchSimilarEmails, {
+        query: args.query,
+        userId: user._id,
+        limit: 5,
+      });
+
+      console.log(`[SearchEmailsForUI] Got ${results.length} results`);
+
+      const emails = results.map((r: any) => ({
+        emailId: r.emailId,
+        subject: r.subject,
+        from: r.fromName || r.fromEmail || "Unknown",
+        receivedAt: new Date(r.receivedAt).toLocaleDateString(),
+      }));
+
+      return { emails };
+    } catch (error) {
+      console.error(`[SearchEmailsForUI] Error:`, error);
+      return { emails: [] };
+    }
+  },
+});
+
 // Backfill embeddings for existing emails (internal action - run via CLI or dashboard)
 export const backfillEmbeddings = internalAction({
   args: {
