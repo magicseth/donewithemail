@@ -27,16 +27,17 @@ export function WebViewWrapper({ html, style }: WebViewWrapperProps) {
     }
   }, []);
 
-  // Web: render iframe that fills remaining viewport space
-  // Use 70vh as minHeight to ensure the iframe is large enough to show email content
-  // while still being scrollable if the page has other content above
+  // Web: render iframe that fills its container
+  // The parent container (bodyContainerHtml in EmailCard) sets the minimum height
+  // so we just need to fill 100% of that space
   if (Platform.OS === "web") {
     return (
       <iframe
         srcDoc={html}
         style={{
           width: "100%",
-          minHeight: "70vh",
+          height: "100%",
+          minHeight: 500,
           border: "1px solid #eee",
           borderRadius: 8,
           backgroundColor: "#fff",

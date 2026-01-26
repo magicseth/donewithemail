@@ -365,7 +365,7 @@ export function EmailCard({
       )}
 
       {/* Body preview */}
-      <View style={styles.bodyContainer}>
+      <View style={[styles.bodyContainer, showFullContent && isHtml(email.bodyPreview) && styles.bodyContainerHtml]}>
         {showFullContent && isHtml(email.bodyPreview) ? (
           <WebViewWrapper html={email.bodyPreview} />
         ) : (
@@ -551,6 +551,11 @@ const styles = StyleSheet.create({
   bodyContainer: {
     flex: 1,
     marginTop: 12,
+  },
+  bodyContainerHtml: {
+    // On web, ensure the container has enough height for the HTML iframe
+    // minHeight doesn't work well with flex in ScrollView, so we use a fixed minimum
+    minHeight: 500,
   },
   bodyText: {
     fontSize: 16,
