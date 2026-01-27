@@ -755,6 +755,9 @@ export const getMyEmail = authedQuery({
     const toContacts = await Promise.all(
       email.to.map((id) => ctx.db.get(id))
     );
+    const ccContacts = email.cc
+      ? await Promise.all(email.cc.map((id) => ctx.db.get(id)))
+      : [];
     const summaryData = await getSummaryForEmail(ctx.db, email._id);
 
     // Get Gmail account info if available
@@ -820,6 +823,22 @@ export const getMyEmail = authedQuery({
       })
     );
 
+    const decryptedCcContacts = await Promise.all(
+      ccContacts.filter(Boolean).map(async (c) => {
+        if (!c) return null;
+        let name: string | undefined;
+        if (pii && c.name) {
+          name = await pii.decrypt(c.name) ?? undefined;
+        }
+        return {
+          _id: c._id,
+          email: c.email,
+          name,
+          avatarUrl: c.avatarUrl,
+        };
+      })
+    );
+
     // Decrypt summary fields
     let summary: string | undefined;
     let urgencyReason: string | undefined;
@@ -867,6 +886,7 @@ export const getMyEmail = authedQuery({
       fromName,
       fromContact: decryptedFromContact,
       toContacts: decryptedToContacts.filter(Boolean),
+      ccContacts: decryptedCcContacts.filter(Boolean),
       summary,
       urgencyScore: summaryData?.urgencyScore,
       urgencyReason,

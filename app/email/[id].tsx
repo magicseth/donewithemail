@@ -251,6 +251,15 @@ export default function EmailDetailScreen() {
       }
     }
 
+    // Add CC recipients (excluding self)
+    if ((email as any).ccContacts) {
+      for (const contact of (email as any).ccContacts) {
+        if (contact?.email && !userEmails.has(contact.email.toLowerCase())) {
+          allRecipients.push(contact.email);
+        }
+      }
+    }
+
     // Dedupe recipients
     const uniqueRecipients = [...new Set(allRecipients)];
 
@@ -258,15 +267,33 @@ export default function EmailDetailScreen() {
       ? email.subject
       : `Re: ${email.subject}`;
 
-    router.push({
-      pathname: "/compose",
-      params: {
-        replyTo: uniqueRecipients.join(", "),
-        subject,
-        emailId: email._id,
-        gmailAccountId: (email as any).gmailAccountId || undefined,
-      },
-    });
+    const proceedWithReply = () => {
+      router.push({
+        pathname: "/compose",
+        params: {
+          replyTo: uniqueRecipients.join(", "),
+          subject,
+          emailId: email._id,
+          gmailAccountId: (email as any).gmailAccountId || undefined,
+        },
+      });
+    };
+
+    // Warn if replying to many recipients
+    const LARGE_GROUP_THRESHOLD = 5;
+    if (uniqueRecipients.length >= LARGE_GROUP_THRESHOLD) {
+      Alert.alert(
+        "Large Group Reply",
+        `You're about to reply to ${uniqueRecipients.length} people. Are you sure you want to reply all?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Reply All", onPress: proceedWithReply },
+        ]
+      );
+      return;
+    }
+
+    proceedWithReply();
   }, [email, user?.email]);
 
   const handleForward = useCallback(() => {
