@@ -121,6 +121,8 @@ interface BatchEmailRowProps {
   useCheckmarkIcon?: boolean;
   /** Toggle flag state (keep/needs review) */
   onPunt: () => void;
+  /** Called when checkmark is tapped in humanWaiting category to mark email as done */
+  onMarkDone?: () => void;
   onAccept?: () => void;
   onQuickReply?: (reply: QuickReplyOption) => void;
   /** Called when mic button is pressed down (start recording) */
@@ -148,6 +150,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
   transcript,
   useCheckmarkIcon = false,
   onPunt,
+  onMarkDone,
   onAccept,
   onQuickReply,
   onMicPressIn,
@@ -274,7 +277,17 @@ export const BatchEmailRow = memo(function BatchEmailRow({
               styles.iconButton,
               isPunted && (useCheckmarkIcon ? styles.iconButtonDone : styles.iconButtonActive),
             ]}
-            onPress={onPunt}
+            onPress={() => {
+              // In humanWaiting category (useCheckmarkIcon=true):
+              // - If email is punted/saved (checkmark shown), tapping marks it as done
+              // - If email is not punted (circle shown), tapping flags it for later
+              // In other categories: toggle punt state
+              if (useCheckmarkIcon && isPunted && onMarkDone) {
+                onMarkDone();
+              } else {
+                onPunt();
+              }
+            }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Text style={[
@@ -571,6 +584,7 @@ export const BatchEmailRow = memo(function BatchEmailRow({
 
   // For functions, only check if defined status changed (not reference)
   if (!!prevProps.onAccept !== !!nextProps.onAccept) return false;
+  if (!!prevProps.onMarkDone !== !!nextProps.onMarkDone) return false;
   if (!!prevProps.onQuickReply !== !!nextProps.onQuickReply) return false;
   if (!!prevProps.onMicPressIn !== !!nextProps.onMicPressIn) return false;
   if (!!prevProps.onMicPressOut !== !!nextProps.onMicPressOut) return false;

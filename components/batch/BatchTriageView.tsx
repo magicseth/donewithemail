@@ -125,6 +125,7 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
     puntedEmails,
     togglePuntEmail,
     markCategoryDone,
+    markEmailDone,
     acceptCalendar,
     unsubscribe,
     untriage,
@@ -294,6 +295,16 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
     await unsubscribe(emailId);
     showToast("Unsubscribed", "success", emailId);
   }, [unsubscribe, showToast]);
+
+  // Handle mark single email as done - called when checkmark is tapped in humanWaiting
+  const handleMarkEmailDone = useCallback(async (emailId: string) => {
+    try {
+      await markEmailDone(emailId);
+      showToast("Marked as done", "success", emailId);
+    } catch (err) {
+      showToast("Failed to mark as done", "error");
+    }
+  }, [markEmailDone, showToast]);
 
   // Handle toggle flag on all emails from a sender
   const handleToggleSenderFlag = useCallback((senderEmail: string) => {
@@ -469,8 +480,9 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
           emails={categories.humanWaiting}
           puntedEmails={puntedEmails}
           onPuntEmail={togglePuntEmail}
+          onMarkEmailDone={handleMarkEmailDone}
           onMarkAllDone={() => handleMarkCategoryDone("humanWaiting")}
-                    onToggleSenderFlag={handleToggleSenderFlag}
+          onToggleSenderFlag={handleToggleSenderFlag}
           onUnsubscribe={handleUnsubscribe}
           unsubscribingIds={unsubscribingIds}
           isExpanded={false}
@@ -527,6 +539,7 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
             emails={expandedEmails}
             puntedEmails={puntedEmails}
             onPuntEmail={togglePuntEmail}
+            onMarkEmailDone={expandedCategory === "humanWaiting" ? handleMarkEmailDone : undefined}
             onMarkAllDone={() => handleMarkCategoryDone(expandedCategory)}
             onToggleSenderFlag={handleToggleSenderFlag}
             onAcceptCalendar={handleAcceptCalendar}

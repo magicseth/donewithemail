@@ -274,6 +274,8 @@ interface BatchCategoryCardProps {
   emails: BatchEmailPreview[];
   puntedEmails: Set<string>;
   onPuntEmail: (emailId: string) => void;
+  /** Mark a single email as done (for checkmark in humanWaiting) */
+  onMarkEmailDone?: (emailId: string) => void;
   /** Mark all non-flagged emails in category as done */
   onMarkAllDone: () => void;
   /** Toggle flag on all emails from a specific sender */
@@ -308,6 +310,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
   emails,
   puntedEmails,
   onPuntEmail,
+  onMarkEmailDone,
   onMarkAllDone,
   onToggleSenderFlag,
   onAcceptCalendar,
@@ -495,6 +498,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                           isRecordingConnected={isRecordingConnected}
                           transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
                           onPunt={() => onPuntEmail(email._id)}
+                          onMarkDone={onMarkEmailDone ? () => onMarkEmailDone(email._id) : undefined}
                           onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
                           onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
                           onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id, { _id: email._id, subject: email.subject, fromContact: email.fromContact }) : undefined}
@@ -571,6 +575,7 @@ export const BatchCategoryCard = memo(function BatchCategoryCard({
                       isRecordingConnected={isRecordingConnected}
                       transcript={(recordingForId === email._id || pendingTranscriptForId === email._id) ? transcript : undefined}
                       onPunt={() => onPuntEmail(email._id)}
+                      onMarkDone={onMarkEmailDone ? () => onMarkEmailDone(email._id) : undefined}
                       onAccept={onAcceptCalendar ? () => onAcceptCalendar(email._id) : undefined}
                       onQuickReply={onQuickReply ? (reply) => onQuickReply(email._id, reply) : undefined}
                       onMicPressIn={onMicPressIn ? () => onMicPressIn(email._id, { _id: email._id, subject: email.subject, fromContact: email.fromContact }) : undefined}
