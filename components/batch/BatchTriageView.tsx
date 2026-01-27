@@ -13,7 +13,9 @@ import {
 import { BatchCategoryCard } from "./BatchCategoryCard";
 import { QuickReplyOption } from "./BatchEmailRow";
 import { CelebrationOverlay } from "./CelebrationOverlay";
+import { FriendReconnectCard } from "./FriendReconnectCard";
 import { useBatchTriageData } from "../../hooks/useBatchTriageData";
+import { useFriendToReconnect } from "../../hooks/useFriendToReconnect";
 import { BatchCategory } from "../../hooks/useBatchTriage";
 
 // Web-specific scrollable container that actually scrolls
@@ -135,6 +137,9 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
     acceptingIds,
     unsubscribingIds,
   } = useBatchTriageData(userEmail, sessionStart);
+
+  // Friend reconnection suggestion
+  const { suggestion: reconnectSuggestion, dismiss: dismissReconnect } = useFriendToReconnect();
 
   // Only one category can be expanded at a time
   const [expandedCategory, setExpandedCategory] = useState<BatchCategory | null>(null);
@@ -417,6 +422,14 @@ export const BatchTriageView = forwardRef<BatchTriageViewRef, BatchTriageViewPro
   // Shared content for the category list (used by both web and native scroll containers)
   const categoryListContent = (
     <>
+      {/* Friend reconnection suggestion - shown at top of inbox */}
+      {reconnectSuggestion && (
+        <FriendReconnectCard
+          suggestion={reconnectSuggestion}
+          onDismiss={dismissReconnect}
+        />
+      )}
+
       {/* Header stats */}
       <View style={styles.statsRow}>
         <Text style={styles.statsText}>
