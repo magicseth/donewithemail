@@ -176,6 +176,18 @@ export declare const api: {
     listThreads: FunctionReference<"action", "public", {}, any>;
   };
   contacts: {
+    addCommitment: FunctionReference<
+      "mutation",
+      "public",
+      {
+        contactId: Id<"contacts">;
+        direction: "from_contact" | "to_contact";
+        source: "manual" | "ai";
+        sourceEmailId?: Id<"emails">;
+        text: string;
+      },
+      any
+    >;
     addFact: FunctionReference<
       "mutation",
       "public",
@@ -185,6 +197,12 @@ export declare const api: {
         sourceEmailId?: Id<"emails">;
         text: string;
       },
+      any
+    >;
+    deleteCommitment: FunctionReference<
+      "mutation",
+      "public",
+      { commitmentId: string; contactId: Id<"contacts"> },
       any
     >;
     deleteFact: FunctionReference<
@@ -228,6 +246,22 @@ export declare const api: {
       "query",
       "public",
       { limit?: number; query: string },
+      any
+    >;
+    updateCommitment: FunctionReference<
+      "mutation",
+      "public",
+      { commitmentId: string; contactId: Id<"contacts">; text: string },
+      any
+    >;
+    updateCommitmentStatus: FunctionReference<
+      "mutation",
+      "public",
+      {
+        commitmentId: string;
+        contactId: Id<"contacts">;
+        status: "pending" | "completed";
+      },
       any
     >;
     updateFact: FunctionReference<
@@ -2039,6 +2073,19 @@ export declare const internal: {
       {
         calendarEventId: string;
         calendarEventLink: string;
+        emailId: Id<"emails">;
+      },
+      any
+    >;
+    saveAISuggestedCommitments: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        commitments: Array<{
+          direction: "from_contact" | "to_contact";
+          text: string;
+        }>;
+        contactId: Id<"contacts">;
         emailId: Id<"emails">;
       },
       any

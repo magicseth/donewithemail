@@ -134,6 +134,13 @@ export type DataModel = {
     document: {
       avatarStorageId?: Id<"_storage">;
       avatarUrl?: string;
+      commitments?: {
+        __encrypted: true;
+        c: string;
+        i: string;
+        k: string;
+        v: number;
+      };
       email: string;
       emailCount: number;
       facts?: { __encrypted: true; c: string; i: string; k: string; v: number };
@@ -163,6 +170,12 @@ export type DataModel = {
       | "_id"
       | "avatarStorageId"
       | "avatarUrl"
+      | "commitments"
+      | "commitments.__encrypted"
+      | "commitments.c"
+      | "commitments.i"
+      | "commitments.k"
+      | "commitments.v"
       | "email"
       | "emailCount"
       | "facts"
