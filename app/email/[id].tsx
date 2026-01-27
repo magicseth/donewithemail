@@ -76,6 +76,7 @@ export default function EmailDetailScreen() {
   const checkMeetingAvailability = useAction((api.calendar as any).checkMeetingAvailability);
   const reprocessEmail = useAction(api.summarizeActions.reprocessEmail);
   const togglePuntMutation = useMutation(api.emails.togglePuntEmail);
+  const untriageMutation = useMutation(api.emails.untriagedMyEmail);
 
   // Look up email by Convex ID (authenticated)
   const isConvex = id ? isConvexId(id) : false;
@@ -509,6 +510,22 @@ export default function EmailDetailScreen() {
     }
   }, [convexId, archiveEmail]);
 
+  const handleUndoDone = useCallback(async () => {
+    if (!convexId) {
+      showAlert("Error", "Cannot undo - missing email");
+      return;
+    }
+
+    try {
+      await untriageMutation({ emailId: convexId });
+      showAlert("Success", "Email moved back to inbox");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to undo";
+      showAlert("Error", message);
+      console.error("Failed to undo done:", err);
+    }
+  }, [convexId, untriageMutation]);
+
   // Mock data for development
   const mockEmail: EmailCardData = {
     _id: id || "1",
@@ -774,13 +791,23 @@ export default function EmailDetailScreen() {
           <Text style={styles.actionText}>Forward</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.actionButton, styles.actionButtonPrimary]}
-          onPress={handleMarkAsDone}
-        >
-          <Text style={styles.actionIcon}>✓</Text>
-          <Text style={[styles.actionText, styles.actionTextPrimary]}>Done</Text>
-        </TouchableOpacity>
+        {email?.isTriaged ? (
+          <TouchableOpacity
+            style={[styles.actionButton, styles.actionButtonUndo]}
+            onPress={handleUndoDone}
+          >
+            <Text style={styles.actionIcon}>↩</Text>
+            <Text style={styles.actionText}>Undo Done</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.actionButton, styles.actionButtonPrimary]}
+            onPress={handleMarkAsDone}
+          >
+            <Text style={styles.actionIcon}>✓</Text>
+            <Text style={[styles.actionText, styles.actionTextPrimary]}>Done</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </>
   );
@@ -835,6 +862,11 @@ const styles = StyleSheet.create({
   },
   actionButtonPrimary: {
     backgroundColor: "#6366F1",
+  },
+  actionButtonUndo: {
+    backgroundColor: "#FEF3C7",
+    borderWidth: 1,
+    borderColor: "#F59E0B",
   },
   actionButtonActive: {
     backgroundColor: "#FFF4E6",
