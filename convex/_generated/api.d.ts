@@ -211,6 +211,12 @@ export declare const api: {
       { contactId: Id<"contacts">; factId: string },
       any
     >;
+    getFriendToReconnect: FunctionReference<
+      "query",
+      "public",
+      { minDaysAgo?: number; minEmailCount?: number },
+      any
+    >;
     getMyContact: FunctionReference<
       "query",
       "public",
@@ -239,12 +245,6 @@ export declare const api: {
       "query",
       "public",
       { email: string },
-      any
-    >;
-    getFriendToReconnect: FunctionReference<
-      "query",
-      "public",
-      { minDaysAgo?: number; minEmailCount?: number },
       any
     >;
     getMyVIPContacts: FunctionReference<"query", "public", {}, any>;
