@@ -268,6 +268,12 @@ interface ActionableItem {
   attachmentId?: string;
 }
 
+// Type for commitment extracted from email
+interface SuggestedCommitment {
+  text: string;
+  direction: "from_contact" | "to_contact";
+}
+
 // Type for summarization result
 interface SummarizeResult {
   summary: string;
@@ -296,6 +302,8 @@ interface SummarizeResult {
   importantAttachments?: string[];
   // Whether this is a marketing/promotional email (vs personal email from individual)
   isMarketing?: boolean;
+  // Mutual commitments (asks and promises) extracted from this email
+  suggestedCommitments?: SuggestedCommitment[];
 }
 
 export const summarizeEmail = action({
@@ -578,6 +586,11 @@ export const summarizeByExternalIds = internalAction({
         emailId: Id<"emails">;
         facts: string[];
       };
+      commitmentsToSave?: {
+        contactId: Id<"contacts">;
+        emailId: Id<"emails">;
+        commitments: SuggestedCommitment[];
+      };
     };
 
     // Process all emails in parallel
@@ -730,6 +743,15 @@ FIELDS:
    - false: Personal emails from real individuals who know the recipient, 1:1 communication from colleagues, friends, family, known business contacts
    - Key signals for marketing: company sender (noreply@, marketing@, sales@), promotional language ("limited time", "% off", "sale"), mass email formatting, unsubscribe links
    - This field is CRITICAL for notification filtering - marketing emails should NEVER trigger push notifications
+14. suggestedCommitments: Array of commitments (asks and promises) extracted from this email. Each commitment should have:
+   - text: What was asked/promised (e.g., "Send the quarterly report", "Review the proposal by Friday")
+   - direction: "from_contact" if the sender is promising/owes something to the recipient, "to_contact" if the sender is asking the recipient to do something
+   Examples:
+   - Sender says "I'll send you the report tomorrow" → {text: "Send the report", direction: "from_contact"}
+   - Sender says "Can you review the proposal?" → {text: "Review the proposal", direction: "to_contact"}
+   - Sender says "I promised to introduce you to John" → {text: "Introduce to John", direction: "from_contact"}
+   - Sender says "Please update me on the project status" → {text: "Update on project status", direction: "to_contact"}
+   Only include clear, actionable commitments. Skip vague statements. Return empty array if none.
 
 Email:
 ${emailContent}
@@ -824,12 +846,17 @@ Respond with only valid JSON, no markdown or explanation.`);
             ? { contactId: email.from, emailId: email._id, facts: result.suggestedFacts }
             : undefined;
 
+          // Collect commitments to save (will be batched per contact after parallel processing)
+          const commitmentsToSave = result.suggestedCommitments && result.suggestedCommitments.length > 0 && email.from
+            ? { contactId: email.from, emailId: email._id, commitments: result.suggestedCommitments }
+            : undefined;
+
           // Generate embedding for semantic search (async, don't block)
           ctx.scheduler.runAfter(0, internal.emailEmbeddings.generateEmbedding, {
             emailId: email._id,
           });
 
-          return { externalId, success: true, result, factsToSave };
+          return { externalId, success: true, result, factsToSave, commitmentsToSave };
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : "Unknown error";
           console.error(`[Summarize] Failed after retries for ${externalId}: ${errorMessage}`);
@@ -890,6 +917,39 @@ Respond with only valid JSON, no markdown or explanation.`);
         });
       } catch (e) {
         console.error("[Summarize] Failed to save facts for contact:", batch.contactId, e);
+      }
+    }
+
+    // Batch commitments by contact to avoid write conflicts
+    // Group all commitments by contactId, then save once per contact
+    const commitmentsByContact = new Map<string, { contactId: Id<"contacts">; emailIds: Id<"emails">[]; commitments: SuggestedCommitment[] }>();
+    for (const r of results) {
+      if (r.commitmentsToSave) {
+        const key = r.commitmentsToSave.contactId;
+        const existing = commitmentsByContact.get(key);
+        if (existing) {
+          existing.emailIds.push(r.commitmentsToSave.emailId);
+          existing.commitments.push(...r.commitmentsToSave.commitments);
+        } else {
+          commitmentsByContact.set(key, {
+            contactId: r.commitmentsToSave.contactId,
+            emailIds: [r.commitmentsToSave.emailId],
+            commitments: r.commitmentsToSave.commitments,
+          });
+        }
+      }
+    }
+
+    // Save batched commitments sequentially (one mutation per contact, no conflicts)
+    for (const batch of commitmentsByContact.values()) {
+      try {
+        await ctx.runMutation(internal.summarize.saveAISuggestedCommitments, {
+          contactId: batch.contactId,
+          emailId: batch.emailIds[0], // Use first email as source
+          commitments: batch.commitments,
+        });
+      } catch (e) {
+        console.error("[Summarize] Failed to save commitments for contact:", batch.contactId, e);
       }
     }
 

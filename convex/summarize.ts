@@ -397,6 +397,63 @@ export const saveAISuggestedFacts = internalMutation({
   },
 });
 
+// Save AI-suggested commitments to a contact
+export const saveAISuggestedCommitments = internalMutation({
+  args: {
+    contactId: v.id("contacts"),
+    emailId: v.id("emails"),
+    commitments: v.array(v.object({
+      text: v.string(),
+      direction: v.union(v.literal("from_contact"), v.literal("to_contact")),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) return;
+
+    // Get PII helper for encrypting commitments
+    const pii = await encryptedPii.forUser(ctx, contact.userId);
+
+    // Decrypt existing commitments if any
+    let existingCommitments: Array<{
+      id: string;
+      text: string;
+      direction: "from_contact" | "to_contact";
+      status: "pending" | "completed";
+      createdAt: number;
+      completedAt?: number;
+      sourceEmailId?: string;
+      source: "manual" | "ai";
+    }> = [];
+
+    if (contact.commitments) {
+      const decryptedCommitments = await pii.decrypt(contact.commitments);
+      if (decryptedCommitments) {
+        existingCommitments = JSON.parse(decryptedCommitments);
+      }
+    }
+
+    // Add new commitments
+    const newCommitments = args.commitments.map((commitment) => ({
+      id: crypto.randomUUID(),
+      text: commitment.text,
+      direction: commitment.direction,
+      status: "pending" as const,
+      createdAt: Date.now(),
+      sourceEmailId: args.emailId,
+      source: "ai" as const,
+    }));
+
+    const allCommitments = [...existingCommitments, ...newCommitments];
+
+    // Encrypt and save
+    const encryptedCommitments = await pii.encrypt(JSON.stringify(allCommitments));
+    await ctx.db.patch(args.contactId, {
+      commitments: encryptedCommitments,
+    });
+  },
+});
+
 // Get summary for an email (with decryption)
 export const getSummary = internalQuery({
   args: { emailId: v.id("emails") },

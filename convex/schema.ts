@@ -164,6 +164,8 @@ export default defineSchema({
     facts: v.optional(piiField()), // JSON: Array<{id, text, source, createdAt, sourceEmailId?}>
     // Writing style analysis - encrypted as JSON string
     writingStyle: v.optional(piiField()), // JSON: {tone, greeting, signoff, characteristics, samplePhrases, emailsAnalyzed, analyzedAt}
+    // Mutual commitments (asks and promises) - encrypted as JSON string
+    commitments: v.optional(piiField()), // JSON: Array<{id, text, direction, status, createdAt, sourceEmailId?, completedAt?}>
   })
     .index("by_user", ["userId"])
     .index("by_email", ["email"])
@@ -407,6 +409,18 @@ export type WritingStyle = {
   samplePhrases?: string[];
   emailsAnalyzed: number;
   analyzedAt: number;
+};
+
+export type Commitment = {
+  id: string;
+  text: string;
+  // Who made the commitment: "from_contact" = contact promised/owes user, "to_contact" = user promised/owes contact
+  direction: "from_contact" | "to_contact";
+  status: "pending" | "completed";
+  createdAt: number;
+  completedAt?: number;
+  sourceEmailId?: string;
+  source: "manual" | "ai";
 };
 
 export type ScreenshotAnnotationDot = {

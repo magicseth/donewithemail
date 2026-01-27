@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 import { authedQuery, authedMutation } from "./functions";
 import { encryptedPii, EncryptedField } from "./pii";
-import { ContactFact, WritingStyle } from "./schema";
+import { ContactFact, WritingStyle, Commitment } from "./schema";
 
 // =============================================================================
 // Internal Functions (used by email sync)
@@ -83,6 +83,7 @@ interface DecryptedContact {
   relationshipSummary?: string;
   facts?: ContactFact[];
   writingStyle?: WritingStyle;
+  commitments?: Commitment[];
 }
 
 /**
@@ -176,6 +177,7 @@ export const getMyContact = authedQuery({
     let relationshipSummary: string | undefined;
     let facts: ContactFact[] | undefined;
     let writingStyle: WritingStyle | undefined;
+    let commitments: Commitment[] | undefined;
 
     if (pii) {
       if (contact.name) {
@@ -192,6 +194,10 @@ export const getMyContact = authedQuery({
         const wsJson = await pii.decrypt(contact.writingStyle);
         if (wsJson) writingStyle = JSON.parse(wsJson);
       }
+      if (contact.commitments) {
+        const commitmentsJson = await pii.decrypt(contact.commitments);
+        if (commitmentsJson) commitments = JSON.parse(commitmentsJson);
+      }
     }
 
     return {
@@ -206,6 +212,7 @@ export const getMyContact = authedQuery({
       relationshipSummary,
       facts,
       writingStyle,
+      commitments,
     };
   },
 });
@@ -235,6 +242,7 @@ export const getMyContactByEmail = authedQuery({
     let relationshipSummary: string | undefined;
     let facts: ContactFact[] | undefined;
     let writingStyle: WritingStyle | undefined;
+    let commitments: Commitment[] | undefined;
 
     if (pii) {
       if (contact.name) {
@@ -251,6 +259,10 @@ export const getMyContactByEmail = authedQuery({
         const wsJson = await pii.decrypt(contact.writingStyle);
         if (wsJson) writingStyle = JSON.parse(wsJson);
       }
+      if (contact.commitments) {
+        const commitmentsJson = await pii.decrypt(contact.commitments);
+        if (commitmentsJson) commitments = JSON.parse(commitmentsJson);
+      }
     }
 
     return {
@@ -265,6 +277,7 @@ export const getMyContactByEmail = authedQuery({
       relationshipSummary,
       facts,
       writingStyle,
+      commitments,
     };
   },
 });
@@ -295,6 +308,7 @@ export const getMyContacts = authedQuery({
         let relationshipSummary: string | undefined;
         let facts: ContactFact[] | undefined;
         let writingStyle: WritingStyle | undefined;
+        let commitments: Commitment[] | undefined;
 
         if (pii) {
           if (contact.name) {
@@ -311,6 +325,10 @@ export const getMyContacts = authedQuery({
             const wsJson = await pii.decrypt(contact.writingStyle);
             if (wsJson) writingStyle = JSON.parse(wsJson);
           }
+          if (contact.commitments) {
+            const commitmentsJson = await pii.decrypt(contact.commitments);
+            if (commitmentsJson) commitments = JSON.parse(commitmentsJson);
+          }
         }
 
         return {
@@ -325,6 +343,7 @@ export const getMyContacts = authedQuery({
           relationshipSummary,
           facts,
           writingStyle,
+          commitments,
         };
       })
     );
@@ -354,6 +373,7 @@ export const getMyVIPContacts = authedQuery({
         let relationshipSummary: string | undefined;
         let facts: ContactFact[] | undefined;
         let writingStyle: WritingStyle | undefined;
+        let commitments: Commitment[] | undefined;
 
         if (pii) {
           if (contact.name) {
@@ -370,6 +390,10 @@ export const getMyVIPContacts = authedQuery({
             const wsJson = await pii.decrypt(contact.writingStyle);
             if (wsJson) writingStyle = JSON.parse(wsJson);
           }
+          if (contact.commitments) {
+            const commitmentsJson = await pii.decrypt(contact.commitments);
+            if (commitmentsJson) commitments = JSON.parse(commitmentsJson);
+          }
         }
 
         return {
@@ -384,6 +408,7 @@ export const getMyVIPContacts = authedQuery({
           relationshipSummary,
           facts,
           writingStyle,
+          commitments,
         };
       })
     );
@@ -631,6 +656,7 @@ export const getMyContactStats = authedQuery({
     let relationshipSummary: string | undefined;
     let facts: ContactFact[] | undefined;
     let writingStyle: WritingStyle | undefined;
+    let commitments: Commitment[] | undefined;
 
     if (pii) {
       if (contact.name) {
@@ -647,6 +673,10 @@ export const getMyContactStats = authedQuery({
         const wsJson = await pii.decrypt(contact.writingStyle);
         if (wsJson) writingStyle = JSON.parse(wsJson);
       }
+      if (contact.commitments) {
+        const commitmentsJson = await pii.decrypt(contact.commitments);
+        if (commitmentsJson) commitments = JSON.parse(commitmentsJson);
+      }
     }
 
     const decryptedContact: DecryptedContact = {
@@ -661,6 +691,7 @@ export const getMyContactStats = authedQuery({
       relationshipSummary,
       facts,
       writingStyle,
+      commitments,
     };
 
     // Get email count and recent emails
@@ -742,6 +773,7 @@ export const getMyContactStatsByEmail = authedQuery({
     let relationshipSummary: string | undefined;
     let facts: ContactFact[] | undefined;
     let writingStyle: WritingStyle | undefined;
+    let commitments: Commitment[] | undefined;
 
     if (pii) {
       if (contact.name) {
@@ -758,6 +790,10 @@ export const getMyContactStatsByEmail = authedQuery({
         const wsJson = await pii.decrypt(contact.writingStyle);
         if (wsJson) writingStyle = JSON.parse(wsJson);
       }
+      if (contact.commitments) {
+        const commitmentsJson = await pii.decrypt(contact.commitments);
+        if (commitmentsJson) commitments = JSON.parse(commitmentsJson);
+      }
     }
 
     const decryptedContact: DecryptedContact = {
@@ -772,6 +808,7 @@ export const getMyContactStatsByEmail = authedQuery({
       relationshipSummary,
       facts,
       writingStyle,
+      commitments,
     };
 
     // Get email count and recent emails
@@ -824,5 +861,210 @@ export const getMyContactStatsByEmail = authedQuery({
         replyNeeded: replyNeededCount,
       },
     };
+  },
+});
+
+// =============================================================================
+// Commitment Management (Mutual asks and promises between user and contact)
+// =============================================================================
+
+/**
+ * Add a commitment to a contact
+ */
+export const addCommitment = authedMutation({
+  args: {
+    contactId: v.id("contacts"),
+    text: v.string(),
+    direction: v.union(v.literal("from_contact"), v.literal("to_contact")),
+    source: v.union(v.literal("manual"), v.literal("ai")),
+    sourceEmailId: v.optional(v.id("emails")),
+  },
+  handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) {
+      throw new Error("Contact not found");
+    }
+
+    // Verify ownership
+    if (contact.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Contact does not belong to you");
+    }
+
+    // Get PII helper for encryption/decryption
+    const pii = await encryptedPii.forUser(ctx, ctx.userId);
+
+    // Decrypt existing commitments
+    let existingCommitments: Commitment[] = [];
+    if (contact.commitments) {
+      const commitmentsJson = await pii.decrypt(contact.commitments);
+      if (commitmentsJson) existingCommitments = JSON.parse(commitmentsJson);
+    }
+
+    const newCommitment: Commitment = {
+      id: crypto.randomUUID(),
+      text: args.text,
+      direction: args.direction,
+      status: "pending",
+      createdAt: Date.now(),
+      source: args.source,
+      sourceEmailId: args.sourceEmailId,
+    };
+
+    // Encrypt updated commitments array
+    const updatedCommitments = [...existingCommitments, newCommitment];
+    const encryptedCommitments = await pii.encrypt(JSON.stringify(updatedCommitments));
+
+    await ctx.db.patch(args.contactId, {
+      commitments: encryptedCommitments,
+    });
+
+    return { success: true, commitmentId: newCommitment.id };
+  },
+});
+
+/**
+ * Update a commitment's status (mark as completed or reopen)
+ */
+export const updateCommitmentStatus = authedMutation({
+  args: {
+    contactId: v.id("contacts"),
+    commitmentId: v.string(),
+    status: v.union(v.literal("pending"), v.literal("completed")),
+  },
+  handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) {
+      throw new Error("Contact not found");
+    }
+
+    // Verify ownership
+    if (contact.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Contact does not belong to you");
+    }
+
+    // Get PII helper for encryption/decryption
+    const pii = await encryptedPii.forUser(ctx, ctx.userId);
+
+    // Decrypt existing commitments
+    let commitments: Commitment[] = [];
+    if (contact.commitments) {
+      const commitmentsJson = await pii.decrypt(contact.commitments);
+      if (commitmentsJson) commitments = JSON.parse(commitmentsJson);
+    }
+
+    const commitmentIndex = commitments.findIndex((c) => c.id === args.commitmentId);
+    if (commitmentIndex === -1) {
+      throw new Error("Commitment not found");
+    }
+
+    const updatedCommitments = [...commitments];
+    updatedCommitments[commitmentIndex] = {
+      ...updatedCommitments[commitmentIndex],
+      status: args.status,
+      completedAt: args.status === "completed" ? Date.now() : undefined,
+    };
+
+    // Encrypt updated commitments array
+    const encryptedCommitments = await pii.encrypt(JSON.stringify(updatedCommitments));
+
+    await ctx.db.patch(args.contactId, {
+      commitments: encryptedCommitments,
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Update a commitment's text
+ */
+export const updateCommitment = authedMutation({
+  args: {
+    contactId: v.id("contacts"),
+    commitmentId: v.string(),
+    text: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) {
+      throw new Error("Contact not found");
+    }
+
+    // Verify ownership
+    if (contact.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Contact does not belong to you");
+    }
+
+    // Get PII helper for encryption/decryption
+    const pii = await encryptedPii.forUser(ctx, ctx.userId);
+
+    // Decrypt existing commitments
+    let commitments: Commitment[] = [];
+    if (contact.commitments) {
+      const commitmentsJson = await pii.decrypt(contact.commitments);
+      if (commitmentsJson) commitments = JSON.parse(commitmentsJson);
+    }
+
+    const commitmentIndex = commitments.findIndex((c) => c.id === args.commitmentId);
+    if (commitmentIndex === -1) {
+      throw new Error("Commitment not found");
+    }
+
+    const updatedCommitments = [...commitments];
+    updatedCommitments[commitmentIndex] = {
+      ...updatedCommitments[commitmentIndex],
+      text: args.text,
+    };
+
+    // Encrypt updated commitments array
+    const encryptedCommitments = await pii.encrypt(JSON.stringify(updatedCommitments));
+
+    await ctx.db.patch(args.contactId, {
+      commitments: encryptedCommitments,
+    });
+
+    return { success: true };
+  },
+});
+
+/**
+ * Delete a commitment from a contact
+ */
+export const deleteCommitment = authedMutation({
+  args: {
+    contactId: v.id("contacts"),
+    commitmentId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const contact = await ctx.db.get(args.contactId);
+    if (!contact) {
+      throw new Error("Contact not found");
+    }
+
+    // Verify ownership
+    if (contact.userId !== ctx.userId) {
+      throw new Error("Unauthorized: Contact does not belong to you");
+    }
+
+    // Get PII helper for encryption/decryption
+    const pii = await encryptedPii.forUser(ctx, ctx.userId);
+
+    // Decrypt existing commitments
+    let commitments: Commitment[] = [];
+    if (contact.commitments) {
+      const commitmentsJson = await pii.decrypt(contact.commitments);
+      if (commitmentsJson) commitments = JSON.parse(commitmentsJson);
+    }
+
+    const updatedCommitments = commitments.filter((c) => c.id !== args.commitmentId);
+
+    // Encrypt updated commitments array
+    const encryptedCommitments = await pii.encrypt(JSON.stringify(updatedCommitments));
+
+    await ctx.db.patch(args.contactId, {
+      commitments: encryptedCommitments,
+    });
+
+    return { success: true };
   },
 });

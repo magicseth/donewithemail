@@ -136,3 +136,38 @@ export function useContactFacts(contactId: Id<"contacts"> | undefined) {
 
   return { addFact, updateFact, deleteFact };
 }
+
+/**
+ * Hook for managing contact commitments
+ */
+export function useContactCommitments(contactId: Id<"contacts"> | undefined) {
+  const addCommitmentMutation = useMutation(api.contacts.addCommitment);
+  const updateCommitmentStatusMutation = useMutation(api.contacts.updateCommitmentStatus);
+  const deleteCommitmentMutation = useMutation(api.contacts.deleteCommitment);
+
+  const addCommitment = useCallback(
+    async (text: string, direction: "from_contact" | "to_contact", source: "manual" | "ai" = "manual", sourceEmailId?: Id<"emails">) => {
+      if (!contactId) return;
+      return addCommitmentMutation({ contactId, text, direction, source, sourceEmailId });
+    },
+    [contactId, addCommitmentMutation]
+  );
+
+  const updateCommitmentStatus = useCallback(
+    async (commitmentId: string, status: "pending" | "completed") => {
+      if (!contactId) return;
+      return updateCommitmentStatusMutation({ contactId, commitmentId, status });
+    },
+    [contactId, updateCommitmentStatusMutation]
+  );
+
+  const deleteCommitment = useCallback(
+    async (commitmentId: string) => {
+      if (!contactId) return;
+      return deleteCommitmentMutation({ contactId, commitmentId });
+    },
+    [contactId, deleteCommitmentMutation]
+  );
+
+  return { addCommitment, updateCommitmentStatus, deleteCommitment };
+}

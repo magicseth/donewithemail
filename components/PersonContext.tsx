@@ -40,6 +40,17 @@ export interface WritingStyle {
   analyzedAt: number;
 }
 
+export interface Commitment {
+  id: string;
+  text: string;
+  direction: "from_contact" | "to_contact";
+  status: "pending" | "completed";
+  createdAt: number;
+  completedAt?: number;
+  sourceEmailId?: string;
+  source: "manual" | "ai";
+}
+
 export interface ContactData {
   _id: string;
   email: string;
@@ -51,6 +62,7 @@ export interface ContactData {
   relationshipSummary?: string;
   facts?: ContactFact[];
   writingStyle?: WritingStyle;
+  commitments?: Commitment[];
 }
 
 export interface EmailPreview {
@@ -70,6 +82,9 @@ interface PersonContextProps {
   onAddFact?: () => void;
   onEditFact?: (fact: ContactFact) => void;
   onDeleteFact?: (factId: string) => void;
+  onAddCommitment?: (direction: "from_contact" | "to_contact") => void;
+  onToggleCommitmentStatus?: (commitmentId: string, currentStatus: "pending" | "completed") => void;
+  onDeleteCommitment?: (commitmentId: string) => void;
 }
 
 export function PersonContext({
@@ -80,6 +95,9 @@ export function PersonContext({
   onAddFact,
   onEditFact,
   onDeleteFact,
+  onAddCommitment,
+  onToggleCommitmentStatus,
+  onDeleteCommitment,
 }: PersonContextProps) {
   const displayName = contact.name || contact.email;
   const initials = getInitials(displayName);
@@ -200,6 +218,127 @@ export function PersonContext({
         ) : (
           <Text style={styles.emptyText}>
             No facts yet. Add facts to help the AI understand your relationship.
+          </Text>
+        )}
+      </View>
+
+      {/* Mutual Commitments */}
+      <View style={styles.commitmentsSection}>
+        <View style={styles.commitmentsHeader}>
+          <Text style={styles.sectionLabel}>Mutual Commitments</Text>
+          <View style={styles.commitmentButtons}>
+            <TouchableOpacity
+              style={styles.addCommitmentButton}
+              onPress={() => onAddCommitment?.("from_contact")}
+            >
+              <Text style={styles.addCommitmentText}>+ They owe</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.addCommitmentButton}
+              onPress={() => onAddCommitment?.("to_contact")}
+            >
+              <Text style={styles.addCommitmentText}>+ I owe</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Commitments from contact (what they owe you) */}
+        {contact.commitments && contact.commitments.filter(c => c.direction === "from_contact").length > 0 && (
+          <View style={styles.commitmentGroup}>
+            <Text style={styles.commitmentGroupLabel}>
+              {contact.name || "They"} owe{contact.name ? "s" : ""} you:
+            </Text>
+            {contact.commitments
+              .filter(c => c.direction === "from_contact")
+              .map((commitment) => (
+                <View key={commitment.id} style={styles.commitmentItem}>
+                  <TouchableOpacity
+                    style={styles.commitmentCheckbox}
+                    onPress={() => onToggleCommitmentStatus?.(commitment.id, commitment.status)}
+                  >
+                    <View style={[
+                      styles.checkbox,
+                      commitment.status === "completed" && styles.checkboxChecked
+                    ]}>
+                      {commitment.status === "completed" && (
+                        <Text style={styles.checkmark}>✓</Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                  <View style={styles.commitmentContent}>
+                    {commitment.source === "ai" && (
+                      <View style={styles.aiBadge}>
+                        <Text style={styles.aiBadgeText}>AI</Text>
+                      </View>
+                    )}
+                    <Text style={[
+                      styles.commitmentText,
+                      commitment.status === "completed" && styles.commitmentCompleted
+                    ]}>
+                      {commitment.text}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.commitmentDeleteButton}
+                    onPress={() => onDeleteCommitment?.(commitment.id)}
+                  >
+                    <Text style={styles.commitmentDeleteText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+          </View>
+        )}
+
+        {/* Commitments to contact (what you owe them) */}
+        {contact.commitments && contact.commitments.filter(c => c.direction === "to_contact").length > 0 && (
+          <View style={styles.commitmentGroup}>
+            <Text style={styles.commitmentGroupLabel}>
+              You owe {contact.name || "them"}:
+            </Text>
+            {contact.commitments
+              .filter(c => c.direction === "to_contact")
+              .map((commitment) => (
+                <View key={commitment.id} style={styles.commitmentItem}>
+                  <TouchableOpacity
+                    style={styles.commitmentCheckbox}
+                    onPress={() => onToggleCommitmentStatus?.(commitment.id, commitment.status)}
+                  >
+                    <View style={[
+                      styles.checkbox,
+                      commitment.status === "completed" && styles.checkboxChecked
+                    ]}>
+                      {commitment.status === "completed" && (
+                        <Text style={styles.checkmark}>✓</Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                  <View style={styles.commitmentContent}>
+                    {commitment.source === "ai" && (
+                      <View style={styles.aiBadge}>
+                        <Text style={styles.aiBadgeText}>AI</Text>
+                      </View>
+                    )}
+                    <Text style={[
+                      styles.commitmentText,
+                      commitment.status === "completed" && styles.commitmentCompleted
+                    ]}>
+                      {commitment.text}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.commitmentDeleteButton}
+                    onPress={() => onDeleteCommitment?.(commitment.id)}
+                  >
+                    <Text style={styles.commitmentDeleteText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+          </View>
+        )}
+
+        {(!contact.commitments || contact.commitments.length === 0) && (
+          <Text style={styles.emptyText}>
+            No commitments tracked yet. These help you remember what each of you promised to do.
           </Text>
         )}
       </View>
@@ -643,5 +782,97 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#86EFAC",
     marginTop: 8,
+  },
+  // Commitments styles
+  commitmentsSection: {
+    marginBottom: 24,
+  },
+  commitmentsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  commitmentButtons: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  addCommitmentButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+  },
+  addCommitmentText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#4B5563",
+  },
+  commitmentGroup: {
+    marginBottom: 16,
+  },
+  commitmentGroupLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#6B7280",
+    marginBottom: 8,
+  },
+  commitmentItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#F8F9FA",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  commitmentCheckbox: {
+    marginRight: 10,
+    marginTop: 2,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#D1D5DB",
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  checkboxChecked: {
+    backgroundColor: "#6366F1",
+    borderColor: "#6366F1",
+  },
+  checkmark: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  commitmentContent: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+  },
+  commitmentText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#1a1a1a",
+    lineHeight: 20,
+  },
+  commitmentCompleted: {
+    textDecorationLine: "line-through",
+    color: "#9CA3AF",
+  },
+  commitmentDeleteButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  commitmentDeleteText: {
+    fontSize: 18,
+    color: "#9CA3AF",
+    fontWeight: "500",
   },
 });
